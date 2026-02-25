@@ -57,12 +57,16 @@ pub(crate) async fn hifi_get_json<T: DeserializeOwned>(
         }
     }
 
-    let error_msg = last_error.unwrap_or_else(|| "No healthy hifi-api instances available".to_string());
+    let error_msg =
+        last_error.unwrap_or_else(|| "No healthy hifi-api instances available".to_string());
     warn!(error = %error_msg, "All hifi-api candidates failed");
     Err(error_msg)
 }
 
-pub(crate) async fn search_hifi_artists(state: &AppState, query: &str) -> Result<Vec<HifiArtist>, String> {
+pub(crate) async fn search_hifi_artists(
+    state: &AppState,
+    query: &str,
+) -> Result<Vec<HifiArtist>, String> {
     let parsed = hifi_get_json::<HifiResponse>(
         state,
         "/search/",

@@ -9,7 +9,9 @@ pub(crate) enum DownloadPayload {
     DashSegmentUrls(Vec<String>),
 }
 
-pub(crate) fn extract_download_payload(playback: &HifiPlaybackData) -> Result<DownloadPayload, String> {
+pub(crate) fn extract_download_payload(
+    playback: &HifiPlaybackData,
+) -> Result<DownloadPayload, String> {
     let decoded = base64::engine::general_purpose::STANDARD
         .decode(playback.manifest.as_bytes())
         .map_err(|err| format!("failed to decode manifest: {err}"))?;

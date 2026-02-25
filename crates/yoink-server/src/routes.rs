@@ -1,16 +1,16 @@
 use std::{convert::Infallible, time::Duration};
 
 use axum::{
+    Json, Router,
     extract::{Path, Query, State},
-    http::{header, StatusCode},
+    http::{StatusCode, header},
     response::{
-        sse::{Event, KeepAlive, Sse},
         IntoResponse,
+        sse::{Event, KeepAlive, Sse},
     },
     routing::get,
-    Json, Router,
 };
-use tokio_stream::{wrappers::BroadcastStream, StreamExt as _};
+use tokio_stream::{StreamExt as _, wrappers::BroadcastStream};
 use tracing::debug;
 
 use crate::{
@@ -97,7 +97,11 @@ async fn album_tracks(
         }
         Err(err) => {
             debug!(album_id, error = %err, "Failed to fetch album tracks");
-            (StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": err}))).into_response()
+            (
+                StatusCode::BAD_GATEWAY,
+                Json(serde_json::json!({"error": err})),
+            )
+                .into_response()
         }
     }
 }
@@ -134,7 +138,11 @@ async fn api_search(
         }
         Err(err) => {
             debug!(error = %err, "API search failed");
-            (StatusCode::BAD_GATEWAY, Json(serde_json::json!({"error": err}))).into_response()
+            (
+                StatusCode::BAD_GATEWAY,
+                Json(serde_json::json!({"error": err})),
+            )
+                .into_response()
         }
     }
 }
@@ -157,11 +165,7 @@ async fn proxy_tidal_image(
     Path((image_id, size)): Path<(String, u16)>,
 ) -> impl IntoResponse {
     // Validate inputs to prevent path traversal / abuse
-    if !image_id
-        .chars()
-        .all(|c| c.is_ascii_hexdigit() || c == '-')
-        || image_id.len() > 60
-    {
+    if !image_id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') || image_id.len() > 60 {
         return (StatusCode::BAD_REQUEST, "invalid image id").into_response();
     }
     if ![160, 320, 640, 750, 1080].contains(&size) {

@@ -9,9 +9,9 @@ use yoink_shared::{
     monitored_artist_image_url, monitored_artist_profile_url, status_class, status_label_text,
 };
 
+use crate::actions::dispatch_action;
 use crate::components::Sidebar;
 use crate::hooks::use_sse_version;
-use crate::actions::dispatch_action;
 
 // ── Tailwind class constants ────────────────────────────────
 

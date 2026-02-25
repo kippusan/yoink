@@ -1,8 +1,8 @@
 use leptos::prelude::*;
 
 use yoink_shared::{
-    build_albums_by_artist, monitored_artist_image_url, search_artist_image_url,
-    search_artist_profile_url, MonitoredAlbum, MonitoredArtist, SearchArtistResult, ServerAction,
+    MonitoredAlbum, MonitoredArtist, SearchArtistResult, ServerAction, build_albums_by_artist,
+    monitored_artist_image_url, search_artist_image_url, search_artist_profile_url,
 };
 
 use crate::actions::dispatch_action;
@@ -302,7 +302,8 @@ fn ArtistCard(artist: MonitoredArtist, albums: Vec<MonitoredAlbum>) -> impl Into
     let album_count = albums.len();
     let wanted = albums.iter().filter(|a| a.wanted).count();
     let acquired = albums.iter().filter(|a| a.acquired).count();
-    let album_count_text = format!("{album_count} albums \u{00b7} {acquired} acquired \u{00b7} {wanted} wanted");
+    let album_count_text =
+        format!("{album_count} albums \u{00b7} {acquired} acquired \u{00b7} {wanted} wanted");
     let fallback_initial = artist
         .name
         .chars()

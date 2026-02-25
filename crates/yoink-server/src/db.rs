@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use sqlx::{sqlite::SqlitePoolOptions, Row, SqlitePool};
+use sqlx::{Row, SqlitePool, sqlite::SqlitePoolOptions};
 use tracing::info;
 
 use crate::models::{DownloadJob, DownloadStatus, MonitoredAlbum, MonitoredArtist};
@@ -114,7 +114,10 @@ pub(crate) async fn load_artists(pool: &SqlitePool) -> Result<Vec<MonitoredArtis
         .collect())
 }
 
-pub(crate) async fn upsert_artist(pool: &SqlitePool, artist: &MonitoredArtist) -> Result<(), sqlx::Error> {
+pub(crate) async fn upsert_artist(
+    pool: &SqlitePool,
+    artist: &MonitoredArtist,
+) -> Result<(), sqlx::Error> {
     sqlx::query(
         "INSERT INTO artists (id, name, picture, tidal_url, quality_profile, added_at)
          VALUES ($1, $2, $3, $4, $5, $6)
@@ -173,7 +176,10 @@ pub(crate) async fn load_albums(pool: &SqlitePool) -> Result<Vec<MonitoredAlbum>
         .collect())
 }
 
-pub(crate) async fn upsert_album(pool: &SqlitePool, album: &MonitoredAlbum) -> Result<(), sqlx::Error> {
+pub(crate) async fn upsert_album(
+    pool: &SqlitePool,
+    album: &MonitoredAlbum,
+) -> Result<(), sqlx::Error> {
     sqlx::query(
         "INSERT INTO albums (id, artist_id, title, album_type, release_date, cover, tidal_url,
                              explicit, monitored, acquired, wanted, added_at)
@@ -207,7 +213,10 @@ pub(crate) async fn upsert_album(pool: &SqlitePool, album: &MonitoredAlbum) -> R
     Ok(())
 }
 
-pub(crate) async fn delete_albums_by_artist(pool: &SqlitePool, artist_id: i64) -> Result<(), sqlx::Error> {
+pub(crate) async fn delete_albums_by_artist(
+    pool: &SqlitePool,
+    artist_id: i64,
+) -> Result<(), sqlx::Error> {
     sqlx::query("DELETE FROM albums WHERE artist_id = $1")
         .bind(artist_id)
         .execute(pool)

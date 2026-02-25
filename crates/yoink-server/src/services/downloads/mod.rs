@@ -16,18 +16,16 @@ use tracing::{debug, error, info};
 
 use crate::{
     db,
-    models::{
-        DownloadJob, DownloadStatus, HifiAlbumItem, HifiAlbumResponse, MonitoredAlbum,
-    },
+    models::{DownloadJob, DownloadStatus, HifiAlbumItem, HifiAlbumResponse, MonitoredAlbum},
     state::AppState,
 };
 
+use super::hifi::hifi_get_json;
+use super::library::update_wanted;
 use io::{normalize_quality, parse_track_number_from_path, sanitize_path_component as sanitize};
 use metadata::{
     build_full_artist_string, extract_disc_number, fetch_cover_art_bytes, fetch_track_info_extra,
 };
-use super::hifi::hifi_get_json;
-use super::library::update_wanted;
 use worker::download_album_job;
 
 pub(crate) async fn enqueue_album_download(state: &AppState, album: &MonitoredAlbum) {
@@ -211,10 +209,7 @@ pub(crate) async fn retag_existing_files(
         let album_dir = state
             .music_root
             .join(sanitize(artist_name))
-            .join(sanitize(&format!(
-                "{} ({})",
-                album.title, release_suffix
-            )));
+            .join(sanitize(&format!("{} ({})", album.title, release_suffix)));
 
         if !fs::try_exists(&album_dir).await.unwrap_or(false) {
             continue;
@@ -338,10 +333,7 @@ pub(crate) async fn remove_downloaded_album_files(
         .unwrap_or_else(|| "Unknown".to_string());
 
     let artist_dir = state.music_root.join(sanitize(&artist_name));
-    let album_dir = artist_dir.join(sanitize(&format!(
-        "{} ({})",
-        album.title, release_suffix
-    )));
+    let album_dir = artist_dir.join(sanitize(&format!("{} ({})", album.title, release_suffix)));
 
     let exists = fs::try_exists(&album_dir).await.map_err(|err| {
         format!(

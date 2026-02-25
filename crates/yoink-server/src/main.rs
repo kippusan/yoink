@@ -105,45 +105,44 @@ async fn main() {
     });
 
     let tracks_state = state.clone();
-    let fetch_tracks_fn: yoink_shared::FetchTracksFn =
-        std::sync::Arc::new(move |album_id: i64| {
-            let s = tracks_state.clone();
-            Box::pin(async move {
-                use models::{HifiAlbumItem, HifiAlbumResponse};
-                use services::hifi::hifi_get_json;
+    let fetch_tracks_fn: yoink_shared::FetchTracksFn = std::sync::Arc::new(move |album_id: i64| {
+        let s = tracks_state.clone();
+        Box::pin(async move {
+            use models::{HifiAlbumItem, HifiAlbumResponse};
+            use services::hifi::hifi_get_json;
 
-                let response = hifi_get_json::<HifiAlbumResponse>(
-                    &s,
-                    "/album/",
-                    vec![("id".to_string(), album_id.to_string())],
-                )
-                .await
-                .map_err(|e| format!("Failed to fetch tracks: {e}"))?;
+            let response = hifi_get_json::<HifiAlbumResponse>(
+                &s,
+                "/album/",
+                vec![("id".to_string(), album_id.to_string())],
+            )
+            .await
+            .map_err(|e| format!("Failed to fetch tracks: {e}"))?;
 
-                Ok(response
-                    .data
-                    .items
-                    .into_iter()
-                    .enumerate()
-                    .map(|(idx, item)| {
-                        let track = match item {
-                            HifiAlbumItem::Item { item } => item,
-                            HifiAlbumItem::Track(t) => t,
-                        };
-                        let secs = track.duration.unwrap_or(0);
-                        let mins = secs / 60;
-                        let rem = secs % 60;
-                        yoink_shared::TrackInfo {
-                            id: track.id,
-                            title: track.title,
-                            track_number: track.track_number.unwrap_or((idx + 1) as u32),
-                            duration_secs: secs,
-                            duration_display: format!("{mins}:{rem:02}"),
-                        }
-                    })
-                    .collect())
-            })
-        });
+            Ok(response
+                .data
+                .items
+                .into_iter()
+                .enumerate()
+                .map(|(idx, item)| {
+                    let track = match item {
+                        HifiAlbumItem::Item { item } => item,
+                        HifiAlbumItem::Track(t) => t,
+                    };
+                    let secs = track.duration.unwrap_or(0);
+                    let mins = secs / 60;
+                    let rem = secs % 60;
+                    yoink_shared::TrackInfo {
+                        id: track.id,
+                        title: track.title,
+                        track_number: track.track_number.unwrap_or((idx + 1) as u32),
+                        duration_secs: secs,
+                        duration_display: format!("{mins}:{rem:02}"),
+                    }
+                })
+                .collect())
+        })
+    });
 
     let action_state = state.clone();
     let dispatch_action_fn: yoink_shared::DispatchActionFn =

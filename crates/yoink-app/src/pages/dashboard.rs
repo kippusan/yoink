@@ -3,13 +3,13 @@ use std::collections::HashMap;
 use leptos::prelude::*;
 
 use yoink_shared::{
-    build_artist_names, status_class, status_label_text, DownloadJob, DownloadStatus,
-    MonitoredAlbum, MonitoredArtist, ServerAction,
+    DownloadJob, DownloadStatus, MonitoredAlbum, MonitoredArtist, ServerAction, build_artist_names,
+    status_class, status_label_text,
 };
 
+use crate::actions::dispatch_action;
 use crate::components::Sidebar;
 use crate::hooks::use_sse_version;
-use crate::actions::dispatch_action;
 
 // ── Tailwind class constants (matching old design7) ─────────
 
@@ -22,7 +22,8 @@ const BTN: &str = "inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5
 const BTN_PRIMARY: &str = "inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 bg-blue-500 dark:bg-blue-500 backdrop-blur-[8px] border border-blue-500 rounded-lg font-inherit text-[13px] font-medium cursor-pointer text-white no-underline transition-all duration-150 whitespace-nowrap shadow-[0_2px_12px_rgba(59,130,246,.25)] hover:bg-blue-400 hover:border-blue-400 hover:shadow-[0_4px_20px_rgba(59,130,246,.35)]";
 const BTN_DANGER: &str = "inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 bg-red-500/[.08] dark:bg-red-500/10 backdrop-blur-[8px] border border-red-500/30 dark:border-red-400/30 rounded-lg font-inherit text-[13px] font-medium cursor-pointer text-red-600 dark:text-red-400 no-underline transition-all duration-150 whitespace-nowrap hover:bg-red-500/15 hover:border-red-600 dark:hover:bg-red-500/20 dark:hover:border-red-400";
 const STAT_CARD: &str = "d7-stat-card bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[12px] border border-black/[.06] dark:border-white/[.08] rounded-xl p-4 relative overflow-hidden transition-[transform,box-shadow] duration-150 hover:-translate-y-px hover:shadow-[0_4px_24px_rgba(59,130,246,.08)] dark:hover:shadow-[0_4px_24px_rgba(59,130,246,.12)]";
-const STAT_LABEL: &str = "text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400 m-0 mb-1";
+const STAT_LABEL: &str =
+    "text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400 m-0 mb-1";
 const STAT_VALUE: &str = "text-[28px] font-bold text-zinc-900 dark:text-zinc-100 m-0";
 
 const TABLE: &str = "w-full border-collapse text-[13px] [&_th]:text-left [&_th]:px-3 [&_th]:py-2.5 [&_th]:font-semibold [&_th]:text-xs [&_th]:uppercase [&_th]:tracking-wide [&_th]:text-zinc-500 dark:[&_th]:text-zinc-400 [&_th]:bg-black/[.02] dark:[&_th]:bg-white/[.02] [&_th]:border-b [&_th]:border-black/[.06] dark:[&_th]:border-white/[.06] [&_th]:whitespace-nowrap [&_td]:px-3 [&_td]:py-2 [&_td]:border-b [&_td]:border-black/[.04] dark:[&_td]:border-white/[.04] [&_td]:text-zinc-600 dark:[&_td]:text-zinc-300 [&_td]:align-middle [&_tbody_tr:hover]:bg-blue-500/[.03] dark:[&_tbody_tr:hover]:bg-blue-500/[.05] [&_tbody_tr:last-child_td]:border-b-0";

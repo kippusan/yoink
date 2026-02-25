@@ -4,23 +4,21 @@ use tracing::{debug, info, warn};
 
 use crate::{
     db,
-    models::{
-        DownloadJob, DownloadStatus, HifiAlbumItem, HifiAlbumResponse, HifiPlaybackResponse,
-    },
+    models::{DownloadJob, DownloadStatus, HifiAlbumItem, HifiAlbumResponse, HifiPlaybackResponse},
     state::AppState,
 };
 
-use crate::services::hifi::hifi_get_json;
 use super::io::{
     download_payload_to_file, has_flac_stream_marker, normalize_quality, sanitize_path_component,
     sniff_media_container,
 };
 use super::lyrics::{fetch_track_lyrics, write_lrc_sidecar};
-use super::manifest::{extract_download_payload, summarize_manifest_for_logs, DownloadPayload};
+use super::manifest::{DownloadPayload, extract_download_payload, summarize_manifest_for_logs};
 use super::metadata::{
     TrackMetadata, build_full_artist_string, extract_disc_number, fetch_cover_art_bytes,
     fetch_track_info_extra, write_audio_metadata,
 };
+use crate::services::hifi::hifi_get_json;
 
 pub(crate) async fn download_album_job(state: &AppState, job: DownloadJob) -> Result<(), String> {
     let requested_quality = normalize_quality(&job.quality);

@@ -4,9 +4,8 @@ use leptos::prelude::*;
 use lucide_leptos::X;
 
 use yoink_shared::{
-    album_cover_url, album_profile_url, build_albums_by_artist, build_artist_names,
-    build_latest_jobs, status_class, DownloadJob, DownloadStatus, MonitoredAlbum, MonitoredArtist,
-    ServerAction,
+    DownloadJob, DownloadStatus, MonitoredAlbum, MonitoredArtist, ServerAction, album_cover_url,
+    album_profile_url, build_albums_by_artist, build_artist_names, build_latest_jobs, status_class,
 };
 
 use crate::actions::dispatch_action;

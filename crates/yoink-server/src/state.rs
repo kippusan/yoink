@@ -2,7 +2,7 @@ use std::{path::PathBuf, sync::Arc, time::Instant};
 
 use chrono::{DateTime, Utc};
 use sqlx::SqlitePool;
-use tokio::sync::{broadcast, Notify, RwLock};
+use tokio::sync::{Notify, RwLock, broadcast};
 use tracing::info;
 
 use crate::{

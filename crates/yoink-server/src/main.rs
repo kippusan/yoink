@@ -299,7 +299,31 @@ async fn dispatch_action_impl(
             state.notify_sse();
         }
 
-        ServerAction::RemoveArtist { artist_id } => {
+        ServerAction::RemoveArtist {
+            artist_id,
+            remove_files,
+        } => {
+            if remove_files {
+                let acquired: Vec<_> = {
+                    let albums = state.monitored_albums.read().await;
+                    albums
+                        .iter()
+                        .filter(|a| a.artist_id == artist_id && a.acquired)
+                        .cloned()
+                        .collect()
+                };
+                for album in &acquired {
+                    if let Err(e) =
+                        services::remove_downloaded_album_files(&state, album).await
+                    {
+                        warn!(
+                            album_id = album.id,
+                            error = %e,
+                            "Failed to remove files for album while removing artist"
+                        );
+                    }
+                }
+            }
             let _ = db::delete_albums_by_artist(&state.db, artist_id).await;
             let _ = db::delete_artist(&state.db, artist_id).await;
             {
@@ -310,7 +334,7 @@ async fn dispatch_action_impl(
                 let mut artists = state.monitored_artists.write().await;
                 artists.retain(|a| a.id != artist_id);
             }
-            info!(artist_id, "Removed artist and their albums");
+            info!(artist_id, remove_files, "Removed artist and their albums");
             state.notify_sse();
         }
 
@@ -400,7 +424,10 @@ async fn dispatch_action_impl(
             state.notify_sse();
         }
 
-        ServerAction::RemoveAlbumFiles { album_id } => {
+        ServerAction::RemoveAlbumFiles {
+            album_id,
+            unmonitor,
+        } => {
             let album = {
                 let albums = state.monitored_albums.read().await;
                 albums.iter().find(|a| a.id == album_id).cloned()
@@ -414,6 +441,9 @@ async fn dispatch_action_impl(
                 let mut albums = state.monitored_albums.write().await;
                 if let Some(existing) = albums.iter_mut().find(|a| a.id == album_id) {
                     existing.acquired = false;
+                    if unmonitor {
+                        existing.monitored = false;
+                    }
                     services::update_wanted(existing);
                     let _ = db::update_album_flags(
                         &state.db,
@@ -449,7 +479,7 @@ async fn dispatch_action_impl(
                 services::enqueue_album_download(&state, &album).await;
             }
 
-            info!(album_id, removed, "Removed downloaded album files");
+            info!(album_id, removed, unmonitor, "Removed downloaded album files");
             state.notify_sse();
         }
 

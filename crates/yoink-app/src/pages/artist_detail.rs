@@ -12,7 +12,7 @@ use yoink_shared::{
 use leptoaster::{ToastBuilder, ToastLevel, ToastPosition, expect_toaster};
 
 use crate::actions::dispatch_action;
-use crate::components::Sidebar;
+use crate::components::{ConfirmDialog, Sidebar};
 use crate::components::toast::dispatch_with_toast;
 use crate::hooks::use_sse_version;
 
@@ -168,6 +168,10 @@ fn ArtistDetailContent(
     let latest_jobs = build_latest_jobs(jobs);
     let artist_id_val = artist.id;
 
+    // Confirmation dialog signals
+    let show_unmonitor_all = RwSignal::new(false);
+    let show_remove_artist = RwSignal::new(false);
+
     view! {
         // Header
         <div class="bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[16px] border-b border-black/[.06] dark:border-white/[.06] px-6 py-3.5 flex items-center justify-between sticky top-0 z-40">
@@ -207,38 +211,60 @@ fn ArtistDetailContent(
                                 }>"Monitor All"</button>
                             <button type="button" class={cls(BTN, "px-2.5 py-0.5 text-xs")}
                                 on:click=move |_| {
-                                    dispatch_with_toast(ServerAction::BulkMonitor { artist_id: artist_id_val, monitored: false }, "All albums unmonitored");
+                                    show_unmonitor_all.set(true);
                                 }>"Unmonitor All"</button>
                             <button type="button" class={cls(BTN_DANGER, "px-2.5 py-0.5 text-xs")}
                                 on:click=move |_| {
-                                    let navigate = leptos_router::hooks::use_navigate();
-                                    let toaster = expect_toaster();
-                                    leptos::task::spawn_local(async move {
-                                        match dispatch_action(ServerAction::RemoveArtist { artist_id: artist_id_val }).await {
-                                            Ok(()) => {
-                                                toaster.toast(
-                                                    ToastBuilder::new("Artist removed")
-                                                        .with_level(ToastLevel::Success)
-                                                        .with_position(ToastPosition::BottomRight)
-                                                        .with_expiry(Some(4_000)),
-                                                );
-                                                navigate("/artists", Default::default());
-                                            }
-                                            Err(e) => {
-                                                toaster.toast(
-                                                    ToastBuilder::new(&format!("Error: {e}"))
-                                                        .with_level(ToastLevel::Error)
-                                                        .with_position(ToastPosition::BottomRight)
-                                                        .with_expiry(Some(8_000)),
-                                                );
-                                            }
-                                        }
-                                    });
+                                    show_remove_artist.set(true);
                                 }>"Remove Artist"</button>
                         </div>
                     </div>
                 </div>
             </div>
+
+            // Confirmation dialogs
+            <ConfirmDialog
+                open=show_unmonitor_all
+                title="Unmonitor All Albums"
+                message="This will unmonitor all albums for this artist."
+                confirm_label="Unmonitor All"
+                on_confirm=move |_: bool| {
+                    dispatch_with_toast(ServerAction::BulkMonitor { artist_id: artist_id_val, monitored: false }, "All albums unmonitored");
+                }
+            />
+            <ConfirmDialog
+                open=show_remove_artist
+                title="Remove Artist"
+                message="This will remove the artist and all associated data. This cannot be undone."
+                confirm_label="Remove"
+                danger=true
+                checkbox_label="Also remove downloaded files from disk"
+                on_confirm=move |remove_files: bool| {
+                    let navigate = leptos_router::hooks::use_navigate();
+                    let toaster = expect_toaster();
+                    leptos::task::spawn_local(async move {
+                        match dispatch_action(ServerAction::RemoveArtist { artist_id: artist_id_val, remove_files }).await {
+                            Ok(()) => {
+                                toaster.toast(
+                                    ToastBuilder::new("Artist removed")
+                                        .with_level(ToastLevel::Success)
+                                        .with_position(ToastPosition::BottomRight)
+                                        .with_expiry(Some(4_000)),
+                                );
+                                navigate("/artists", Default::default());
+                            }
+                            Err(e) => {
+                                toaster.toast(
+                                    ToastBuilder::new(&format!("Error: {e}"))
+                                        .with_level(ToastLevel::Error)
+                                        .with_position(ToastPosition::BottomRight)
+                                        .with_expiry(Some(8_000)),
+                                );
+                            }
+                        }
+                    });
+                }
+            />
 
             // Albums grid
             <div class=GLASS>
@@ -290,6 +316,8 @@ fn AlbumSleeve(
     let is_monitored = album.monitored;
     let is_wanted = album.wanted;
     let is_acquired = album.acquired;
+
+    let show_remove_files = RwSignal::new(false);
 
     let cover_url = album_cover_url(&album, 640);
     let profile_url = album_profile_url(&album);
@@ -420,7 +448,7 @@ fn AlbumSleeve(
                         view! {
                             <button type="button" class={cls(BTN_DANGER, "d7-sleeve-action-btn")} title="Delete downloaded files"
                                 on:click=move |_| {
-                                    dispatch_with_toast(ServerAction::RemoveAlbumFiles { album_id }, "Album files removed");
+                                    show_remove_files.set(true);
                                 }>
                                 "Remove Files"
                             </button>
@@ -434,6 +462,20 @@ fn AlbumSleeve(
                 </div>
             </div>
         </div>
+
+        // ── Confirmation dialog for removing album files ────
+        <ConfirmDialog
+            open=show_remove_files
+            title="Remove Files"
+            message=format!("This will delete all downloaded files for \u{201c}{album_title}\u{201d} from disk.")
+            confirm_label="Remove Files"
+            danger=true
+            checkbox_label="Also unmonitor this album"
+            on_confirm=move |unmonitor: bool| {
+                let msg = if unmonitor { "Album files removed and unmonitored" } else { "Album files removed" };
+                dispatch_with_toast(ServerAction::RemoveAlbumFiles { album_id, unmonitor }, msg);
+            }
+        />
 
         // ── Tracklist detail row (spans all grid columns) ───
         {move || {

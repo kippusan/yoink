@@ -7,7 +7,7 @@ use yoink_shared::{
     status_class, status_label_text,
 };
 
-use crate::components::Sidebar;
+use crate::components::{ConfirmDialog, Sidebar};
 use crate::components::toast::dispatch_with_toast;
 use crate::hooks::use_sse_version;
 
@@ -124,6 +124,8 @@ fn DashboardContent(data: DashboardData) -> impl IntoView {
         sorted.into_iter().take(25).collect()
     };
 
+    let show_clear_completed = RwSignal::new(false);
+
     view! {
         // Header bar
         <div class="bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[16px] border-b border-black/[.06] dark:border-white/[.06] px-6 py-3.5 flex items-center justify-between sticky top-0 z-40">
@@ -156,6 +158,17 @@ fn DashboardContent(data: DashboardData) -> impl IntoView {
                 </div>
             </div>
 
+            // Confirmation dialog
+            <ConfirmDialog
+                open=show_clear_completed
+                title="Clear Completed"
+                message="This will remove all completed download records."
+                confirm_label="Clear"
+                on_confirm=move |_: bool| {
+                    dispatch_with_toast(ServerAction::ClearCompleted, "Completed jobs cleared");
+                }
+            />
+
             // Recent activity panel
             <div class=GLASS>
                 <div class=GLASS_HEADER>
@@ -173,7 +186,7 @@ fn DashboardContent(data: DashboardData) -> impl IntoView {
                             view! {
                                 <button type="button" class={cls(BTN, "px-2.5 py-0.5 text-xs")}
                                     on:click=move |_| {
-                                        dispatch_with_toast(ServerAction::ClearCompleted, "Completed jobs cleared");
+                                        show_clear_completed.set(true);
                                     }>"Clear Completed"</button>
                             }.into_any()
                         } else {

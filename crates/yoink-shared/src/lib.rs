@@ -256,6 +256,7 @@ pub enum ServerAction {
     },
     RemoveArtist {
         artist_id: i64,
+        remove_files: bool,
     },
     AddArtist {
         id: i64,
@@ -272,6 +273,7 @@ pub enum ServerAction {
     },
     RemoveAlbumFiles {
         album_id: i64,
+        unmonitor: bool,
     },
     RetagLibrary,
     ScanImportLibrary,

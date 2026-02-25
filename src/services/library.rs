@@ -25,7 +25,10 @@ pub(crate) fn update_wanted(album: &mut MonitoredAlbum) {
     album.wanted = album.monitored && !album.acquired;
 }
 
-pub(crate) async fn sync_artist_albums_from_hifi(state: &AppState, artist_id: i64) -> Result<(), String> {
+pub(crate) async fn sync_artist_albums_from_hifi(
+    state: &AppState,
+    artist_id: i64,
+) -> Result<(), String> {
     let response = hifi_get_json::<HifiArtistAlbumsResponse>(
         state,
         "/artist/",
@@ -137,11 +140,15 @@ pub(crate) async fn reconcile_library_files(state: &AppState) -> Result<usize, S
             .release_date
             .clone()
             .unwrap_or_else(|| "Unknown".to_string());
-        let album_dir = state.music_root.join(sanitize_path_component(artist_name)).join(
-            sanitize_path_component(&format!("{} ({})", album.title, release_suffix)),
-        );
+        let album_dir = state
+            .music_root
+            .join(sanitize_path_component(artist_name))
+            .join(sanitize_path_component(&format!(
+                "{} ({})",
+                album.title, release_suffix
+            )));
 
-        if !album_dir_has_flac(&album_dir).await {
+        if !album_dir_has_downloaded_audio(&album_dir).await {
             missing_ids.insert(album.id);
         }
     }
@@ -156,13 +163,23 @@ pub(crate) async fn reconcile_library_files(state: &AppState) -> Result<usize, S
         if missing_ids.contains(&album.id) && album.acquired {
             album.acquired = false;
             update_wanted(album);
-            let _ = db::update_album_flags(&state.db, album.id, album.monitored, album.acquired, album.wanted).await;
+            let _ = db::update_album_flags(
+                &state.db,
+                album.id,
+                album.monitored,
+                album.acquired,
+                album.wanted,
+            )
+            .await;
             changed += 1;
         }
     }
 
     if changed > 0 {
-        info!(updated_albums = changed, "Reconciled missing files in library");
+        info!(
+            updated_albums = changed,
+            "Reconciled missing files in library"
+        );
         state.notify_sse();
     }
 
@@ -186,7 +203,9 @@ pub(crate) async fn scan_and_import_library(state: &AppState) -> Result<ScanImpo
     let mut synced_artists = HashSet::new();
 
     for local in &discovered {
-        let (artist_id, added_artist) = match ensure_monitored_artist(state, &local.artist_name).await {
+        let (artist_id, added_artist) = match ensure_monitored_artist(state, &local.artist_name)
+            .await
+        {
             Ok(Some(value)) => value,
             Ok(None) => {
                 unmatched_albums += 1;
@@ -203,10 +222,10 @@ pub(crate) async fn scan_and_import_library(state: &AppState) -> Result<ScanImpo
             artists_added += 1;
         }
 
-        if !synced_artists.contains(&artist_id) {
-            if sync_artist_albums_from_hifi(state, artist_id).await.is_ok() {
-                synced_artists.insert(artist_id);
-            }
+        if !synced_artists.contains(&artist_id)
+            && sync_artist_albums_from_hifi(state, artist_id).await.is_ok()
+        {
+            synced_artists.insert(artist_id);
         }
 
         if import_local_album(state, artist_id, &local.album_title, local.year.as_deref()).await? {
@@ -241,9 +260,12 @@ async fn discover_local_albums(state: &AppState) -> Result<Vec<LocalAlbumDir>, S
     }
 
     let mut out = Vec::new();
-    let mut artist_dirs = fs::read_dir(&state.music_root)
-        .await
-        .map_err(|err| format!("failed to read music root {}: {err}", state.music_root.display()))?;
+    let mut artist_dirs = fs::read_dir(&state.music_root).await.map_err(|err| {
+        format!(
+            "failed to read music root {}: {err}",
+            state.music_root.display()
+        )
+    })?;
 
     while let Some(artist_entry) = artist_dirs
         .next_entry()
@@ -265,7 +287,7 @@ async fn discover_local_albums(state: &AppState) -> Result<Vec<LocalAlbumDir>, S
 
         while let Some(album_entry) = album_dirs.next_entry().await.unwrap_or(None) {
             let album_path = album_entry.path();
-            if !album_path.is_dir() || !album_dir_has_flac(&album_path).await {
+            if !album_path.is_dir() || !album_dir_has_downloaded_audio(&album_path).await {
                 continue;
             }
             let Some(album_folder) = album_path.file_name().and_then(|s| s.to_str()) else {
@@ -372,12 +394,19 @@ async fn import_local_album(
     }
     update_wanted(album);
     if changed {
-        let _ = db::update_album_flags(&state.db, album.id, album.monitored, album.acquired, album.wanted).await;
+        let _ = db::update_album_flags(
+            &state.db,
+            album.id,
+            album.monitored,
+            album.acquired,
+            album.wanted,
+        )
+        .await;
     }
     Ok(changed)
 }
 
-async fn album_dir_has_flac(path: &std::path::Path) -> bool {
+async fn album_dir_has_downloaded_audio(path: &std::path::Path) -> bool {
     if !fs::try_exists(path).await.unwrap_or(false) {
         return false;
     }
@@ -389,10 +418,13 @@ async fn album_dir_has_flac(path: &std::path::Path) -> bool {
 
     while let Ok(Some(entry)) = entries.next_entry().await {
         let p = entry.path();
-        if p
-            .extension()
+        if p.extension()
             .and_then(|e| e.to_str())
-            .map(|ext| ext.eq_ignore_ascii_case("flac"))
+            .map(|ext| {
+                ext.eq_ignore_ascii_case("flac")
+                    || ext.eq_ignore_ascii_case("m4a")
+                    || ext.eq_ignore_ascii_case("mp4")
+            })
             .unwrap_or(false)
         {
             return true;

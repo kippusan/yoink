@@ -2,10 +2,13 @@ use leptos::prelude::*;
 
 use crate::shared::{
     build_albums_by_artist, monitored_artist_image_url, search_artist_image_url,
-    search_artist_profile_url, MonitoredAlbum, MonitoredArtist, SearchArtistResult,
+    search_artist_profile_url, MonitoredAlbum, MonitoredArtist, SearchArtistResult, ServerAction,
 };
 
+use crate::app::actions::dispatch_action;
+
 use super::super::components::Sidebar;
+use super::super::hooks::use_sse_version;
 
 // ── Tailwind class constants ────────────────────────────────
 
@@ -83,7 +86,8 @@ pub async fn search_artists(query: String) -> Result<SearchResult, ServerFnError
 
 #[component]
 pub fn ArtistsPage() -> impl IntoView {
-    let data = Resource::new(|| (), |_| get_artists_data());
+    let version = use_sse_version();
+    let data = Resource::new(move || version.get(), |_| get_artists_data());
 
     // Search state
     let (query, set_query) = signal(String::new());
@@ -242,6 +246,7 @@ fn ArtistsContent(
 /// A single search result row with an "Add" button.
 #[component]
 fn SearchResultRow(artist: SearchArtistResult) -> impl IntoView {
+    let navigate = leptos_router::hooks::use_navigate();
     let image_url = search_artist_image_url(&artist, 160);
     let profile_url = search_artist_profile_url(&artist);
     let fallback_initial = artist
@@ -250,10 +255,10 @@ fn SearchResultRow(artist: SearchArtistResult) -> impl IntoView {
         .next()
         .map(|c| c.to_uppercase().to_string())
         .unwrap_or_else(|| "?".to_string());
-    let id_str = artist.id.to_string();
-    let name = artist.name.clone();
-    let picture = artist.picture.clone().unwrap_or_default();
-    let tidal_url = artist.url.clone().unwrap_or_default();
+    let artist_id = artist.id;
+    let artist_name = artist.name.clone();
+    let picture = artist.picture.clone();
+    let tidal_url = artist.url.clone();
 
     view! {
         <div class=SEARCH_RESULT>
@@ -269,14 +274,24 @@ fn SearchResultRow(artist: SearchArtistResult) -> impl IntoView {
                 <div class="text-[15px] font-semibold text-zinc-900 dark:text-zinc-100">{artist.name}</div>
                 <a class={cls(LINK, "text-xs")} href=profile_url target="_blank" rel="noreferrer">"View on Tidal"</a>
             </div>
-            <form action="/artists/add" method="post" class="inline">
-                <input type="hidden" name="id" value=id_str />
-                <input type="hidden" name="name" value=name />
-                <input type="hidden" name="picture" value=picture />
-                <input type="hidden" name="tidal_url" value=tidal_url />
-                <input type="hidden" name="return_to" value="/artists" />
-                <button type="submit" class={cls(BTN_PRIMARY, "px-2.5 py-0.5 text-xs")}>"+ Add"</button>
-            </form>
+            <button type="button" class={cls(BTN_PRIMARY, "px-2.5 py-0.5 text-xs")}
+                on:click=move |_| {
+                    let name = artist_name.clone();
+                    let pic = picture.clone();
+                    let url = tidal_url.clone();
+                    let navigate = navigate.clone();
+                    leptos::task::spawn_local(async move {
+                        if dispatch_action(ServerAction::AddArtist {
+                            id: artist_id,
+                            name,
+                            picture: pic,
+                            tidal_url: url,
+                        }).await.is_ok() {
+                            let path = format!("/artists/{artist_id}");
+                            navigate(&path, Default::default());
+                        }
+                    });
+                }>"+ Add"</button>
         </div>
     }
 }

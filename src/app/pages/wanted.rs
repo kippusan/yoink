@@ -1,13 +1,18 @@
 use std::collections::HashMap;
 
 use leptos::prelude::*;
+use lucide_leptos::X;
 
 use crate::shared::{
     album_cover_url, album_profile_url, build_albums_by_artist, build_artist_names,
     build_latest_jobs, status_class, DownloadJob, DownloadStatus, MonitoredAlbum, MonitoredArtist,
+    ServerAction,
 };
 
+use crate::app::actions::dispatch_action;
+
 use super::super::components::Sidebar;
+use super::super::hooks::use_sse_version;
 
 // ── Tailwind class constants (matching old design7) ─────────
 
@@ -67,13 +72,14 @@ pub async fn get_wanted_data() -> Result<WantedData, ServerFnError> {
 /// Wanted page — shows albums that are wanted but not yet acquired.
 #[component]
 pub fn WantedPage() -> impl IntoView {
-    let wanted_data = Resource::new(|| (), |_| get_wanted_data());
+    let version = use_sse_version();
+    let wanted_data = Resource::new(move || version.get(), |_| get_wanted_data());
 
     view! {
         <div class="flex min-h-screen">
             <Sidebar active="wanted" />
             <div class="ml-[220px] max-md:ml-0 flex-1 min-h-screen">
-                <Suspense fallback=move || view! {
+                <Transition fallback=move || view! {
                     <div class="bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[16px] border-b border-black/[.06] dark:border-white/[.06] px-6 py-3.5 flex items-center justify-between sticky top-0 z-40">
                         <h1 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 m-0">"Wanted"</h1>
                         <span class={cls(MUTED, "text-[13px]")}>"Loading\u{2026}"</span>
@@ -91,7 +97,7 @@ pub fn WantedPage() -> impl IntoView {
                             }
                         })
                     }}
-                </Suspense>
+                </Transition>
             </div>
         </div>
     }
@@ -199,14 +205,11 @@ fn WantedRow(album: MonitoredAlbum, latest_jobs: HashMap<i64, DownloadJob>) -> i
         "text-[11px] text-red-600 dark:text-red-400 hidden"
     };
     let error_text = job_error.unwrap_or_else(|| "Download failed".to_string());
-    let retry_class = if is_failed { "inline" } else { "inline hidden" };
-
     let explicit_label = if is_explicit { " [E]" } else { "" };
     let meta_text = format!("{release_date}{explicit_label}");
 
+    let album_id_val = album.id;
     let album_id_str = album.id.to_string();
-    let album_id_str_retry = album_id_str.clone();
-    let album_id_str_monitor = album_id_str.clone();
 
     view! {
         <div class=WANTED_CARD data-album-id=album_id_str>
@@ -241,17 +244,26 @@ fn WantedRow(album: MonitoredAlbum, latest_jobs: HashMap<i64, DownloadJob>) -> i
 
             // Actions
             <div class="flex gap-1.5 shrink-0 items-center">
-                <form action="/downloads/retry" method="post" class=retry_class>
-                    <input type="hidden" name="album_id" value=album_id_str_retry />
-                    <input type="hidden" name="return_to" value="/wanted" />
-                    <button type="submit" class={cls(BTN_DANGER, "px-2.5 py-0.5 text-xs")}>"Retry"</button>
-                </form>
-                <form action="/albums/monitor" method="post" class="inline">
-                    <input type="hidden" name="album_id" value=album_id_str_monitor />
-                    <input type="hidden" name="monitored" value="false" />
-                    <input type="hidden" name="return_to" value="/wanted" />
-                    <button type="submit" class=ICON_BTN title="Unmonitor">{"\u{00d7}"}</button>
-                </form>
+                {if is_failed {
+                    view! {
+                        <button type="button" class={cls(BTN_DANGER, "px-2.5 py-0.5 text-xs")}
+                            on:click=move |_| {
+                                leptos::task::spawn_local(async move {
+                                    let _ = dispatch_action(ServerAction::RetryDownload { album_id: album_id_val }).await;
+                                });
+                            }>"Retry"</button>
+                    }.into_any()
+                } else {
+                    view! { <span></span> }.into_any()
+                }}
+                <button type="button" class=ICON_BTN title="Unmonitor"
+                    on:click=move |_| {
+                        leptos::task::spawn_local(async move {
+                            let _ = dispatch_action(ServerAction::ToggleAlbumMonitor { album_id: album_id_val, monitored: false }).await;
+                        });
+                    }>
+                    <X size=14 />
+                </button>
             </div>
         </div>
     }

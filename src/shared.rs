@@ -235,6 +235,48 @@ pub fn status_class(status: &DownloadStatus) -> &'static str {
     }
 }
 
+// ── Actions (shared between server and WASM client) ─────────
+
+/// A user-initiated action that the server can execute.
+///
+/// Serialized by the WASM client, sent to the `dispatch_action` server function,
+/// and executed on the server where `AppState` is available.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ServerAction {
+    ToggleAlbumMonitor {
+        album_id: i64,
+        monitored: bool,
+    },
+    BulkMonitor {
+        artist_id: i64,
+        monitored: bool,
+    },
+    SyncArtistAlbums {
+        artist_id: i64,
+    },
+    RemoveArtist {
+        artist_id: i64,
+    },
+    AddArtist {
+        id: i64,
+        name: String,
+        picture: Option<String>,
+        tidal_url: Option<String>,
+    },
+    CancelDownload {
+        job_id: u64,
+    },
+    ClearCompleted,
+    RetryDownload {
+        album_id: i64,
+    },
+    RemoveAlbumFiles {
+        album_id: i64,
+    },
+    RetagLibrary,
+    ScanImportLibrary,
+}
+
 // ── Server-side context for Leptos server functions ─────────
 
 /// Holds the shared in-memory state that server functions need to read.
@@ -254,6 +296,9 @@ pub type SearchArtistsFn =
 pub type FetchTracksFn = std::sync::Arc<dyn Fn(i64) -> AsyncFnResult<Vec<TrackInfo>> + Send + Sync>;
 
 #[cfg(feature = "ssr")]
+pub type DispatchActionFn = std::sync::Arc<dyn Fn(ServerAction) -> AsyncFnResult<()> + Send + Sync>;
+
+#[cfg(feature = "ssr")]
 #[derive(Clone)]
 pub struct ServerContext {
     pub monitored_artists: std::sync::Arc<tokio::sync::RwLock<Vec<MonitoredArtist>>>,
@@ -261,4 +306,5 @@ pub struct ServerContext {
     pub download_jobs: std::sync::Arc<tokio::sync::RwLock<Vec<DownloadJob>>>,
     pub search_artists: SearchArtistsFn,
     pub fetch_tracks: FetchTracksFn,
+    pub dispatch_action: DispatchActionFn,
 }

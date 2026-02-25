@@ -4,10 +4,12 @@ use leptos::prelude::*;
 
 use crate::shared::{
     build_artist_names, status_class, status_label_text, DownloadJob, DownloadStatus,
-    MonitoredAlbum, MonitoredArtist,
+    MonitoredAlbum, MonitoredArtist, ServerAction,
 };
 
 use super::super::components::Sidebar;
+use super::super::hooks::use_sse_version;
+use crate::app::actions::dispatch_action;
 
 // ── Tailwind class constants (matching old design7) ─────────
 
@@ -60,13 +62,14 @@ pub async fn get_dashboard_data() -> Result<DashboardData, ServerFnError> {
 
 #[component]
 pub fn DashboardPage() -> impl IntoView {
-    let data = Resource::new(|| (), |_| get_dashboard_data());
+    let version = use_sse_version();
+    let data = Resource::new(move || version.get(), |_| get_dashboard_data());
 
     view! {
         <div class="flex min-h-screen">
             <Sidebar active="dashboard" />
             <div class="ml-[220px] max-md:ml-0 flex-1 min-h-screen">
-                <Suspense fallback=move || view! {
+                <Transition fallback=move || view! {
                     <div class="bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[16px] border-b border-black/[.06] dark:border-white/[.06] px-6 py-3.5 flex items-center justify-between sticky top-0 z-40">
                         <h1 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 m-0">"Dashboard"</h1>
                         <span class={cls(MUTED, "text-[13px]")}>"Loading\u{2026}"</span>
@@ -84,7 +87,7 @@ pub fn DashboardPage() -> impl IntoView {
                             }
                         })
                     }}
-                </Suspense>
+                </Transition>
             </div>
         </div>
     }
@@ -157,20 +160,26 @@ fn DashboardContent(data: DashboardData) -> impl IntoView {
                 <div class=GLASS_HEADER>
                     <h2 class=GLASS_TITLE>"Recent Activity"</h2>
                     <div class="flex flex-wrap items-center gap-2">
-                        <form action="/library/scan-import" method="post" class="inline">
-                            <input type="hidden" name="return_to" value="/" />
-                            <button type="submit" class={cls(BTN_PRIMARY, "px-2.5 py-0.5 text-xs")}>"Scan Drive + Import"</button>
-                        </form>
-                        <form action="/library/retag" method="post" class="inline">
-                            <input type="hidden" name="return_to" value="/" />
-                            <button type="submit" class={cls(BTN, "px-2.5 py-0.5 text-xs")}>"Retag Existing Files"</button>
-                        </form>
+                        <button type="button" class={cls(BTN_PRIMARY, "px-2.5 py-0.5 text-xs")}
+                            on:click=move |_| {
+                                leptos::task::spawn_local(async move {
+                                    let _ = dispatch_action(ServerAction::ScanImportLibrary).await;
+                                });
+                            }>"Scan Drive + Import"</button>
+                        <button type="button" class={cls(BTN, "px-2.5 py-0.5 text-xs")}
+                            on:click=move |_| {
+                                leptos::task::spawn_local(async move {
+                                    let _ = dispatch_action(ServerAction::RetagLibrary).await;
+                                });
+                            }>"Retag Existing Files"</button>
                         {if has_completed {
                             view! {
-                                <form action="/downloads/clear" method="post" class="inline">
-                                    <input type="hidden" name="return_to" value="/" />
-                                    <button type="submit" class={cls(BTN, "px-2.5 py-0.5 text-xs")}>"Clear Completed"</button>
-                                </form>
+                                <button type="button" class={cls(BTN, "px-2.5 py-0.5 text-xs")}
+                                    on:click=move |_| {
+                                        leptos::task::spawn_local(async move {
+                                            let _ = dispatch_action(ServerAction::ClearCompleted).await;
+                                        });
+                                    }>"Clear Completed"</button>
                             }.into_any()
                         } else {
                             view! { <span></span> }.into_any()
@@ -219,8 +228,8 @@ fn JobRow(job: DownloadJob, artist_names: HashMap<i64, String>) -> impl IntoView
     let updated = job.updated_at.format("%Y-%m-%d %H:%M").to_string();
     let is_queued = matches!(job.status, DownloadStatus::Queued);
     let is_failed = matches!(job.status, DownloadStatus::Failed);
-    let job_id_str = job.id.to_string();
-    let album_id_str = job.album_id.to_string();
+    let job_id_val = job.id;
+    let album_id_val = job.album_id;
     let error_msg = job.error.clone().unwrap_or_default();
 
     view! {
@@ -241,19 +250,21 @@ fn JobRow(job: DownloadJob, artist_names: HashMap<i64, String>) -> impl IntoView
             <td>
                 {if is_queued {
                     view! {
-                        <form action="/downloads/cancel" method="post" class="inline">
-                            <input type="hidden" name="job_id" value=job_id_str />
-                            <input type="hidden" name="return_to" value="/" />
-                            <button type="submit" class={cls(BTN_DANGER, "px-2.5 py-0.5 text-xs")}>"Cancel"</button>
-                        </form>
+                        <button type="button" class={cls(BTN_DANGER, "px-2.5 py-0.5 text-xs")}
+                            on:click=move |_| {
+                                leptos::task::spawn_local(async move {
+                                    let _ = dispatch_action(ServerAction::CancelDownload { job_id: job_id_val }).await;
+                                });
+                            }>"Cancel"</button>
                     }.into_any()
                 } else if is_failed {
                     view! {
-                        <form action="/downloads/retry" method="post" class="inline">
-                            <input type="hidden" name="album_id" value=album_id_str />
-                            <input type="hidden" name="return_to" value="/" />
-                            <button type="submit" class={cls(BTN, "px-2.5 py-0.5 text-xs")}>"Retry"</button>
-                        </form>
+                        <button type="button" class={cls(BTN, "px-2.5 py-0.5 text-xs")}
+                            on:click=move |_| {
+                                leptos::task::spawn_local(async move {
+                                    let _ = dispatch_action(ServerAction::RetryDownload { album_id: album_id_val }).await;
+                                });
+                            }>"Retry"</button>
                     }.into_any()
                 } else {
                     view! { <span class=MUTED>{"\u{2014}"}</span> }.into_any()

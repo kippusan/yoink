@@ -25,6 +25,7 @@ pub(crate) struct AppState {
     pub(crate) sse_tx: broadcast::Sender<()>,
     pub(crate) music_root: PathBuf,
     pub(crate) default_quality: String,
+    pub(crate) download_lyrics: bool,
     pub(crate) instance_cache: Arc<RwLock<InstanceCache>>,
 }
 
@@ -65,6 +66,7 @@ impl AppState {
         manual_hifi_base_url: Option<String>,
         music_root: PathBuf,
         default_quality: String,
+        download_lyrics: bool,
         db_url: &str,
     ) -> Self {
         let pool = db::open(db_url).await.expect("failed to open database");
@@ -115,6 +117,7 @@ impl AppState {
             sse_tx,
             music_root,
             default_quality,
+            download_lyrics,
             instance_cache: Arc::new(RwLock::new(InstanceCache::new())),
         }
     }

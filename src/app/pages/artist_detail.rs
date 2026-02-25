@@ -1,14 +1,17 @@
 use std::collections::HashMap;
 
 use leptos::prelude::*;
+use lucide_leptos::{ArrowLeft, ListMusic};
 
 use crate::shared::{
-    album_cover_url, album_profile_url, album_type_label, album_type_rank, build_latest_jobs,
+    DownloadJob, MonitoredAlbum, MonitoredArtist, ServerAction, TrackInfo, album_cover_url,
+    album_profile_url, album_type_label, album_type_rank, build_latest_jobs,
     monitored_artist_image_url, monitored_artist_profile_url, status_class, status_label_text,
-    DownloadJob, MonitoredAlbum, MonitoredArtist, TrackInfo,
 };
 
 use super::super::components::Sidebar;
+use super::super::hooks::use_sse_version;
+use crate::app::actions::dispatch_action;
 
 // ── Tailwind class constants ────────────────────────────────
 
@@ -87,13 +90,17 @@ pub fn ArtistDetailPage() -> impl IntoView {
             .unwrap_or(0)
     };
 
-    let data = Resource::new(artist_id, |id| get_artist_detail(id));
+    let version = use_sse_version();
+    let data = Resource::new(
+        move || (artist_id(), version.get()),
+        |(id, _)| get_artist_detail(id),
+    );
 
     view! {
         <div class="flex min-h-screen">
             <Sidebar active="artists" />
             <div class="ml-[220px] max-md:ml-0 flex-1 min-h-screen">
-                <Suspense fallback=move || view! {
+                <Transition fallback=move || view! {
                     <div class="bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[16px] border-b border-black/[.06] dark:border-white/[.06] px-6 py-3.5 flex items-center justify-between sticky top-0 z-40">
                         <h1 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 m-0">"Loading\u{2026}"</h1>
                     </div>
@@ -109,7 +116,10 @@ pub fn ArtistDetailPage() -> impl IntoView {
                                 None => view! {
                                     <div class="p-6">
                                         <div class="text-zinc-500">"Artist not found."</div>
-                                        <a href="/artists" class={cls(BTN, "mt-4 inline-block")}>{"\u{2190} All Artists"}</a>
+                                        <a href="/artists" class={cls(BTN, "mt-4 inline-flex items-center gap-1.5")}>
+                                            <ArrowLeft size=14 />
+                                            "All Artists"
+                                        </a>
                                     </div>
                                 }.into_any(),
                                 Some(artist) => {
@@ -118,7 +128,7 @@ pub fn ArtistDetailPage() -> impl IntoView {
                             }
                         })
                     }}
-                </Suspense>
+                </Transition>
             </div>
         </div>
     }
@@ -153,16 +163,16 @@ fn ArtistDetailContent(
     });
 
     let latest_jobs = build_latest_jobs(jobs);
-    let artist_id_str = artist.id.to_string();
-    let artist_id_str2 = artist_id_str.clone();
-    let artist_id_str3 = artist_id_str.clone();
-    let return_to = format!("/artists/{}", artist.id);
+    let artist_id_val = artist.id;
 
     view! {
         // Header
         <div class="bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[16px] border-b border-black/[.06] dark:border-white/[.06] px-6 py-3.5 flex items-center justify-between sticky top-0 z-40">
             <h1 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 m-0">{artist.name.clone()}</h1>
-            <a href="/artists" class={cls(BTN, "px-2.5 py-0.5 text-xs no-underline")}>{"\u{2190} All Artists"}</a>
+            <a href="/artists" class={cls(BTN, "px-2.5 py-0.5 text-xs no-underline inline-flex items-center gap-1.5")}>
+                <ArrowLeft size=14 />
+                "All Artists"
+            </a>
         </div>
 
         <div class="p-6 max-md:p-4">
@@ -184,28 +194,32 @@ fn ArtistDetailContent(
                         </div>
                         <div class="flex flex-wrap gap-1.5">
                             <a href=artist_profile target="_blank" rel="noreferrer" class={cls(BTN, "px-2.5 py-0.5 text-xs")}>"View on Tidal"</a>
-                            <form action="/artists/sync" method="post" class="inline">
-                                <input type="hidden" name="artist_id" value=artist_id_str />
-                                <input type="hidden" name="return_to" value=return_to.clone() />
-                                <button type="submit" class={cls(BTN, "px-2.5 py-0.5 text-xs")}>"Sync Albums"</button>
-                            </form>
-                            <form action="/albums/bulk-monitor" method="post" class="inline">
-                                <input type="hidden" name="artist_id" value=artist_id_str2 />
-                                <input type="hidden" name="monitored" value="true" />
-                                <input type="hidden" name="return_to" value=return_to.clone() />
-                                <button type="submit" class={cls(BTN_PRIMARY, "px-2.5 py-0.5 text-xs")}>"Monitor All"</button>
-                            </form>
-                            <form action="/albums/bulk-monitor" method="post" class="inline">
-                                <input type="hidden" name="artist_id" value=artist_id_str3 />
-                                <input type="hidden" name="monitored" value="false" />
-                                <input type="hidden" name="return_to" value=return_to.clone() />
-                                <button type="submit" class={cls(BTN, "px-2.5 py-0.5 text-xs")}>"Unmonitor All"</button>
-                            </form>
-                            <form action="/artists/remove" method="post" class="inline">
-                                <input type="hidden" name="artist_id" value=artist.id.to_string() />
-                                <input type="hidden" name="return_to" value="/artists" />
-                                <button type="submit" class={cls(BTN_DANGER, "px-2.5 py-0.5 text-xs")}>"Remove Artist"</button>
-                            </form>
+                            <button type="button" class={cls(BTN, "px-2.5 py-0.5 text-xs")}
+                                on:click=move |_| {
+                                    leptos::task::spawn_local(async move {
+                                        let _ = dispatch_action(ServerAction::SyncArtistAlbums { artist_id: artist_id_val }).await;
+                                    });
+                                }>"Sync Albums"</button>
+                            <button type="button" class={cls(BTN_PRIMARY, "px-2.5 py-0.5 text-xs")}
+                                on:click=move |_| {
+                                    leptos::task::spawn_local(async move {
+                                        let _ = dispatch_action(ServerAction::BulkMonitor { artist_id: artist_id_val, monitored: true }).await;
+                                    });
+                                }>"Monitor All"</button>
+                            <button type="button" class={cls(BTN, "px-2.5 py-0.5 text-xs")}
+                                on:click=move |_| {
+                                    leptos::task::spawn_local(async move {
+                                        let _ = dispatch_action(ServerAction::BulkMonitor { artist_id: artist_id_val, monitored: false }).await;
+                                    });
+                                }>"Unmonitor All"</button>
+                            <button type="button" class={cls(BTN_DANGER, "px-2.5 py-0.5 text-xs")}
+                                on:click=move |_| {
+                                    let navigate = leptos_router::hooks::use_navigate();
+                                    leptos::task::spawn_local(async move {
+                                        let _ = dispatch_action(ServerAction::RemoveArtist { artist_id: artist_id_val }).await;
+                                        navigate("/artists", Default::default());
+                                    });
+                                }>"Remove Artist"</button>
                         </div>
                     </div>
                 </div>
@@ -220,14 +234,14 @@ fn ArtistDetailContent(
                 {if sorted_albums.is_empty() {
                     view! { <div class=EMPTY>"No albums synced. Hit Sync Albums to fetch from Tidal."</div> }.into_any()
                 } else {
-                    let ret = return_to.clone();
+
                     // Which album's tracklist is currently open (None = all collapsed).
                     let (expanded_id, set_expanded_id) = signal::<Option<i64>>(None);
                     view! {
                         <div class={cls(GLASS_BODY, "p-4")}>
                             <div class="d7-album-grid">
                                 {sorted_albums.into_iter().map(|album| {
-                                    view! { <AlbumSleeve album=album latest_jobs=latest_jobs.clone() return_to=ret.clone() expanded_id=expanded_id set_expanded_id=set_expanded_id /> }
+                                    view! { <AlbumSleeve album=album latest_jobs=latest_jobs.clone() expanded_id=expanded_id set_expanded_id=set_expanded_id /> }
                                 }).collect_view()}
                             </div>
                         </div>
@@ -246,7 +260,6 @@ fn ArtistDetailContent(
 fn AlbumSleeve(
     album: MonitoredAlbum,
     latest_jobs: HashMap<i64, DownloadJob>,
-    return_to: String,
     expanded_id: ReadSignal<Option<i64>>,
     set_expanded_id: WriteSignal<Option<i64>>,
 ) -> impl IntoView {
@@ -272,7 +285,6 @@ fn AlbumSleeve(
         .as_ref()
         .map(|j| (j.completed_tracks, j.total_tracks));
 
-    let monitor_next = (!is_monitored).to_string();
     let wanted_pill_text = if is_wanted { "Wanted" } else { "Not Wanted" };
 
     let status_pill_class = match &job_status {
@@ -294,8 +306,6 @@ fn AlbumSleeve(
         .map(|c| c.to_uppercase().to_string())
         .unwrap_or_else(|| "?".to_string());
 
-    let album_id_str_monitor = album_id_str.clone();
-
     let monitor_title = if is_monitored {
         "Unmonitor album"
     } else {
@@ -307,7 +317,7 @@ fn AlbumSleeve(
     let is_expanded = move || expanded_id.get() == Some(album_id);
 
     // Tracks fetched once and cached.
-    let (tracks, set_tracks) = signal::<Option<Result<Vec<TrackInfo>, String>>>(None);
+    let (tracks, _) = signal::<Option<Result<Vec<TrackInfo>, String>>>(None);
 
     let on_toggle = move |_| {
         if is_expanded() {
@@ -318,7 +328,7 @@ fn AlbumSleeve(
             if tracks.get_untracked().is_none() {
                 #[cfg(feature = "hydrate")]
                 {
-                    wasm_bindgen_futures::spawn_local(async move {
+                    leptos::task::spawn_local(async move {
                         let result = get_album_tracks(album_id).await;
                         set_tracks.set(Some(result.map_err(|e| e.to_string())));
                     });
@@ -381,13 +391,30 @@ fn AlbumSleeve(
                 </div>
 
                 <div class="d7-sleeve-actions">
-                    <form action="/albums/monitor" method="post" class="inline">
-                        <input type="hidden" name="album_id" value=album_id_str_monitor />
-                        <input type="hidden" name="monitored" value=monitor_next />
-                        <input type="hidden" name="return_to" value=return_to />
-                        <button type="submit" class={cls(BTN, "d7-sleeve-action-btn")} title=monitor_title>{monitor_label}</button>
-                    </form>
-                    <button type="button" class=btn_class on:click=on_toggle title="Show tracks">{"\u{266b}"}</button>
+                    <button type="button" class={cls(BTN, "d7-sleeve-action-btn")} title=monitor_title
+                        on:click=move |_| {
+                            let next = !is_monitored;
+                            leptos::task::spawn_local(async move {
+                                let _ = dispatch_action(ServerAction::ToggleAlbumMonitor { album_id, monitored: next }).await;
+                            });
+                        }>{monitor_label}</button>
+                    {if is_acquired {
+                        view! {
+                            <button type="button" class={cls(BTN_DANGER, "d7-sleeve-action-btn")} title="Delete downloaded files"
+                                on:click=move |_| {
+                                    leptos::task::spawn_local(async move {
+                                        let _ = dispatch_action(ServerAction::RemoveAlbumFiles { album_id }).await;
+                                    });
+                                }>
+                                "Remove Files"
+                            </button>
+                        }.into_any()
+                    } else {
+                        view! { <span></span> }.into_any()
+                    }}
+                    <button type="button" class=btn_class on:click=on_toggle title="Show tracks">
+                        <ListMusic size=14 />
+                    </button>
                 </div>
             </div>
         </div>

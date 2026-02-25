@@ -14,68 +14,6 @@ pub(crate) struct SearchQuery {
     pub(crate) q: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
-pub(crate) struct AddArtistForm {
-    pub(crate) id: i64,
-    pub(crate) name: String,
-    pub(crate) picture: Option<String>,
-    pub(crate) tidal_url: Option<String>,
-    pub(crate) return_to: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub(crate) struct SyncArtistAlbumsForm {
-    pub(crate) artist_id: i64,
-    pub(crate) return_to: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub(crate) struct ToggleAlbumMonitorForm {
-    pub(crate) album_id: i64,
-    pub(crate) monitored: bool,
-    pub(crate) return_to: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub(crate) struct RetryDownloadForm {
-    pub(crate) album_id: i64,
-    pub(crate) return_to: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub(crate) struct RemoveArtistForm {
-    pub(crate) artist_id: i64,
-    pub(crate) return_to: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub(crate) struct BulkMonitorForm {
-    pub(crate) artist_id: i64,
-    pub(crate) monitored: bool,
-    pub(crate) return_to: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub(crate) struct CancelDownloadForm {
-    pub(crate) job_id: u64,
-    pub(crate) return_to: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub(crate) struct ClearCompletedForm {
-    pub(crate) return_to: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub(crate) struct RetagLibraryForm {
-    pub(crate) return_to: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub(crate) struct ScanImportLibraryForm {
-    pub(crate) return_to: Option<String>,
-}
-
 #[derive(Debug, Deserialize)]
 pub(crate) struct HifiResponse {
     pub(crate) data: SearchData,

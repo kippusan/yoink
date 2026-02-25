@@ -1,57 +1,26 @@
 use std::{convert::Infallible, time::Duration};
 
 use axum::{
-    extract::{Form, Path, Query, State},
+    extract::{Path, Query, State},
     http::{header, StatusCode},
     response::{
         sse::{Event, KeepAlive, Sse},
-        IntoResponse, Redirect,
+        IntoResponse,
     },
-    routing::{get, post},
+    routing::get,
     Json, Router,
 };
-use chrono::Utc;
 use tokio_stream::{wrappers::BroadcastStream, StreamExt as _};
-use tracing::{debug, info};
+use tracing::debug;
 
 use crate::{
-    db,
     models::*,
-    services::{
-        enqueue_album_download, list_instances_payload, retag_existing_files, scan_and_import_library,
-        search_hifi_artists, sync_artist_albums_from_hifi, update_wanted,
-    },
+    services::{list_instances_payload, search_hifi_artists},
     state::AppState,
 };
 
-/// Sanitize return_to to only allow local paths (prevent open redirect)
-fn safe_redirect(return_to: Option<String>, fallback: &str) -> String {
-    match return_to {
-        Some(path) if path.starts_with('/') && !path.starts_with("//") => path,
-        _ => fallback.to_string(),
-    }
-}
-
 pub(crate) fn build_router(state: AppState) -> Router {
     Router::new()
-        // ── Pages ───────────────────────────────────────────────
-        // /, /artists, /artists/:id, /wanted are now handled by the Leptos App
-        // .route("/", get(dashboard_page))
-        // .route("/artists", get(artists_page))
-        // .route("/artists/{artist_id}", get(artist_detail_page))
-        // /wanted is now handled by the Leptos App component
-        // .route("/wanted", get(wanted_page))
-        // ── Form actions ────────────────────────────────────────
-        .route("/artists/add", post(add_artist))
-        .route("/artists/remove", post(remove_artist))
-        .route("/artists/sync", post(sync_artist_albums))
-        .route("/albums/monitor", post(toggle_album_monitor))
-        .route("/albums/bulk-monitor", post(bulk_monitor_albums))
-        .route("/downloads/retry", post(retry_download))
-        .route("/downloads/cancel", post(cancel_download))
-        .route("/downloads/clear", post(clear_completed_downloads))
-        .route("/library/retag", post(retag_library))
-        .route("/library/scan-import", post(scan_import_library))
         // ── API endpoints ───────────────────────────────────────
         .route("/api/library/artists", get(list_monitored_artists))
         .route("/api/library/albums", get(list_monitored_albums))
@@ -62,187 +31,6 @@ pub(crate) fn build_router(state: AppState) -> Router {
         .route("/api/events", get(sse_events))
         .route("/api/image/{image_id}/{size}", get(proxy_tidal_image))
         .with_state(state)
-}
-
-// ── Form action handlers ────────────────────────────────────────────
-
-async fn add_artist(
-    State(state): State<AppState>,
-    Form(form): Form<AddArtistForm>,
-) -> impl IntoResponse {
-    {
-        let mut artists = state.monitored_artists.write().await;
-        if artists.iter().all(|artist| artist.id != form.id) {
-            let artist = MonitoredArtist {
-                id: form.id,
-                name: form.name,
-                picture: form.picture.filter(|s| !s.is_empty()),
-                tidal_url: form.tidal_url.filter(|s| !s.is_empty()),
-                quality_profile: state.default_quality.clone(),
-                added_at: Utc::now(),
-            };
-            let _ = db::upsert_artist(&state.db, &artist).await;
-            artists.push(artist);
-        }
-    }
-
-    let _ = sync_artist_albums_from_hifi(&state, form.id).await;
-    Redirect::to(&safe_redirect(form.return_to, "/artists"))
-}
-
-async fn sync_artist_albums(
-    State(state): State<AppState>,
-    Form(form): Form<SyncArtistAlbumsForm>,
-) -> impl IntoResponse {
-    let _ = sync_artist_albums_from_hifi(&state, form.artist_id).await;
-    Redirect::to(&safe_redirect(form.return_to, "/artists"))
-}
-
-async fn toggle_album_monitor(
-    State(state): State<AppState>,
-    Form(form): Form<ToggleAlbumMonitorForm>,
-) -> impl IntoResponse {
-    let mut album_to_queue = None;
-    {
-        let mut albums = state.monitored_albums.write().await;
-        if let Some(album) = albums.iter_mut().find(|album| album.id == form.album_id) {
-            album.monitored = form.monitored;
-            update_wanted(album);
-            let _ = db::update_album_flags(&state.db, album.id, album.monitored, album.acquired, album.wanted).await;
-            if album.monitored && !album.acquired {
-                album_to_queue = Some(album.clone());
-            }
-        }
-    }
-
-    if let Some(album) = album_to_queue {
-        enqueue_album_download(&state, &album).await;
-    }
-    Redirect::to(&safe_redirect(form.return_to, "/artists"))
-}
-
-async fn remove_artist(
-    State(state): State<AppState>,
-    Form(form): Form<RemoveArtistForm>,
-) -> impl IntoResponse {
-    {
-        let _ = db::delete_albums_by_artist(&state.db, form.artist_id).await;
-        let _ = db::delete_artist(&state.db, form.artist_id).await;
-    }
-    {
-        let mut albums = state.monitored_albums.write().await;
-        albums.retain(|a| a.artist_id != form.artist_id);
-    }
-    {
-        let mut artists = state.monitored_artists.write().await;
-        artists.retain(|a| a.id != form.artist_id);
-    }
-    info!(artist_id = form.artist_id, "Removed artist and their albums");
-    Redirect::to(&safe_redirect(form.return_to, "/artists"))
-}
-
-async fn bulk_monitor_albums(
-    State(state): State<AppState>,
-    Form(form): Form<BulkMonitorForm>,
-) -> impl IntoResponse {
-    let mut to_queue = Vec::new();
-    {
-        let mut albums = state.monitored_albums.write().await;
-        for album in albums.iter_mut().filter(|a| a.artist_id == form.artist_id) {
-            album.monitored = form.monitored;
-            update_wanted(album);
-            let _ = db::update_album_flags(&state.db, album.id, album.monitored, album.acquired, album.wanted).await;
-            if album.monitored && !album.acquired {
-                to_queue.push(album.clone());
-            }
-        }
-    }
-    for album in to_queue {
-        enqueue_album_download(&state, &album).await;
-    }
-    let fallback = format!("/artists/{}", form.artist_id);
-    Redirect::to(&safe_redirect(form.return_to, &fallback))
-}
-
-async fn cancel_download(
-    State(state): State<AppState>,
-    Form(form): Form<CancelDownloadForm>,
-) -> impl IntoResponse {
-    let mut jobs = state.download_jobs.write().await;
-    if let Some(job) = jobs.iter_mut().find(|j| j.id == form.job_id) {
-        if matches!(job.status, DownloadStatus::Queued) {
-            job.status = DownloadStatus::Failed;
-            job.error = Some("Cancelled by user".to_string());
-            job.updated_at = Utc::now();
-            let _ = db::update_job(&state.db, job).await;
-            info!(job_id = form.job_id, "Cancelled download job");
-        }
-    }
-    Redirect::to(&safe_redirect(form.return_to, "/"))
-}
-
-async fn clear_completed_downloads(
-    State(state): State<AppState>,
-    Form(form): Form<ClearCompletedForm>,
-) -> impl IntoResponse {
-    {
-        let _ = db::delete_completed_jobs(&state.db).await;
-    }
-    {
-        let mut jobs = state.download_jobs.write().await;
-        jobs.retain(|j| j.status != DownloadStatus::Completed);
-    }
-    info!("Cleared completed download jobs");
-    Redirect::to(&safe_redirect(form.return_to, "/"))
-}
-
-async fn retag_library(
-    State(state): State<AppState>,
-    Form(form): Form<RetagLibraryForm>,
-) -> impl IntoResponse {
-    let redirect_to = safe_redirect(form.return_to, "/");
-    let worker_state = state.clone();
-    tokio::spawn(async move {
-        match retag_existing_files(&worker_state).await {
-            Ok((tagged, missing, albums)) => {
-                info!(
-                    tagged_files = tagged,
-                    missing_files = missing,
-                    scanned_albums = albums,
-                    "Completed manual library retag"
-                );
-            }
-            Err(err) => {
-                info!(error = %err, "Library retag failed");
-            }
-        }
-    });
-    Redirect::to(&redirect_to)
-}
-
-async fn scan_import_library(
-    State(state): State<AppState>,
-    Form(form): Form<ScanImportLibraryForm>,
-) -> impl IntoResponse {
-    let redirect_to = safe_redirect(form.return_to, "/");
-    let worker_state = state.clone();
-    tokio::spawn(async move {
-        match scan_and_import_library(&worker_state).await {
-            Ok(summary) => {
-                info!(
-                    discovered = summary.discovered_albums,
-                    imported = summary.imported_albums,
-                    artists_added = summary.artists_added,
-                    unmatched = summary.unmatched_albums,
-                    "Completed scan/import pass"
-                );
-            }
-            Err(err) => {
-                info!(error = %err, "Scan/import failed");
-            }
-        }
-    });
-    Redirect::to(&redirect_to)
 }
 
 // ── API handlers ────────────────────────────────────────────────────
@@ -260,40 +48,6 @@ async fn list_monitored_albums(State(state): State<AppState>) -> impl IntoRespon
 async fn list_download_jobs(State(state): State<AppState>) -> impl IntoResponse {
     let jobs = state.download_jobs.read().await.clone();
     Json(jobs)
-}
-
-async fn retry_download(
-    State(state): State<AppState>,
-    Form(form): Form<RetryDownloadForm>,
-) -> impl IntoResponse {
-    let redirect_to = safe_redirect(form.return_to.clone(), "/wanted");
-    {
-        let mut jobs = state.download_jobs.write().await;
-        if let Some(job) = jobs
-            .iter_mut()
-            .find(|job| job.album_id == form.album_id && job.status == DownloadStatus::Failed)
-        {
-            job.status = DownloadStatus::Queued;
-            job.error = None;
-            job.updated_at = Utc::now();
-            let _ = db::update_job(&state.db, job).await;
-            info!(album_id = form.album_id, job_id = job.id, "Retrying failed download job");
-            state.download_notify.notify_one();
-            return Redirect::to(&redirect_to);
-        }
-    }
-
-    let album = {
-        let albums = state.monitored_albums.read().await;
-        albums.iter().find(|album| album.id == form.album_id).cloned()
-    };
-
-    if let Some(album) = album {
-        info!(album_id = album.id, title = %album.title, "Creating retry download job");
-        enqueue_album_download(&state, &album).await;
-    }
-
-    Redirect::to(&redirect_to)
 }
 
 async fn list_instances(State(state): State<AppState>) -> impl IntoResponse {

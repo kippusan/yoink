@@ -1,9 +1,9 @@
 use tracing::warn;
 use tracing_subscriber::EnvFilter;
 
-pub(crate) fn init_logging() {
+pub(crate) fn init_logging(format: &str) {
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
-    let format = std::env::var("LOG_FORMAT").unwrap_or_else(|_| "pretty".to_string());
+    let format = format.to_ascii_lowercase();
     let mut fallback_from = None;
 
     match format.as_str() {
@@ -24,7 +24,7 @@ pub(crate) fn init_logging() {
                 .init();
         }
         _ => {
-            fallback_from = Some(format);
+            fallback_from = Some(format.clone());
             tracing_subscriber::fmt()
                 .with_env_filter(env_filter)
                 .compact()

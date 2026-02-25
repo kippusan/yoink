@@ -1,11 +1,8 @@
-pub mod app;
-pub mod shared;
+use wasm_bindgen::JsCast;
 
-#[cfg(feature = "hydrate")]
 #[wasm_bindgen::prelude::wasm_bindgen]
 pub fn hydrate() {
-    use app::App;
-    use wasm_bindgen::JsCast;
+    use yoink_app::App;
 
     // Hydrate against the #app container, not <body>, because the SSR
     // out-of-order streaming appends <template>/<script> nodes to <body>

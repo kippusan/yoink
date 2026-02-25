@@ -1,0 +1,31 @@
+[package]
+name = "yoink-app"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+yoink-shared = { workspace = true }
+leptos = { workspace = true }
+leptos_router = { workspace = true }
+leptos_axum = { workspace = true, optional = true }
+lucide-leptos = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Client-only (behind "hydrate" feature)
+wasm-bindgen = { workspace = true, optional = true }
+web-sys = { workspace = true, optional = true }
+
+[features]
+default = []
+hydrate = [
+  "dep:wasm-bindgen",
+  "dep:web-sys",
+  "leptos/hydrate",
+]
+ssr = [
+  "leptos/ssr",
+  "leptos_axum",
+  "leptos_router/ssr",
+  "yoink-shared/ssr",
+]

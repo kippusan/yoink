@@ -115,7 +115,7 @@ pub fn build_latest_jobs(jobs: Vec<DownloadJob>) -> HashMap<i64, DownloadJob> {
     map
 }
 
-/// Map artist id → name for display.
+/// Map artist id -> name for display.
 pub fn build_artist_names(artists: &[MonitoredArtist]) -> HashMap<i64, String> {
     artists.iter().map(|a| (a.id, a.name.clone())).collect()
 }

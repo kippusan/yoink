@@ -3,15 +3,15 @@ use std::collections::HashMap;
 use leptos::prelude::*;
 use lucide_leptos::{ArrowLeft, ListMusic};
 
-use crate::shared::{
+use yoink_shared::{
     DownloadJob, MonitoredAlbum, MonitoredArtist, ServerAction, TrackInfo, album_cover_url,
     album_profile_url, album_type_label, album_type_rank, build_latest_jobs,
     monitored_artist_image_url, monitored_artist_profile_url, status_class, status_label_text,
 };
 
-use super::super::components::Sidebar;
-use super::super::hooks::use_sse_version;
-use crate::app::actions::dispatch_action;
+use crate::components::Sidebar;
+use crate::hooks::use_sse_version;
+use crate::actions::dispatch_action;
 
 // ── Tailwind class constants ────────────────────────────────
 
@@ -42,7 +42,7 @@ pub struct ArtistDetailData {
 
 #[server(GetArtistDetail, "/leptos")]
 pub async fn get_artist_detail(artist_id: i64) -> Result<ArtistDetailData, ServerFnError> {
-    let ctx = use_context::<crate::shared::ServerContext>()
+    let ctx = use_context::<yoink_shared::ServerContext>()
         .ok_or_else(|| ServerFnError::new("ServerContext not available"))?;
 
     let artists = ctx.monitored_artists.read().await;
@@ -69,7 +69,7 @@ pub async fn get_artist_detail(artist_id: i64) -> Result<ArtistDetailData, Serve
 
 #[server(GetAlbumTracks, "/leptos")]
 pub async fn get_album_tracks(album_id: i64) -> Result<Vec<TrackInfo>, ServerFnError> {
-    let ctx = use_context::<crate::shared::ServerContext>()
+    let ctx = use_context::<yoink_shared::ServerContext>()
         .ok_or_else(|| ServerFnError::new("ServerContext not available"))?;
 
     (ctx.fetch_tracks)(album_id)
@@ -317,7 +317,11 @@ fn AlbumSleeve(
     let is_expanded = move || expanded_id.get() == Some(album_id);
 
     // Tracks fetched once and cached.
+    #[cfg(not(feature = "hydrate"))]
     let (tracks, _) = signal::<Option<Result<Vec<TrackInfo>, String>>>(None);
+
+    #[cfg(feature = "hydrate")]
+    let (tracks, set_tracks) = signal::<Option<Result<Vec<TrackInfo>, String>>>(None);
 
     let on_toggle = move |_| {
         if is_expanded() {

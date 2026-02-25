@@ -24,7 +24,7 @@ use crate::{
     state::AppState,
 };
 
-use yoink::app::{App, shell::shell};
+use yoink_app::{App, shell::shell};
 
 #[tokio::main]
 async fn main() {
@@ -86,13 +86,13 @@ async fn main() {
     // Build the Leptos server context from AppState.
     // This lightweight clone shares the same Arc<RwLock<..>> data.
     let search_state = state.clone();
-    let search_fn: yoink::shared::SearchArtistsFn = std::sync::Arc::new(move |query: String| {
+    let search_fn: yoink_shared::SearchArtistsFn = std::sync::Arc::new(move |query: String| {
         let s = search_state.clone();
         Box::pin(async move {
             match services::search_hifi_artists(&s, &query).await {
                 Ok(artists) => Ok(artists
                     .into_iter()
-                    .map(|a| yoink::shared::SearchArtistResult {
+                    .map(|a| yoink_shared::SearchArtistResult {
                         id: a.id,
                         name: a.name,
                         picture: a.picture.or(a.selected_album_cover_fallback),
@@ -105,7 +105,7 @@ async fn main() {
     });
 
     let tracks_state = state.clone();
-    let fetch_tracks_fn: yoink::shared::FetchTracksFn =
+    let fetch_tracks_fn: yoink_shared::FetchTracksFn =
         std::sync::Arc::new(move |album_id: i64| {
             let s = tracks_state.clone();
             Box::pin(async move {
@@ -133,7 +133,7 @@ async fn main() {
                         let secs = track.duration.unwrap_or(0);
                         let mins = secs / 60;
                         let rem = secs % 60;
-                        yoink::shared::TrackInfo {
+                        yoink_shared::TrackInfo {
                             id: track.id,
                             title: track.title,
                             track_number: track.track_number.unwrap_or((idx + 1) as u32),
@@ -146,13 +146,13 @@ async fn main() {
         });
 
     let action_state = state.clone();
-    let dispatch_action_fn: yoink::shared::DispatchActionFn =
-        std::sync::Arc::new(move |action: yoink::shared::ServerAction| {
+    let dispatch_action_fn: yoink_shared::DispatchActionFn =
+        std::sync::Arc::new(move |action: yoink_shared::ServerAction| {
             let s = action_state.clone();
             Box::pin(async move { dispatch_action_impl(s, action).await })
         });
 
-    let server_ctx = yoink::shared::ServerContext {
+    let server_ctx = yoink_shared::ServerContext {
         monitored_artists: state.monitored_artists.clone(),
         monitored_albums: state.monitored_albums.clone(),
         download_jobs: state.download_jobs.clone(),
@@ -231,10 +231,10 @@ async fn main() {
 /// clients refresh.
 async fn dispatch_action_impl(
     state: AppState,
-    action: yoink::shared::ServerAction,
+    action: yoink_shared::ServerAction,
 ) -> Result<(), String> {
     use chrono::Utc;
-    use yoink::shared::ServerAction;
+    use yoink_shared::ServerAction;
 
     match action {
         ServerAction::ToggleAlbumMonitor {
@@ -324,7 +324,7 @@ async fn dispatch_action_impl(
             {
                 let mut artists = state.monitored_artists.write().await;
                 if artists.iter().all(|a| a.id != id) {
-                    let artist = yoink::shared::MonitoredArtist {
+                    let artist = yoink_shared::MonitoredArtist {
                         id,
                         name,
                         picture: picture.filter(|s| !s.is_empty()),
@@ -343,9 +343,9 @@ async fn dispatch_action_impl(
         ServerAction::CancelDownload { job_id } => {
             let mut jobs = state.download_jobs.write().await;
             if let Some(job) = jobs.iter_mut().find(|j| j.id == job_id)
-                && matches!(job.status, yoink::shared::DownloadStatus::Queued)
+                && matches!(job.status, yoink_shared::DownloadStatus::Queued)
             {
-                job.status = yoink::shared::DownloadStatus::Failed;
+                job.status = yoink_shared::DownloadStatus::Failed;
                 job.error = Some("Cancelled by user".to_string());
                 job.updated_at = Utc::now();
                 let _ = db::update_job(&state.db, job).await;
@@ -359,7 +359,7 @@ async fn dispatch_action_impl(
             let _ = db::delete_completed_jobs(&state.db).await;
             {
                 let mut jobs = state.download_jobs.write().await;
-                jobs.retain(|j| j.status != yoink::shared::DownloadStatus::Completed);
+                jobs.retain(|j| j.status != yoink_shared::DownloadStatus::Completed);
             }
             info!("Cleared completed download jobs");
             state.notify_sse();
@@ -369,10 +369,10 @@ async fn dispatch_action_impl(
             {
                 let mut jobs = state.download_jobs.write().await;
                 if let Some(job) = jobs.iter_mut().find(|j| {
-                    j.album_id == album_id && j.status == yoink::shared::DownloadStatus::Failed
+                    j.album_id == album_id && j.status == yoink_shared::DownloadStatus::Failed
                 }) {
                     let previous_quality = job.quality.clone();
-                    job.status = yoink::shared::DownloadStatus::Queued;
+                    job.status = yoink_shared::DownloadStatus::Queued;
                     job.quality = state.default_quality.clone();
                     job.error = None;
                     job.updated_at = Utc::now();
@@ -435,7 +435,7 @@ async fn dispatch_action_impl(
                 let mut jobs = state.download_jobs.write().await;
                 jobs.retain(|j| {
                     let should_remove = j.album_id == album_id
-                        && j.status == yoink::shared::DownloadStatus::Completed;
+                        && j.status == yoink_shared::DownloadStatus::Completed;
                     if should_remove {
                         removed_completed_ids.push(j.id);
                     }

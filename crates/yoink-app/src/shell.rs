@@ -16,7 +16,7 @@ const THEME_BOOTSTRAP: &str = r#"
 
 /// Hydration bootstrap — loads the WASM module and calls hydrate().
 /// We pass the WASM path explicitly because cargo-leptos renames the file
-/// from yoink_bg.wasm → yoink.wasm but doesn't patch the JS reference.
+/// from yoink_bg.wasm -> yoink.wasm but doesn't patch the JS reference.
 const HYDRATE_SCRIPT: &str = r#"
 import init, { hydrate } from '/pkg/yoink.js';
 await init({ module_or_path: '/pkg/yoink.wasm' });

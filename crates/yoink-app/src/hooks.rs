@@ -14,7 +14,11 @@ use leptos::prelude::*;
 /// let data = Resource::new(move || version.get(), |_| get_my_data());
 /// ```
 pub fn use_sse_version() -> ReadSignal<u64> {
+    #[cfg(not(feature = "hydrate"))]
     let (version, _) = signal(0u64);
+
+    #[cfg(feature = "hydrate")]
+    let (version, set_version) = signal(0u64);
 
     #[cfg(feature = "hydrate")]
     {
@@ -22,7 +26,7 @@ pub fn use_sse_version() -> ReadSignal<u64> {
 
         // Fire once after the component mounts on the client.
         let cleanup = setup_event_source(set_version);
-        on_cleanup(move || cleanup());
+        on_cleanup(cleanup);
     }
 
     version

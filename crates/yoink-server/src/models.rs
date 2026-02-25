@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 // Re-export shared types so the rest of the binary crate can keep using
 // `crate::models::MonitoredAlbum` etc. without changes.
-pub(crate) use yoink::shared::{DownloadJob, DownloadStatus, MonitoredAlbum, MonitoredArtist};
+pub(crate) use yoink_shared::{DownloadJob, DownloadStatus, MonitoredAlbum, MonitoredArtist};
 
 // ── Server-only types (not needed in WASM client) ───────────
 

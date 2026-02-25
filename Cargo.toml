@@ -1,78 +1,86 @@
-[package]
-name = "yoink"
+[workspace]
+members = ["crates/*"]
+resolver = "3"
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
 
-[lib]
-crate-type = ["cdylib", "rlib"]
-
-[features]
-default = ["ssr"]
-hydrate = [
-  "dep:wasm-bindgen",
-  "dep:wasm-bindgen-futures",
-  "dep:web-sys",
-  "dep:gloo-timers",
-  "leptos/hydrate",
-]
-ssr = [
-  "dep:axum",
-  "dep:base64",
-  "dep:envconfig",
-  "dep:lrclib-api-rs",
-  "dep:lofty",
-  "dep:roxmltree",
-  "dep:reqwest",
-  "dep:sqlx",
-  "dep:tokio",
-  "dep:tokio-stream",
-  "dep:tower-http",
-  "dep:tracing",
-  "dep:tracing-subscriber",
-  "leptos/ssr",
-  "leptos_axum",
-  "leptos_router/ssr",
-]
-
-[dependencies]
-# ── Core ─────────────────────────────────────────────────────
-leptos = { version = "0.8" }
-leptos_router = { version = "0.8" }
-leptos_axum = { version = "0.8", optional = true }
-lucide-leptos = { version = "2", features = ["all-icons"] }
+[workspace.dependencies]
+# ── Shared ───────────────────────────────────────────────────
+chrono = { version = "0.4", features = ["clock", "serde", "wasmbind"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
-# ── Server-only ──────────────────────────────────────────────
-axum = { version = "0.8", features = ["form", "json", "macros"], optional = true }
-base64 = { version = "0.22", optional = true }
-chrono = { version = "0.4", features = ["clock", "serde", "wasmbind"] }
-envconfig = { version = "0.11", optional = true }
-lrclib-api-rs = { version = "0.3", optional = true }
-lofty = { version = "0.22", optional = true }
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"], optional = true }
-roxmltree = { version = "0.20", optional = true }
-sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"], optional = true }
-tokio = { version = "1", features = ["fs", "io-util", "macros", "rt-multi-thread", "sync"], optional = true }
-tokio-stream = { version = "0.1", features = ["sync"], optional = true }
-tower-http = { version = "0.6", features = ["fs", "trace"], optional = true }
-tracing = { version = "0.1", optional = true }
-tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"], optional = true }
+# ── Leptos ecosystem ────────────────────────────────────────
+leptos = "0.8"
+leptos_router = "0.8"
+leptos_axum = "0.8"
+lucide-leptos = { version = "2", features = ["all-icons"] }
 
-# ── Client-only (WASM) ──────────────────────────────────────
-wasm-bindgen = { version = "0.2", optional = true }
-wasm-bindgen-futures = { version = "0.4", optional = true }
-web-sys = { version = "0.3", optional = true, features = [
-  "Document", "Element", "HtmlElement", "HtmlInputElement", "Window",
-  "NodeList", "Storage", "MediaQueryList", "Event", "EventTarget",
-  "InputEvent", "KeyboardEvent", "MouseEvent", "FocusEvent",
-  "AbortController", "AbortSignal",
-  "Headers", "Request", "RequestInit", "RequestMode", "Response",
+# ── Server ──────────────────────────────────────────────────
+axum = { version = "0.8", features = ["form", "json", "macros"] }
+base64 = "0.22"
+envconfig = "0.11"
+lrclib-api-rs = "0.3"
+lofty = "0.22"
+reqwest = { version = "0.12", default-features = false, features = [
+  "json",
+  "rustls-tls",
+] }
+roxmltree = "0.20"
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }
+tokio = { version = "1", features = [
+  "fs",
+  "io-util",
+  "macros",
+  "rt-multi-thread",
+  "sync",
+] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+tower-http = { version = "0.6", features = ["fs", "trace"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = [
+  "env-filter",
+  "fmt",
+  "json",
+] }
+
+# ── Client (WASM) ──────────────────────────────────────────
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = [
+  "Document",
+  "Element",
+  "HtmlElement",
+  "HtmlInputElement",
+  "Window",
+  "NodeList",
+  "Storage",
+  "MediaQueryList",
+  "Event",
+  "EventTarget",
+  "InputEvent",
+  "KeyboardEvent",
+  "MouseEvent",
+  "FocusEvent",
+  "AbortController",
+  "AbortSignal",
+  "Headers",
+  "Request",
+  "RequestInit",
+  "RequestMode",
+  "Response",
   "EventSource",
 ] }
-gloo-timers = { version = "0.3", features = ["futures"], optional = true }
+gloo-timers = { version = "0.3", features = ["futures"] }
 
-[package.metadata.leptos]
+# ── Internal crates ─────────────────────────────────────────
+yoink-shared = { path = "crates/yoink-shared" }
+yoink-app = { path = "crates/yoink-app" }
+
+[[workspace.metadata.leptos]]
+name = "yoink"
 output-name = "yoink"
 site-root = "target/site"
 site-pkg-dir = "pkg"
@@ -80,7 +88,9 @@ assets-dir = "public"
 site-addr = "127.0.0.1:3000"
 reload-port = 3001
 tailwind-input-file = "style/tailwind.css"
-bin-features = ["ssr"]
-lib-features = ["hydrate"]
+bin-package = "yoink-server"
+lib-package = "yoink-client"
+bin-features = ["yoink-app/ssr"]
+lib-features = ["yoink-app/hydrate"]
 bin-default-features = false
 lib-default-features = false

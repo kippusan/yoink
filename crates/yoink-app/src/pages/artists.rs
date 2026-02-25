@@ -1,14 +1,14 @@
 use leptos::prelude::*;
 
-use crate::shared::{
+use yoink_shared::{
     build_albums_by_artist, monitored_artist_image_url, search_artist_image_url,
     search_artist_profile_url, MonitoredAlbum, MonitoredArtist, SearchArtistResult, ServerAction,
 };
 
-use crate::app::actions::dispatch_action;
+use crate::actions::dispatch_action;
 
-use super::super::components::Sidebar;
-use super::super::hooks::use_sse_version;
+use crate::components::Sidebar;
+use crate::hooks::use_sse_version;
 
 // ── Tailwind class constants ────────────────────────────────
 
@@ -48,7 +48,7 @@ pub struct SearchResult {
 
 #[server(GetArtistsData, "/leptos")]
 pub async fn get_artists_data() -> Result<ArtistsData, ServerFnError> {
-    let ctx = use_context::<crate::shared::ServerContext>()
+    let ctx = use_context::<yoink_shared::ServerContext>()
         .ok_or_else(|| ServerFnError::new("ServerContext not available"))?;
 
     let monitored = ctx.monitored_artists.read().await.clone();
@@ -59,7 +59,7 @@ pub async fn get_artists_data() -> Result<ArtistsData, ServerFnError> {
 
 #[server(SearchArtists, "/leptos")]
 pub async fn search_artists(query: String) -> Result<SearchResult, ServerFnError> {
-    let ctx = use_context::<crate::shared::ServerContext>()
+    let ctx = use_context::<yoink_shared::ServerContext>()
         .ok_or_else(|| ServerFnError::new("ServerContext not available"))?;
 
     let trimmed = query.trim().to_string();

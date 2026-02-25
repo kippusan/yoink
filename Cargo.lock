@@ -854,18 +854,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "gloo-timers"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bbb143cf96099802033e0d4f4963b19fd2e0b728bcf076cd9cf7f6634f092994"
-dependencies = [
- "futures-channel",
- "futures-core",
- "js-sys",
- "wasm-bindgen",
-]
-
-[[package]]
 name = "gloo-utils"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4139,20 +4127,44 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cfe53a6657fd280eaa890a3bc59152892ffa3e30101319d168b781ed6529b049"
 
 [[package]]
-name = "yoink"
+name = "yoink-app"
+version = "0.1.0"
+dependencies = [
+ "leptos",
+ "leptos_axum",
+ "leptos_router",
+ "lucide-leptos",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+ "web-sys",
+ "yoink-shared",
+]
+
+[[package]]
+name = "yoink-client"
+version = "0.1.0"
+dependencies = [
+ "leptos",
+ "wasm-bindgen",
+ "web-sys",
+ "yoink-app",
+ "yoink-shared",
+]
+
+[[package]]
+name = "yoink-server"
 version = "0.1.0"
 dependencies = [
  "axum",
  "base64",
  "chrono",
  "envconfig",
- "gloo-timers",
  "leptos",
  "leptos_axum",
  "leptos_router",
  "lofty",
  "lrclib-api-rs",
- "lucide-leptos",
  "reqwest",
  "roxmltree",
  "serde",
@@ -4163,9 +4175,18 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-subscriber",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
+ "yoink-app",
+ "yoink-shared",
+]
+
+[[package]]
+name = "yoink-shared"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

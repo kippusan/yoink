@@ -2,14 +2,14 @@ use std::collections::HashMap;
 
 use leptos::prelude::*;
 
-use crate::shared::{
+use yoink_shared::{
     build_artist_names, status_class, status_label_text, DownloadJob, DownloadStatus,
     MonitoredAlbum, MonitoredArtist, ServerAction,
 };
 
-use super::super::components::Sidebar;
-use super::super::hooks::use_sse_version;
-use crate::app::actions::dispatch_action;
+use crate::components::Sidebar;
+use crate::hooks::use_sse_version;
+use crate::actions::dispatch_action;
 
 // ── Tailwind class constants (matching old design7) ─────────
 
@@ -44,7 +44,7 @@ pub struct DashboardData {
 
 #[server(GetDashboardData, "/leptos")]
 pub async fn get_dashboard_data() -> Result<DashboardData, ServerFnError> {
-    let ctx = use_context::<crate::shared::ServerContext>()
+    let ctx = use_context::<yoink_shared::ServerContext>()
         .ok_or_else(|| ServerFnError::new("ServerContext not available"))?;
 
     let artists = ctx.monitored_artists.read().await.clone();

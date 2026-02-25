@@ -3,16 +3,16 @@ use std::collections::HashMap;
 use leptos::prelude::*;
 use lucide_leptos::X;
 
-use crate::shared::{
+use yoink_shared::{
     album_cover_url, album_profile_url, build_albums_by_artist, build_artist_names,
     build_latest_jobs, status_class, DownloadJob, DownloadStatus, MonitoredAlbum, MonitoredArtist,
     ServerAction,
 };
 
-use crate::app::actions::dispatch_action;
+use crate::actions::dispatch_action;
 
-use super::super::components::Sidebar;
-use super::super::hooks::use_sse_version;
+use crate::components::Sidebar;
+use crate::hooks::use_sse_version;
 
 // ── Tailwind class constants (matching old design7) ─────────
 
@@ -46,7 +46,7 @@ pub struct WantedData {
 #[server(GetWantedData, "/leptos")]
 pub async fn get_wanted_data() -> Result<WantedData, ServerFnError> {
     // ServerContext was provided via provide_context in main.rs
-    let ctx = use_context::<crate::shared::ServerContext>()
+    let ctx = use_context::<yoink_shared::ServerContext>()
         .ok_or_else(|| ServerFnError::new("ServerContext not available"))?;
 
     let artists = ctx.monitored_artists.read().await.clone();

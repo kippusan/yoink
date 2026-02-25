@@ -61,7 +61,11 @@ pub fn Sidebar(#[prop(into)] active: String) -> impl IntoView {
 
     // Theme state — initialised from DOM on the client (after hydration),
     // defaults to `true` (dark) during SSR to match the bootstrap script.
+    #[cfg(not(feature = "hydrate"))]
     let (is_dark, _) = signal(read_is_dark());
+
+    #[cfg(feature = "hydrate")]
+    let (is_dark, set_is_dark) = signal(read_is_dark());
 
     // Sync on mount: re-read from DOM after hydration in case the bootstrap
     // script set a different state than the SSR default.

@@ -1,6 +1,6 @@
 use leptos::prelude::*;
 
-use crate::shared::ServerAction;
+use yoink_shared::ServerAction;
 
 /// Dispatch a user action to the server.
 ///
@@ -14,7 +14,7 @@ use crate::shared::ServerAction;
     output = server_fn::codec::Json
 )]
 pub async fn dispatch_action(action: ServerAction) -> Result<(), ServerFnError> {
-    let ctx = leptos::context::use_context::<crate::shared::ServerContext>()
+    let ctx = leptos::context::use_context::<yoink_shared::ServerContext>()
         .ok_or_else(|| ServerFnError::new("Missing ServerContext"))?;
 
     (ctx.dispatch_action)(action)

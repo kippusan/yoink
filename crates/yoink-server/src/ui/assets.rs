@@ -1,5 +1,5 @@
 use crate::models::*;
-use yoink::shared::tidal_image_url;
+use yoink_shared::tidal_image_url;
 
 /// Image URL for a HifiArtist search result (server-only; HifiArtist is not shared with WASM).
 pub(crate) fn artist_image_url(artist: &HifiArtist, size: u16) -> Option<String> {

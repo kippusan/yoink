@@ -9,6 +9,7 @@ use leptos_router::{
     components::{Route, Router, Routes},
     path,
 };
+use leptoaster::{Toaster, provide_toaster};
 
 /// The top-level Leptos application component.
 ///
@@ -17,7 +18,10 @@ use leptos_router::{
 /// On the client, `hydrate_body(App)` hydrates this against `<body>` children.
 #[component]
 pub fn App() -> impl IntoView {
+    provide_toaster();
+
     view! {
+        <Toaster stacked=true />
         <Router>
             <Routes fallback=|| "Not found.">
                 <Route path=path!("/") view=pages::dashboard::DashboardPage />

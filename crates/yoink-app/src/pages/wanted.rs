@@ -8,7 +8,7 @@ use yoink_shared::{
     album_profile_url, build_albums_by_artist, build_artist_names, build_latest_jobs, status_class,
 };
 
-use crate::actions::dispatch_action;
+use crate::components::toast::dispatch_with_toast;
 
 use crate::components::Sidebar;
 use crate::hooks::use_sse_version;
@@ -247,9 +247,10 @@ fn WantedRow(album: MonitoredAlbum, latest_jobs: HashMap<i64, DownloadJob>) -> i
                     view! {
                         <button type="button" class={cls(BTN_DANGER, "px-2.5 py-0.5 text-xs")}
                             on:click=move |_| {
-                                leptos::task::spawn_local(async move {
-                                    let _ = dispatch_action(ServerAction::RetryDownload { album_id: album_id_val }).await;
-                                });
+                                dispatch_with_toast(
+                                    ServerAction::RetryDownload { album_id: album_id_val },
+                                    "Download queued for retry",
+                                );
                             }>"Retry"</button>
                     }.into_any()
                 } else {
@@ -257,9 +258,10 @@ fn WantedRow(album: MonitoredAlbum, latest_jobs: HashMap<i64, DownloadJob>) -> i
                 }}
                 <button type="button" class=ICON_BTN title="Unmonitor"
                     on:click=move |_| {
-                        leptos::task::spawn_local(async move {
-                            let _ = dispatch_action(ServerAction::ToggleAlbumMonitor { album_id: album_id_val, monitored: false }).await;
-                        });
+                        dispatch_with_toast(
+                            ServerAction::ToggleAlbumMonitor { album_id: album_id_val, monitored: false },
+                            "Album unmonitored",
+                        );
                     }>
                     <X size=14 />
                 </button>

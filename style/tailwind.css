@@ -3,6 +3,47 @@
 @source "../src";
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* ── Leptoaster theme overrides ───────────────────────────── */
+
+:root {
+  --leptoaster-font-family: inherit;
+  --leptoaster-z-index: 9999;
+
+  --leptoaster-success-background-color: rgba(220, 252, 231, 0.9);
+  --leptoaster-success-border-color: #22c55e;
+  --leptoaster-success-text-color: #14532d;
+
+  --leptoaster-error-background-color: rgba(254, 226, 226, 0.9);
+  --leptoaster-error-border-color: #ef4444;
+  --leptoaster-error-text-color: #7f1d1d;
+
+  --leptoaster-info-background-color: rgba(219, 234, 254, 0.9);
+  --leptoaster-info-border-color: #3b82f6;
+  --leptoaster-info-text-color: #1e3a5f;
+
+  --leptoaster-warn-background-color: rgba(254, 243, 199, 0.9);
+  --leptoaster-warn-border-color: #f59e0b;
+  --leptoaster-warn-text-color: #78350f;
+}
+
+.dark {
+  --leptoaster-success-background-color: rgba(22, 101, 52, 0.8);
+  --leptoaster-success-border-color: #22c55e;
+  --leptoaster-success-text-color: #bbf7d0;
+
+  --leptoaster-error-background-color: rgba(127, 29, 29, 0.8);
+  --leptoaster-error-border-color: #ef4444;
+  --leptoaster-error-text-color: #fecaca;
+
+  --leptoaster-info-background-color: rgba(30, 58, 95, 0.8);
+  --leptoaster-info-border-color: #3b82f6;
+  --leptoaster-info-text-color: #bfdbfe;
+
+  --leptoaster-warn-background-color: rgba(120, 53, 15, 0.8);
+  --leptoaster-warn-border-color: #f59e0b;
+  --leptoaster-warn-text-color: #fde68a;
+}
+
 @layer base {
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 

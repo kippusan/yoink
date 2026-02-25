@@ -7,8 +7,8 @@ use yoink_shared::{
     status_class, status_label_text,
 };
 
-use crate::actions::dispatch_action;
 use crate::components::Sidebar;
+use crate::components::toast::dispatch_with_toast;
 use crate::hooks::use_sse_version;
 
 // ── Tailwind class constants (matching old design7) ─────────
@@ -163,23 +163,17 @@ fn DashboardContent(data: DashboardData) -> impl IntoView {
                     <div class="flex flex-wrap items-center gap-2">
                         <button type="button" class={cls(BTN_PRIMARY, "px-2.5 py-0.5 text-xs")}
                             on:click=move |_| {
-                                leptos::task::spawn_local(async move {
-                                    let _ = dispatch_action(ServerAction::ScanImportLibrary).await;
-                                });
+                                dispatch_with_toast(ServerAction::ScanImportLibrary, "Library scan started");
                             }>"Scan Drive + Import"</button>
                         <button type="button" class={cls(BTN, "px-2.5 py-0.5 text-xs")}
                             on:click=move |_| {
-                                leptos::task::spawn_local(async move {
-                                    let _ = dispatch_action(ServerAction::RetagLibrary).await;
-                                });
+                                dispatch_with_toast(ServerAction::RetagLibrary, "Retagging started");
                             }>"Retag Existing Files"</button>
                         {if has_completed {
                             view! {
                                 <button type="button" class={cls(BTN, "px-2.5 py-0.5 text-xs")}
                                     on:click=move |_| {
-                                        leptos::task::spawn_local(async move {
-                                            let _ = dispatch_action(ServerAction::ClearCompleted).await;
-                                        });
+                                        dispatch_with_toast(ServerAction::ClearCompleted, "Completed jobs cleared");
                                     }>"Clear Completed"</button>
                             }.into_any()
                         } else {
@@ -253,18 +247,14 @@ fn JobRow(job: DownloadJob, artist_names: HashMap<i64, String>) -> impl IntoView
                     view! {
                         <button type="button" class={cls(BTN_DANGER, "px-2.5 py-0.5 text-xs")}
                             on:click=move |_| {
-                                leptos::task::spawn_local(async move {
-                                    let _ = dispatch_action(ServerAction::CancelDownload { job_id: job_id_val }).await;
-                                });
+                                dispatch_with_toast(ServerAction::CancelDownload { job_id: job_id_val }, "Download cancelled");
                             }>"Cancel"</button>
                     }.into_any()
                 } else if is_failed {
                     view! {
                         <button type="button" class={cls(BTN, "px-2.5 py-0.5 text-xs")}
                             on:click=move |_| {
-                                leptos::task::spawn_local(async move {
-                                    let _ = dispatch_action(ServerAction::RetryDownload { album_id: album_id_val }).await;
-                                });
+                                dispatch_with_toast(ServerAction::RetryDownload { album_id: album_id_val }, "Download queued for retry");
                             }>"Retry"</button>
                     }.into_any()
                 } else {

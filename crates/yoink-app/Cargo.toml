@@ -8,6 +8,7 @@ yoink-shared = { workspace = true }
 leptos = { workspace = true }
 leptos_router = { workspace = true }
 leptos_axum = { workspace = true, optional = true }
+leptoaster = "0.2"
 lucide-leptos = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -22,10 +23,12 @@ hydrate = [
   "dep:wasm-bindgen",
   "dep:web-sys",
   "leptos/hydrate",
+  "leptoaster/hydrate",
 ]
 ssr = [
   "leptos/ssr",
   "leptos_axum",
   "leptos_router/ssr",
   "yoink-shared/ssr",
+  "leptoaster/ssr",
 ]

@@ -9,8 +9,11 @@ use yoink_shared::{
     monitored_artist_image_url, monitored_artist_profile_url, status_class, status_label_text,
 };
 
+use leptoaster::{ToastBuilder, ToastLevel, ToastPosition, expect_toaster};
+
 use crate::actions::dispatch_action;
 use crate::components::Sidebar;
+use crate::components::toast::dispatch_with_toast;
 use crate::hooks::use_sse_version;
 
 // ── Tailwind class constants ────────────────────────────────
@@ -196,28 +199,40 @@ fn ArtistDetailContent(
                             <a href=artist_profile target="_blank" rel="noreferrer" class={cls(BTN, "px-2.5 py-0.5 text-xs")}>"View on Tidal"</a>
                             <button type="button" class={cls(BTN, "px-2.5 py-0.5 text-xs")}
                                 on:click=move |_| {
-                                    leptos::task::spawn_local(async move {
-                                        let _ = dispatch_action(ServerAction::SyncArtistAlbums { artist_id: artist_id_val }).await;
-                                    });
+                                    dispatch_with_toast(ServerAction::SyncArtistAlbums { artist_id: artist_id_val }, "Album sync started");
                                 }>"Sync Albums"</button>
                             <button type="button" class={cls(BTN_PRIMARY, "px-2.5 py-0.5 text-xs")}
                                 on:click=move |_| {
-                                    leptos::task::spawn_local(async move {
-                                        let _ = dispatch_action(ServerAction::BulkMonitor { artist_id: artist_id_val, monitored: true }).await;
-                                    });
+                                    dispatch_with_toast(ServerAction::BulkMonitor { artist_id: artist_id_val, monitored: true }, "All albums monitored");
                                 }>"Monitor All"</button>
                             <button type="button" class={cls(BTN, "px-2.5 py-0.5 text-xs")}
                                 on:click=move |_| {
-                                    leptos::task::spawn_local(async move {
-                                        let _ = dispatch_action(ServerAction::BulkMonitor { artist_id: artist_id_val, monitored: false }).await;
-                                    });
+                                    dispatch_with_toast(ServerAction::BulkMonitor { artist_id: artist_id_val, monitored: false }, "All albums unmonitored");
                                 }>"Unmonitor All"</button>
                             <button type="button" class={cls(BTN_DANGER, "px-2.5 py-0.5 text-xs")}
                                 on:click=move |_| {
                                     let navigate = leptos_router::hooks::use_navigate();
+                                    let toaster = expect_toaster();
                                     leptos::task::spawn_local(async move {
-                                        let _ = dispatch_action(ServerAction::RemoveArtist { artist_id: artist_id_val }).await;
-                                        navigate("/artists", Default::default());
+                                        match dispatch_action(ServerAction::RemoveArtist { artist_id: artist_id_val }).await {
+                                            Ok(()) => {
+                                                toaster.toast(
+                                                    ToastBuilder::new("Artist removed")
+                                                        .with_level(ToastLevel::Success)
+                                                        .with_position(ToastPosition::BottomRight)
+                                                        .with_expiry(Some(4_000)),
+                                                );
+                                                navigate("/artists", Default::default());
+                                            }
+                                            Err(e) => {
+                                                toaster.toast(
+                                                    ToastBuilder::new(&format!("Error: {e}"))
+                                                        .with_level(ToastLevel::Error)
+                                                        .with_position(ToastPosition::BottomRight)
+                                                        .with_expiry(Some(8_000)),
+                                                );
+                                            }
+                                        }
                                     });
                                 }>"Remove Artist"</button>
                         </div>
@@ -398,17 +413,14 @@ fn AlbumSleeve(
                     <button type="button" class={cls(BTN, "d7-sleeve-action-btn")} title=monitor_title
                         on:click=move |_| {
                             let next = !is_monitored;
-                            leptos::task::spawn_local(async move {
-                                let _ = dispatch_action(ServerAction::ToggleAlbumMonitor { album_id, monitored: next }).await;
-                            });
+                            let msg = if next { "Album monitored" } else { "Album unmonitored" };
+                            dispatch_with_toast(ServerAction::ToggleAlbumMonitor { album_id, monitored: next }, msg);
                         }>{monitor_label}</button>
                     {if is_acquired {
                         view! {
                             <button type="button" class={cls(BTN_DANGER, "d7-sleeve-action-btn")} title="Delete downloaded files"
                                 on:click=move |_| {
-                                    leptos::task::spawn_local(async move {
-                                        let _ = dispatch_action(ServerAction::RemoveAlbumFiles { album_id }).await;
-                                    });
+                                    dispatch_with_toast(ServerAction::RemoveAlbumFiles { album_id }, "Album files removed");
                                 }>
                                 "Remove Files"
                             </button>

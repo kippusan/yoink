@@ -5,8 +5,9 @@ use yoink_shared::{
     monitored_artist_image_url, search_artist_image_url, search_artist_profile_url,
 };
 
-use crate::actions::dispatch_action;
+use leptoaster::{ToastBuilder, ToastLevel, ToastPosition, expect_toaster};
 
+use crate::actions::dispatch_action;
 use crate::components::Sidebar;
 use crate::hooks::use_sse_version;
 
@@ -280,15 +281,32 @@ fn SearchResultRow(artist: SearchArtistResult) -> impl IntoView {
                     let pic = picture.clone();
                     let url = tidal_url.clone();
                     let navigate = navigate.clone();
+                    let toaster = expect_toaster();
                     leptos::task::spawn_local(async move {
-                        if dispatch_action(ServerAction::AddArtist {
+                        match dispatch_action(ServerAction::AddArtist {
                             id: artist_id,
                             name,
                             picture: pic,
                             tidal_url: url,
-                        }).await.is_ok() {
-                            let path = format!("/artists/{artist_id}");
-                            navigate(&path, Default::default());
+                        }).await {
+                            Ok(()) => {
+                                toaster.toast(
+                                    ToastBuilder::new("Artist added")
+                                        .with_level(ToastLevel::Success)
+                                        .with_position(ToastPosition::BottomRight)
+                                        .with_expiry(Some(4_000)),
+                                );
+                                let path = format!("/artists/{artist_id}");
+                                navigate(&path, Default::default());
+                            }
+                            Err(e) => {
+                                toaster.toast(
+                                    ToastBuilder::new(&format!("Error: {e}"))
+                                        .with_level(ToastLevel::Error)
+                                        .with_position(ToastPosition::BottomRight)
+                                        .with_expiry(Some(8_000)),
+                                );
+                            }
                         }
                     });
                 }>"+ Add"</button>

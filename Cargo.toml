@@ -8,40 +8,61 @@ crate-type = ["cdylib", "rlib"]
 
 [features]
 default = ["ssr"]
-hydrate = ["dep:wasm-bindgen", "leptos/hydrate"]
+hydrate = [
+  "dep:wasm-bindgen",
+  "dep:wasm-bindgen-futures",
+  "dep:web-sys",
+  "dep:gloo-timers",
+  "leptos/hydrate",
+]
 ssr = [
   "dep:axum",
   "dep:base64",
-  "dep:chrono",
   "dep:lofty",
   "dep:reqwest",
   "dep:sqlx",
-  "dep:serde",
-  "dep:serde_json",
   "dep:tokio",
   "dep:tokio-stream",
   "dep:tower-http",
   "dep:tracing",
   "dep:tracing-subscriber",
   "leptos/ssr",
+  "leptos_axum",
+  "leptos_router/ssr",
 ]
 
 [dependencies]
+# ── Core ─────────────────────────────────────────────────────
+leptos = { version = "0.8" }
+leptos_router = { version = "0.8" }
+leptos_axum = { version = "0.8", optional = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# ── Server-only ──────────────────────────────────────────────
 axum = { version = "0.8", features = ["form", "json", "macros"], optional = true }
 base64 = { version = "0.22", optional = true }
-chrono = { version = "0.4", features = ["clock", "serde"], optional = true }
-leptos = { version = "0.8" }
+chrono = { version = "0.4", features = ["clock", "serde", "wasmbind"] }
 lofty = { version = "0.22", optional = true }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"], optional = true }
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"], optional = true }
-serde = { version = "1", features = ["derive"], optional = true }
-serde_json = { version = "1", optional = true }
 tokio = { version = "1", features = ["fs", "io-util", "macros", "rt-multi-thread", "sync"], optional = true }
 tokio-stream = { version = "0.1", features = ["sync"], optional = true }
 tower-http = { version = "0.6", features = ["fs", "trace"], optional = true }
 tracing = { version = "0.1", optional = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"], optional = true }
+
+# ── Client-only (WASM) ──────────────────────────────────────
 wasm-bindgen = { version = "0.2", optional = true }
+wasm-bindgen-futures = { version = "0.4", optional = true }
+web-sys = { version = "0.3", optional = true, features = [
+  "Document", "Element", "HtmlElement", "HtmlInputElement", "Window",
+  "NodeList", "Storage", "MediaQueryList", "Event", "EventTarget",
+  "InputEvent", "KeyboardEvent", "MouseEvent", "FocusEvent",
+  "AbortController", "AbortSignal",
+  "Headers", "Request", "RequestInit", "RequestMode", "Response",
+] }
+gloo-timers = { version = "0.3", features = ["futures"], optional = true }
 
 [package.metadata.leptos]
 output-name = "yoink"

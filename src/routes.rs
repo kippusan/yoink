@@ -5,7 +5,7 @@ use axum::{
     http::{header, StatusCode},
     response::{
         sse::{Event, KeepAlive, Sse},
-        Html, IntoResponse, Redirect,
+        IntoResponse, Redirect,
     },
     routing::{get, post},
     Json, Router,
@@ -22,7 +22,6 @@ use crate::{
         search_hifi_artists, sync_artist_albums_from_hifi, update_wanted,
     },
     state::AppState,
-    ui::design7,
 };
 
 /// Sanitize return_to to only allow local paths (prevent open redirect)
@@ -36,10 +35,12 @@ fn safe_redirect(return_to: Option<String>, fallback: &str) -> String {
 pub(crate) fn build_router(state: AppState) -> Router {
     Router::new()
         // ── Pages ───────────────────────────────────────────────
-        .route("/", get(dashboard_page))
-        .route("/artists", get(artists_page))
-        .route("/artists/{artist_id}", get(artist_detail_page))
-        .route("/wanted", get(wanted_page))
+        // /, /artists, /artists/:id, /wanted are now handled by the Leptos App
+        // .route("/", get(dashboard_page))
+        // .route("/artists", get(artists_page))
+        // .route("/artists/{artist_id}", get(artist_detail_page))
+        // /wanted is now handled by the Leptos App component
+        // .route("/wanted", get(wanted_page))
         // ── Form actions ────────────────────────────────────────
         .route("/artists/add", post(add_artist))
         .route("/artists/remove", post(remove_artist))
@@ -61,75 +62,6 @@ pub(crate) fn build_router(state: AppState) -> Router {
         .route("/api/events", get(sse_events))
         .route("/api/image/{image_id}/{size}", get(proxy_tidal_image))
         .with_state(state)
-}
-
-// ── Page handlers ───────────────────────────────────────────────────
-
-async fn dashboard_page(State(state): State<AppState>) -> impl IntoResponse {
-    let artists = state.monitored_artists.read().await.clone();
-    let albums = state.monitored_albums.read().await.clone();
-    let jobs = state.download_jobs.read().await.clone();
-    let monitored_count = artists.len();
-    let monitored_albums = albums.iter().filter(|a| a.monitored).count();
-    let wanted_albums = albums.iter().filter(|a| a.wanted).count();
-    let acquired_albums = albums.iter().filter(|a| a.acquired).count();
-    let queued_jobs = jobs
-        .iter()
-        .filter(|j| {
-            matches!(
-                j.status,
-                DownloadStatus::Queued | DownloadStatus::Resolving | DownloadStatus::Downloading
-            )
-        })
-        .count();
-    Html(design7::render_dashboard(
-        monitored_count,
-        monitored_albums,
-        wanted_albums,
-        acquired_albums,
-        queued_jobs,
-        &artists,
-        &albums,
-        &jobs,
-    ))
-}
-
-async fn artists_page(
-    State(state): State<AppState>,
-    Query(query): Query<SearchQuery>,
-) -> impl IntoResponse {
-    let monitored = state.monitored_artists.read().await.clone();
-    let albums = state.monitored_albums.read().await.clone();
-    let mut error_msg = query.error.clone();
-    let results = if let Some(q) = query.q.clone().filter(|v| !v.trim().is_empty()) {
-        match search_hifi_artists(&state, &q).await {
-            Ok(r) => r,
-            Err(err) => {
-                error_msg = Some(format!("Search failed: {}", err));
-                Vec::new()
-            }
-        }
-    } else {
-        Vec::new()
-    };
-    let current_query = query.q.unwrap_or_default();
-    Html(design7::render_artists(
-        current_query, results, monitored, albums, error_msg, "",
-    ))
-}
-
-async fn wanted_page(State(state): State<AppState>) -> impl IntoResponse {
-    let artists = state.monitored_artists.read().await.clone();
-    let jobs = state.download_jobs.read().await.clone();
-    let wanted: Vec<MonitoredAlbum> = state
-        .monitored_albums
-        .read()
-        .await
-        .iter()
-        .filter(|a| a.wanted)
-        .cloned()
-        .collect();
-    Html(design7::render_wanted(wanted, artists, jobs, ""))
 }
 
 // ── Form action handlers ────────────────────────────────────────────
@@ -187,25 +119,6 @@ async fn toggle_album_monitor(
         enqueue_album_download(&state, &album).await;
     }
     Redirect::to(&safe_redirect(form.return_to, "/artists"))
-}
-
-async fn artist_detail_page(
-    State(state): State<AppState>,
-    Path(artist_id): Path<i64>,
-) -> impl IntoResponse {
-    let artists = state.monitored_artists.read().await;
-    let artist = artists.iter().find(|a| a.id == artist_id).cloned();
-    drop(artists);
-
-    let Some(artist) = artist else {
-        return Html(design7::render_error("Artist Not Found", "The requested artist was not found in your library."));
-    };
-
-    let albums = state.monitored_albums.read().await.clone();
-    let jobs = state.download_jobs.read().await.clone();
-    let artist_albums: Vec<_> = albums.into_iter().filter(|a| a.artist_id == artist_id).collect();
-
-    Html(design7::render_artist_detail(artist, artist_albums, jobs, ""))
 }
 
 async fn remove_artist(

@@ -3,73 +3,15 @@ use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum DownloadStatus {
-    Queued,
-    Resolving,
-    Downloading,
-    Completed,
-    Failed,
-}
+// Re-export shared types so the rest of the binary crate can keep using
+// `crate::models::MonitoredAlbum` etc. without changes.
+pub(crate) use yoink::shared::{DownloadJob, DownloadStatus, MonitoredAlbum, MonitoredArtist};
 
-impl DownloadStatus {
-    pub(crate) fn as_str(&self) -> &'static str {
-        match self {
-            Self::Queued => "queued",
-            Self::Resolving => "resolving",
-            Self::Downloading => "downloading",
-            Self::Completed => "completed",
-            Self::Failed => "failed",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct DownloadJob {
-    pub(crate) id: u64,
-    pub(crate) album_id: i64,
-    pub(crate) artist_id: i64,
-    pub(crate) album_title: String,
-    pub(crate) status: DownloadStatus,
-    pub(crate) quality: String,
-    pub(crate) total_tracks: usize,
-    pub(crate) completed_tracks: usize,
-    pub(crate) error: Option<String>,
-    pub(crate) created_at: DateTime<Utc>,
-    pub(crate) updated_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct MonitoredArtist {
-    pub(crate) id: i64,
-    pub(crate) name: String,
-    pub(crate) picture: Option<String>,
-    pub(crate) tidal_url: Option<String>,
-    pub(crate) quality_profile: String,
-    pub(crate) added_at: DateTime<Utc>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct MonitoredAlbum {
-    pub(crate) id: i64,
-    pub(crate) artist_id: i64,
-    pub(crate) title: String,
-    pub(crate) album_type: Option<String>,
-    pub(crate) release_date: Option<String>,
-    pub(crate) cover: Option<String>,
-    pub(crate) tidal_url: Option<String>,
-    pub(crate) explicit: bool,
-    pub(crate) monitored: bool,
-    pub(crate) acquired: bool,
-    pub(crate) wanted: bool,
-    pub(crate) added_at: DateTime<Utc>,
-}
+// ── Server-only types (not needed in WASM client) ───────────
 
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct SearchQuery {
     pub(crate) q: Option<String>,
-    pub(crate) error: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

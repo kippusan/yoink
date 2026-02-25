@@ -5,7 +5,7 @@ mod metadata;
 mod worker;
 
 pub(crate) use io::sanitize_path_component;
-pub(crate) use metadata::write_audio_metadata;
+pub(crate) use metadata::{TrackMetadata, write_audio_metadata};
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -296,22 +296,22 @@ pub(crate) async fn retag_existing_files(
                 continue;
             };
 
-            write_audio_metadata(
-                &path,
-                &track.title,
-                &track_artist,
-                artist_name,
-                &album.title,
+            write_audio_metadata(&TrackMetadata {
+                path: &path,
+                title: &track.title,
+                track_artist: &track_artist,
+                album_artist: artist_name,
+                album: &album.title,
                 track_number,
                 disc_number,
                 total_tracks,
-                &release_suffix,
-                &track.extra,
-                &album_extra,
-                track_info_extra.as_ref(),
-                None,
-                cover_art.as_deref(),
-            )?;
+                release_date: &release_suffix,
+                track_extra: &track.extra,
+                album_extra: &album_extra,
+                track_info_extra: track_info_extra.as_ref(),
+                lyrics_text: None,
+                cover_art_jpeg: cover_art.as_deref(),
+            })?;
             tagged_files += 1;
         }
     }

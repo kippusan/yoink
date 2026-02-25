@@ -1,5 +1,5 @@
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::Path;
 use std::time::Duration;
 
 use lofty::{
@@ -17,23 +17,27 @@ use crate::state::AppState;
 use super::io::extract_year;
 use crate::services::hifi::hifi_get_json;
 
-pub(crate) fn write_audio_metadata(
-    path: &PathBuf,
-    title: &str,
-    track_artist: &str,
-    album_artist: &str,
-    album: &str,
-    track_number: u32,
-    disc_number: Option<u32>,
-    total_tracks: u32,
-    release_date: &str,
-    track_extra: &HashMap<String, Value>,
-    album_extra: &HashMap<String, Value>,
-    track_info_extra: Option<&HashMap<String, Value>>,
-    lyrics_text: Option<&str>,
-    cover_art_jpeg: Option<&[u8]>,
-) -> Result<(), String> {
-    let default_tag_type = match path
+/// All the metadata needed to tag a single audio file.
+pub(crate) struct TrackMetadata<'a> {
+    pub path: &'a Path,
+    pub title: &'a str,
+    pub track_artist: &'a str,
+    pub album_artist: &'a str,
+    pub album: &'a str,
+    pub track_number: u32,
+    pub disc_number: Option<u32>,
+    pub total_tracks: u32,
+    pub release_date: &'a str,
+    pub track_extra: &'a HashMap<String, Value>,
+    pub album_extra: &'a HashMap<String, Value>,
+    pub track_info_extra: Option<&'a HashMap<String, Value>>,
+    pub lyrics_text: Option<&'a str>,
+    pub cover_art_jpeg: Option<&'a [u8]>,
+}
+
+pub(crate) fn write_audio_metadata(meta: &TrackMetadata<'_>) -> Result<(), String> {
+    let default_tag_type = match meta
+        .path
         .extension()
         .and_then(|e| e.to_str())
         .map(|e| e.to_ascii_lowercase())
@@ -43,7 +47,7 @@ pub(crate) fn write_audio_metadata(
         _ => TagType::VorbisComments,
     };
 
-    let mut tagged_file = Probe::open(path)
+    let mut tagged_file = Probe::open(meta.path)
         .map_err(|err| err.to_string())?
         .read()
         .map_err(|err| err.to_string())?;
@@ -57,28 +61,28 @@ pub(crate) fn write_audio_metadata(
             .ok_or_else(|| "failed to create metadata tag".to_string())?
     };
 
-    tag.set_title(title.to_string());
-    tag.set_artist(track_artist.to_string());
-    tag.set_album(album.to_string());
-    if !album_artist.trim().is_empty() {
-        tag.insert_text(ItemKey::AlbumArtist, album_artist.to_string());
+    tag.set_title(meta.title.to_string());
+    tag.set_artist(meta.track_artist.to_string());
+    tag.set_album(meta.album.to_string());
+    if !meta.album_artist.trim().is_empty() {
+        tag.insert_text(ItemKey::AlbumArtist, meta.album_artist.to_string());
     }
-    tag.insert_text(ItemKey::TrackNumber, track_number.to_string());
-    if let Some(disc) = disc_number {
+    tag.insert_text(ItemKey::TrackNumber, meta.track_number.to_string());
+    if let Some(disc) = meta.disc_number {
         tag.insert_text(ItemKey::DiscNumber, disc.to_string());
     }
-    if total_tracks > 0 {
-        tag.insert_text(ItemKey::TrackTotal, total_tracks.to_string());
+    if meta.total_tracks > 0 {
+        tag.insert_text(ItemKey::TrackTotal, meta.total_tracks.to_string());
     }
-    let year = extract_year(release_date);
+    let year = extract_year(meta.release_date);
     if !year.is_empty() {
         tag.insert_text(ItemKey::Year, year);
     }
-    if let Some(lyrics) = lyrics_text.filter(|v| !v.trim().is_empty()) {
+    if let Some(lyrics) = meta.lyrics_text.filter(|v| !v.trim().is_empty()) {
         tag.insert_text(ItemKey::Lyrics, lyrics.to_string());
     }
 
-    if let Some(info) = track_info_extra {
+    if let Some(info) = meta.track_info_extra {
         if let Some(isrc) = value_as_string(info.get("isrc")) {
             tag.insert_text(ItemKey::Isrc, isrc);
         }
@@ -110,7 +114,7 @@ pub(crate) fn write_audio_metadata(
         }
     }
 
-    if let Some(jpeg) = cover_art_jpeg {
+    if let Some(jpeg) = meta.cover_art_jpeg {
         tag.remove_picture_type(PictureType::CoverFront);
         tag.push_picture(Picture::new_unchecked(
             PictureType::CoverFront,
@@ -121,23 +125,19 @@ pub(crate) fn write_audio_metadata(
     }
 
     if default_tag_type == TagType::VorbisComments {
-        write_extra_vorbis(tag, "TIDAL_TRACK_", track_extra);
-        write_extra_vorbis(tag, "TIDAL_ALBUM_", album_extra);
-        if let Some(info) = track_info_extra {
+        write_extra_vorbis(tag, "TIDAL_TRACK_", meta.track_extra);
+        write_extra_vorbis(tag, "TIDAL_ALBUM_", meta.album_extra);
+        if let Some(info) = meta.track_info_extra {
             write_extra_vorbis(tag, "TIDAL_INFO_", info);
         }
     }
 
     tagged_file
-        .save_to_path(path, WriteOptions::default())
+        .save_to_path(meta.path, WriteOptions::default())
         .map_err(|err| err.to_string())
 }
 
-fn write_extra_vorbis(
-    tag: &mut Tag,
-    prefix: &str,
-    extra: &HashMap<String, Value>,
-) {
+fn write_extra_vorbis(tag: &mut Tag, prefix: &str, extra: &HashMap<String, Value>) {
     for (key, value) in extra {
         if let Some(text) = value_to_text(value) {
             let key = sanitize_vorbis_key(prefix, key);
@@ -176,17 +176,17 @@ pub(crate) fn build_full_artist_string(
     let mut artists = Vec::<String>::new();
     let mut seen = HashSet::<String>::new();
 
-    let mut push_artist = |name: &str| push_unique_artist(name, &mut artists, &mut seen);
+    {
+        let mut push_artist = |name: &str| push_unique_artist(name, &mut artists, &mut seen);
 
-    collect_artists_from_map(track_extra, &mut push_artist);
-    if let Some(extra) = track_info_extra {
-        collect_artists_from_map(extra, &mut push_artist);
+        collect_artists_from_map(track_extra, &mut push_artist);
+        if let Some(extra) = track_info_extra {
+            collect_artists_from_map(extra, &mut push_artist);
+        }
+        for featured in parse_featured_artists(title) {
+            push_artist(&featured);
+        }
     }
-    for featured in parse_featured_artists(title) {
-        push_artist(&featured);
-    }
-
-    drop(push_artist);
 
     if artists.is_empty() {
         push_unique_artist(fallback_artist, &mut artists, &mut seen);
@@ -195,11 +195,7 @@ pub(crate) fn build_full_artist_string(
     artists.join("; ")
 }
 
-fn push_unique_artist(
-    name: &str,
-    artists: &mut Vec<String>,
-    seen: &mut HashSet<String>,
-) {
+fn push_unique_artist(name: &str, artists: &mut Vec<String>, seen: &mut HashSet<String>) {
     let trimmed = name.trim();
     if trimmed.is_empty() {
         return;
@@ -308,7 +304,10 @@ fn sanitize_vorbis_key(prefix: &str, key: &str) -> String {
     format!("{}{}", prefix, normalized)
 }
 
-pub(crate) async fn fetch_cover_art_bytes(http: &reqwest::Client, cover_id: Option<&str>) -> Option<Vec<u8>> {
+pub(crate) async fn fetch_cover_art_bytes(
+    http: &reqwest::Client,
+    cover_id: Option<&str>,
+) -> Option<Vec<u8>> {
     let cover_id = cover_id?;
     let url = format!(
         "https://resources.tidal.com/images/{}/1080x1080.jpg",

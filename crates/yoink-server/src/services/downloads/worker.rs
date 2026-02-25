@@ -18,8 +18,8 @@ use super::io::{
 use super::lyrics::{fetch_track_lyrics, write_lrc_sidecar};
 use super::manifest::{extract_download_payload, summarize_manifest_for_logs, DownloadPayload};
 use super::metadata::{
-    build_full_artist_string, extract_disc_number, fetch_cover_art_bytes, fetch_track_info_extra,
-    write_audio_metadata,
+    TrackMetadata, build_full_artist_string, extract_disc_number, fetch_cover_art_bytes,
+    fetch_track_info_extra, write_audio_metadata,
 };
 
 pub(crate) async fn download_album_job(state: &AppState, job: DownloadJob) -> Result<(), String> {
@@ -233,22 +233,22 @@ pub(crate) async fn download_album_job(state: &AppState, job: DownloadJob) -> Re
             .await
             .map_err(|err| format!("failed to finalize track file: {err}"))?;
 
-        if let Err(err) = write_audio_metadata(
-            &final_path,
-            &track.title,
-            &track_artist,
-            &artist_name,
-            &job.album_title,
+        if let Err(err) = write_audio_metadata(&TrackMetadata {
+            path: &final_path,
+            title: &track.title,
+            track_artist: &track_artist,
+            album_artist: &artist_name,
+            album: &job.album_title,
             track_number,
             disc_number,
-            total_tracks as u32,
-            &release_suffix,
-            &track.extra,
-            &album_extra,
-            track_info_extra.as_ref(),
-            lyrics.as_ref().and_then(|v| v.embedded_text.as_deref()),
-            cover_art.as_deref(),
-        ) {
+            total_tracks: total_tracks as u32,
+            release_date: &release_suffix,
+            track_extra: &track.extra,
+            album_extra: &album_extra,
+            track_info_extra: track_info_extra.as_ref(),
+            lyrics_text: lyrics.as_ref().and_then(|v| v.embedded_text.as_deref()),
+            cover_art_jpeg: cover_art.as_deref(),
+        }) {
             warn!(
                 track_id = track.id,
                 file = %final_path.display(),

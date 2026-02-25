@@ -11,6 +11,8 @@ mod ui;
 use std::time::Duration;
 
 use axum::routing::{get, get_service};
+use tower::layer::Layer;
+use tower_http::normalize_path::NormalizePathLayer;
 use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 use tracing::{debug, error, info, warn};
@@ -135,6 +137,7 @@ async fn main() {
                     yoink_shared::TrackInfo {
                         id: track.id,
                         title: track.title,
+                        version: track.version,
                         track_number: track.track_number.unwrap_or((idx + 1) as u32),
                         duration_secs: secs,
                         duration_display: format!("{mins}:{rem:02}"),
@@ -188,6 +191,7 @@ async fn main() {
         .route("/", leptos_handler())
         .route("/artists", leptos_handler())
         .route("/artists/{artist_id}", leptos_handler())
+        .route("/artists/{artist_id}/albums/{album_id}", leptos_handler())
         .route("/wanted", leptos_handler())
         .fallback_service(get_service(ServeDir::new(site_root)))
         .layer(
@@ -207,6 +211,9 @@ async fn main() {
             ),
     );
 
+    // NormalizePath strips trailing slashes so `/artists/` matches `/artists`.
+    let app = NormalizePathLayer::trim_trailing_slash().layer(app);
+
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000")
         .await
         .expect("failed to bind to 0.0.0.0:3000");
@@ -220,7 +227,12 @@ async fn main() {
         warning = %quality_warning_for_log,
         "Leptos SSR app started"
     );
-    axum::serve(listener, app).await.expect("server error");
+    axum::serve(
+        listener,
+        axum::ServiceExt::<axum::http::Request<axum::body::Body>>::into_make_service(app),
+    )
+    .await
+    .expect("server error");
 }
 
 /// Execute a `ServerAction` against the real `AppState`.

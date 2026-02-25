@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
 use leptos::prelude::*;
-use lucide_leptos::{ArrowLeft, ListMusic};
+use lucide_leptos::ArrowLeft;
 
 use yoink_shared::{
-    DownloadJob, MonitoredAlbum, MonitoredArtist, ServerAction, TrackInfo, album_cover_url,
+    DownloadJob, MonitoredAlbum, MonitoredArtist, ServerAction, album_cover_url,
     album_profile_url, album_type_label, album_type_rank, build_latest_jobs,
     monitored_artist_image_url, monitored_artist_profile_url, status_class, status_label_text,
 };
@@ -12,25 +12,13 @@ use yoink_shared::{
 use leptoaster::{ToastBuilder, ToastLevel, ToastPosition, expect_toaster};
 
 use crate::actions::dispatch_action;
-use crate::components::{ConfirmDialog, Sidebar};
-use crate::components::toast::dispatch_with_toast;
-use crate::hooks::use_sse_version;
-
-// ── Tailwind class constants ────────────────────────────────
-
-const GLASS: &str = "bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[12px] border border-black/[.06] dark:border-white/[.08] rounded-xl mb-6 overflow-hidden";
-const GLASS_HEADER: &str = "px-5 py-3.5 border-b border-black/[.06] dark:border-white/[.06] flex items-center justify-between gap-3";
-const GLASS_TITLE: &str = "text-[15px] font-semibold text-zinc-900 dark:text-zinc-100 m-0";
-const GLASS_BODY: &str = "px-5 py-4";
-const MUTED: &str = "text-zinc-500 dark:text-zinc-400";
-const EMPTY: &str = "text-center py-10 px-4 text-zinc-400 dark:text-zinc-600 text-sm";
-const BTN: &str = "inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 bg-white/60 dark:bg-zinc-800/60 backdrop-blur-[8px] border border-black/[.08] dark:border-white/10 rounded-lg font-inherit text-[13px] font-medium cursor-pointer text-zinc-600 dark:text-zinc-300 no-underline transition-all duration-150 whitespace-nowrap hover:bg-white/85 hover:border-blue-500/20 dark:hover:bg-zinc-800/85 dark:hover:border-blue-500/30";
-const BTN_PRIMARY: &str = "inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 bg-blue-500 dark:bg-blue-500 backdrop-blur-[8px] border border-blue-500 rounded-lg font-inherit text-[13px] font-medium cursor-pointer text-white no-underline transition-all duration-150 whitespace-nowrap shadow-[0_2px_12px_rgba(59,130,246,.25)] hover:bg-blue-400 hover:border-blue-400 hover:shadow-[0_4px_20px_rgba(59,130,246,.35)]";
-const BTN_DANGER: &str = "inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 bg-red-500/[.08] dark:bg-red-500/10 backdrop-blur-[8px] border border-red-500/30 dark:border-red-400/30 rounded-lg font-inherit text-[13px] font-medium cursor-pointer text-red-600 dark:text-red-400 no-underline transition-all duration-150 whitespace-nowrap hover:bg-red-500/15 hover:border-red-600 dark:hover:bg-red-500/20 dark:hover:border-red-400";
-
-fn cls(a: &str, b: &str) -> String {
-    format!("{a} {b}")
-}
+use crate::components::{ConfirmDialog, ErrorPanel, Sidebar};
+use crate::components::toast::{dispatch_with_toast, dispatch_with_toast_loading};
+use crate::hooks::{set_page_title, use_sse_version};
+use crate::styles::{
+    BTN, BTN_DANGER, BTN_PRIMARY, EMPTY, GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, MUTED,
+    SELECT, btn_cls, cls, tidal_icon_svg,
+};
 
 // ── DTO ─────────────────────────────────────────────────────
 
@@ -70,20 +58,11 @@ pub async fn get_artist_detail(artist_id: i64) -> Result<ArtistDetailData, Serve
     })
 }
 
-#[server(GetAlbumTracks, "/leptos")]
-pub async fn get_album_tracks(album_id: i64) -> Result<Vec<TrackInfo>, ServerFnError> {
-    let ctx = use_context::<yoink_shared::ServerContext>()
-        .ok_or_else(|| ServerFnError::new("ServerContext not available"))?;
-
-    (ctx.fetch_tracks)(album_id)
-        .await
-        .map_err(ServerFnError::new)
-}
-
 // ── Page component ──────────────────────────────────────────
 
 #[component]
 pub fn ArtistDetailPage() -> impl IntoView {
+    set_page_title("Artist");
     let params = leptos_router::hooks::use_params_map();
     let artist_id = move || {
         params
@@ -104,15 +83,57 @@ pub fn ArtistDetailPage() -> impl IntoView {
             <Sidebar active="artists" />
             <div class="ml-[220px] max-md:ml-0 flex-1 min-h-screen">
                 <Transition fallback=move || view! {
-                    <div class="bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[16px] border-b border-black/[.06] dark:border-white/[.06] px-6 py-3.5 flex items-center justify-between sticky top-0 z-40">
-                        <h1 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 m-0">"Loading\u{2026}"</h1>
+                    <div>
+                        <div class="bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[16px] border-b border-black/[.06] dark:border-white/[.06] px-6 max-md:pl-14 py-3.5 flex items-center justify-between sticky top-0 z-40">
+                            <div class="h-5 w-36 bg-zinc-200 dark:bg-zinc-700 rounded animate-pulse"></div>
+                        </div>
+                        <div class="p-6 max-md:p-4">
+                            // Skeleton artist header card
+                            <div class="mb-5 bg-white/70 dark:bg-zinc-800/60 rounded-xl border border-black/[.06] dark:border-white/[.08] p-5">
+                                <div class="flex flex-wrap items-center gap-5 animate-pulse">
+                                    <div class="size-20 rounded-full bg-zinc-200 dark:bg-zinc-700 shrink-0"></div>
+                                    <div class="flex-1 min-w-0">
+                                        <div class="h-6 w-40 bg-zinc-200 dark:bg-zinc-700 rounded mb-3"></div>
+                                        <div class="h-3.5 w-64 bg-zinc-200 dark:bg-zinc-700 rounded mb-3"></div>
+                                        <div class="flex flex-wrap gap-1.5">
+                                            {(0..4).map(|_| view! {
+                                                <div class="h-7 w-20 bg-zinc-200 dark:bg-zinc-700 rounded-lg"></div>
+                                            }).collect_view()}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            // Skeleton album grid
+                            <div class="bg-white/70 dark:bg-zinc-800/60 rounded-xl border border-black/[.06] dark:border-white/[.08] overflow-hidden">
+                                <div class="px-5 py-3 border-b border-black/[.06] dark:border-white/[.06]">
+                                    <div class="h-4 w-24 bg-zinc-200 dark:bg-zinc-700 rounded animate-pulse"></div>
+                                </div>
+                                <div class="p-4">
+                                    <div class="d7-album-grid">
+                                        {(0..6).map(|_| view! {
+                                            <div class="rounded-xl overflow-hidden border border-black/[.04] dark:border-white/[.04] animate-pulse">
+                                                <div class="w-full" style="padding-top:100%;background:var(--tw-color-zinc-200,.oklch(.923 0 0))">
+                                                </div>
+                                                <div class="p-3">
+                                                    <div class="h-3.5 w-24 bg-zinc-200 dark:bg-zinc-700 rounded mb-2"></div>
+                                                    <div class="h-3 w-16 bg-zinc-200 dark:bg-zinc-700 rounded"></div>
+                                                </div>
+                                            </div>
+                                        }).collect_view()}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 }>
                     {move || {
                         data.get().map(|result| match result {
                             Err(e) => view! {
                                 <div class="p-6">
-                                    <div class="text-red-500">{format!("Error: {e}")}</div>
+                                    <ErrorPanel
+                                        message="Failed to load artist details."
+                                        details=e.to_string()
+                                    />
                                 </div>
                             }.into_any(),
                             Ok(data) => match data.artist {
@@ -143,6 +164,7 @@ fn ArtistDetailContent(
     albums: Vec<MonitoredAlbum>,
     jobs: Vec<DownloadJob>,
 ) -> impl IntoView {
+    set_page_title(&artist.name);
     let artist_img = monitored_artist_image_url(&artist, 320);
     let artist_profile = monitored_artist_profile_url(&artist);
     let fallback_initial = artist
@@ -157,13 +179,8 @@ fn ArtistDetailContent(
     let acquired_count = albums.iter().filter(|a| a.acquired).count();
     let wanted_count = albums.iter().filter(|a| a.wanted).count();
 
-    let mut sorted_albums = albums;
-    sorted_albums.sort_by(|a, b| {
-        album_type_rank(a.album_type.as_deref(), &a.title)
-            .cmp(&album_type_rank(b.album_type.as_deref(), &b.title))
-            .then_with(|| b.release_date.cmp(&a.release_date))
-            .then_with(|| a.title.cmp(&b.title))
-    });
+    let albums_stored = StoredValue::new(albums);
+    let (album_sort, set_album_sort) = signal("type".to_string());
 
     let latest_jobs = build_latest_jobs(jobs);
     let artist_id_val = artist.id;
@@ -172,9 +189,14 @@ fn ArtistDetailContent(
     let show_unmonitor_all = RwSignal::new(false);
     let show_remove_artist = RwSignal::new(false);
 
+    // Loading state signals for async buttons
+    let sync_loading = RwSignal::new(false);
+    let monitor_all_loading = RwSignal::new(false);
+    let removing_artist = RwSignal::new(false);
+
     view! {
         // Header
-        <div class="bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[16px] border-b border-black/[.06] dark:border-white/[.06] px-6 py-3.5 flex items-center justify-between sticky top-0 z-40">
+        <div class="bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[16px] border-b border-black/[.06] dark:border-white/[.06] px-6 max-md:pl-14 py-3.5 flex items-center justify-between sticky top-0 z-40">
             <h1 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 m-0">{artist.name.clone()}</h1>
             <a href="/artists" class={cls(BTN, "px-2.5 py-0.5 text-xs no-underline inline-flex items-center gap-1.5")}>
                 <ArrowLeft size=14 />
@@ -196,19 +218,31 @@ fn ArtistDetailContent(
                     }}
                     <div class="flex-1 min-w-0">
                         <div class="text-[22px] font-bold mb-1">{artist.name.clone()}</div>
-                        <div class={cls(MUTED, "text-[13px] mb-2")}>
-                            {format!("{album_count} albums \u{00b7} {monitored_count} monitored \u{00b7} {acquired_count} acquired \u{00b7} {wanted_count} wanted")}
+                        <div class={cls(MUTED, "text-[13px] mb-2 flex flex-wrap items-center gap-2")}>
+                            <span>{format!("{album_count} albums \u{00b7} {monitored_count} monitored \u{00b7} {acquired_count} acquired \u{00b7} {wanted_count} wanted")}</span>
+                            <span class="pill d7-pill-muted">{artist.quality_profile.clone()}</span>
                         </div>
                         <div class="flex flex-wrap gap-1.5">
-                            <a href=artist_profile target="_blank" rel="noreferrer" class={cls(BTN, "px-2.5 py-0.5 text-xs")}>"View on Tidal"</a>
-                            <button type="button" class={cls(BTN, "px-2.5 py-0.5 text-xs")}
+                            <a href=artist_profile target="_blank" rel="noreferrer" class={cls(BTN, "px-2.5 py-0.5 text-xs")}>
+                                <span class="inline-block size-3.5 shrink-0" inner_html=tidal_icon_svg()></span>
+                                "Tidal"
+                            </a>
+                            <button type="button"
+                                class=move || btn_cls(BTN, "px-2.5 py-0.5 text-xs", sync_loading.get())
+                                disabled=move || sync_loading.get()
                                 on:click=move |_| {
-                                    dispatch_with_toast(ServerAction::SyncArtistAlbums { artist_id: artist_id_val }, "Album sync started");
-                                }>"Sync Albums"</button>
-                            <button type="button" class={cls(BTN_PRIMARY, "px-2.5 py-0.5 text-xs")}
+                                    dispatch_with_toast_loading(ServerAction::SyncArtistAlbums { artist_id: artist_id_val }, "Album sync started", Some(sync_loading));
+                                }>
+                                {move || if sync_loading.get() { "Syncing\u{2026}" } else { "Sync Albums" }}
+                            </button>
+                            <button type="button"
+                                class=move || btn_cls(BTN_PRIMARY, "px-2.5 py-0.5 text-xs", monitor_all_loading.get())
+                                disabled=move || monitor_all_loading.get()
                                 on:click=move |_| {
-                                    dispatch_with_toast(ServerAction::BulkMonitor { artist_id: artist_id_val, monitored: true }, "All albums monitored");
-                                }>"Monitor All"</button>
+                                    dispatch_with_toast_loading(ServerAction::BulkMonitor { artist_id: artist_id_val, monitored: true }, "All albums monitored", Some(monitor_all_loading));
+                                }>
+                                {move || if monitor_all_loading.get() { "Monitoring\u{2026}" } else { "Monitor All" }}
+                            </button>
                             <button type="button" class={cls(BTN, "px-2.5 py-0.5 text-xs")}
                                 on:click=move |_| {
                                     show_unmonitor_all.set(true);
@@ -240,6 +274,7 @@ fn ArtistDetailContent(
                 danger=true
                 checkbox_label="Also remove downloaded files from disk"
                 on_confirm=move |remove_files: bool| {
+                    removing_artist.set(true);
                     let navigate = leptos_router::hooks::use_navigate();
                     let toaster = expect_toaster();
                     leptos::task::spawn_local(async move {
@@ -262,47 +297,83 @@ fn ArtistDetailContent(
                                 );
                             }
                         }
+                        removing_artist.set(false);
                     });
                 }
             />
 
-            // Albums grid
+            // Albums grid with sort (#9)
             <div class=GLASS>
                 <div class=GLASS_HEADER>
                     <h2 class=GLASS_TITLE>"Discography"</h2>
-                    <span class={cls(MUTED, "text-xs")}>{format!("{album_count} albums")}</span>
+                    <div class="flex items-center gap-2">
+                        {if album_count > 0 {
+                            view! {
+                                <select
+                                    class=SELECT
+                                    aria-label="Sort albums"
+                                    on:change=move |ev| {
+                                        set_album_sort.set(event_target_value(&ev));
+                                    }
+                                >
+                                    <option value="type" selected=true>"By Type"</option>
+                                    <option value="az">"A \u{2013} Z"</option>
+                                    <option value="newest">"Newest First"</option>
+                                    <option value="oldest">"Oldest First"</option>
+                                </select>
+                            }.into_any()
+                        } else {
+                            view! { <span></span> }.into_any()
+                        }}
+                        <span class={cls(MUTED, "text-xs")}>{format!("{album_count} albums")}</span>
+                    </div>
                 </div>
-                {if sorted_albums.is_empty() {
-                    view! { <div class=EMPTY>"No albums synced. Hit Sync Albums to fetch from Tidal."</div> }.into_any()
-                } else {
+                {move || {
+                    albums_stored.with_value(|all| {
+                        if all.is_empty() {
+                            return view! { <div class=EMPTY>"No albums synced. Hit Sync Albums to fetch from Tidal."</div> }.into_any();
+                        }
 
-                    // Which album's tracklist is currently open (None = all collapsed).
-                    let (expanded_id, set_expanded_id) = signal::<Option<i64>>(None);
-                    view! {
-                        <div class={cls(GLASS_BODY, "p-4")}>
-                            <div class="d7-album-grid">
-                                {sorted_albums.into_iter().map(|album| {
-                                    view! { <AlbumSleeve album=album latest_jobs=latest_jobs.clone() expanded_id=expanded_id set_expanded_id=set_expanded_id /> }
-                                }).collect_view()}
+                        let sort_key = album_sort.get();
+                        let mut sorted = all.clone();
+                        match sort_key.as_str() {
+                            "az" => sorted.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase())),
+                            "newest" => sorted.sort_by(|a, b| b.release_date.cmp(&a.release_date).then_with(|| a.title.cmp(&b.title))),
+                            "oldest" => sorted.sort_by(|a, b| a.release_date.cmp(&b.release_date).then_with(|| a.title.cmp(&b.title))),
+                            _ /* "type" */ => sorted.sort_by(|a, b| {
+                                album_type_rank(a.album_type.as_deref(), &a.title)
+                                    .cmp(&album_type_rank(b.album_type.as_deref(), &b.title))
+                                    .then_with(|| b.release_date.cmp(&a.release_date))
+                                    .then_with(|| a.title.cmp(&b.title))
+                            }),
+                        }
+
+                        let jobs = latest_jobs.clone();
+
+                        view! {
+                            <div class={cls(GLASS_BODY, "p-4")}>
+                                <div class="d7-album-grid">
+                                    {sorted.into_iter().map(|album| {
+                                        view! { <AlbumSleeve album=album latest_jobs=jobs.clone() artist_id=artist_id_val /> }
+                                    }).collect_view()}
+                                </div>
                             </div>
-                        </div>
-                    }.into_any()
+                        }.into_any()
+                    })
                 }}
             </div>
         </div>
     }
 }
 
-/// Album sleeve card + full-width tracklist detail row.
+/// Album sleeve card in the discography grid.
 ///
-/// The card is a normal grid cell. When expanded, a tracklist row spans all
-/// columns below it via `grid-column: 1 / -1`.
+/// The title links to the album detail page.
 #[component]
 fn AlbumSleeve(
     album: MonitoredAlbum,
     latest_jobs: HashMap<i64, DownloadJob>,
-    expanded_id: ReadSignal<Option<i64>>,
-    set_expanded_id: WriteSignal<Option<i64>>,
+    artist_id: i64,
 ) -> impl IntoView {
     let album_id = album.id;
     let album_id_str = album.id.to_string();
@@ -320,7 +391,8 @@ fn AlbumSleeve(
     let show_remove_files = RwSignal::new(false);
 
     let cover_url = album_cover_url(&album, 640);
-    let profile_url = album_profile_url(&album);
+    let tidal_btn_url = album_profile_url(&album);
+    let detail_url = format!("/artists/{artist_id}/albums/{album_id}");
 
     let latest_job = latest_jobs.get(&album.id).cloned();
     let job_status = latest_job.as_ref().map(|j| j.status.clone());
@@ -356,79 +428,37 @@ fn AlbumSleeve(
     };
     let monitor_label = if is_monitored { "Unmonitor" } else { "Monitor" };
 
-    // Is *this* album the currently expanded one?
-    let is_expanded = move || expanded_id.get() == Some(album_id);
-
-    // Tracks fetched once and cached.
-    #[cfg(not(feature = "hydrate"))]
-    let (tracks, _) = signal::<Option<Result<Vec<TrackInfo>, String>>>(None);
-
-    #[cfg(feature = "hydrate")]
-    let (tracks, set_tracks) = signal::<Option<Result<Vec<TrackInfo>, String>>>(None);
-
-    let on_toggle = move |_| {
-        if is_expanded() {
-            set_expanded_id.set(None);
-        } else {
-            set_expanded_id.set(Some(album_id));
-            // Fetch on first expand only
-            if tracks.get_untracked().is_none() {
-                #[cfg(feature = "hydrate")]
-                {
-                    leptos::task::spawn_local(async move {
-                        let result = get_album_tracks(album_id).await;
-                        set_tracks.set(Some(result.map_err(|e| e.to_string())));
-                    });
-                }
-            }
-        }
-    };
-
-    let btn_class = move || {
-        if is_expanded() {
-            "d7-tracklist-btn active"
-        } else {
-            "d7-tracklist-btn"
-        }
-    };
-
-    // We return a fragment: the sleeve card (grid cell) + the detail row (full-width).
     view! {
-        // ── Album card (normal grid cell) ───────────────────
+        // ── Album card (grid cell) ──────────────────────────
         <div class="d7-sleeve" data-album-row data-album-id=album_id_str.clone()>
-            <div class="d7-sleeve-cover-wrap">
-                {match cover_url {
-                    Some(url) => view! {
-                        <img class="d7-sleeve-cover" src=url alt="" loading="lazy" />
-                    }.into_any(),
-                    None => view! {
-                        <div class="d7-sleeve-fallback">{fallback_initial}</div>
-                    }.into_any(),
-                }}
-                {if is_wanted && !is_acquired {
-                    view! { <span class="d7-badge d7-badge-wanted">"Wanted"</span> }.into_any()
-                } else if is_acquired {
-                    view! { <span class="d7-badge d7-badge-acquired">"Acquired"</span> }.into_any()
-                } else {
-                    view! { <span></span> }.into_any()
-                }}
-                {if is_explicit {
-                    view! { <span class="d7-badge d7-badge-explicit">"E"</span> }.into_any()
-                } else {
-                    view! { <span></span> }.into_any()
-                }}
-            </div>
+            <a href=detail_url.clone() class="contents">
+                <div class="d7-sleeve-cover-wrap">
+                    {match cover_url {
+                        Some(url) => view! {
+                            <img class="d7-sleeve-cover" src=url alt="" loading="lazy" />
+                        }.into_any(),
+                        None => view! {
+                            <div class="d7-sleeve-fallback">{fallback_initial}</div>
+                        }.into_any(),
+                    }}
+                    {if is_wanted && !is_acquired {
+                        view! { <span class="d7-badge d7-badge-wanted">"Wanted"</span> }.into_any()
+                    } else if is_acquired {
+                        view! { <span class="d7-badge d7-badge-acquired">"Acquired"</span> }.into_any()
+                    } else {
+                        view! { <span></span> }.into_any()
+                    }}
+                    {if is_explicit {
+                        view! { <span class="d7-badge d7-badge-explicit">"E"</span> }.into_any()
+                    } else {
+                        view! { <span></span> }.into_any()
+                    }}
+                </div>
+            </a>
 
             <div class="d7-sleeve-info">
                 <div class="d7-sleeve-title">
-                    {match profile_url {
-                        Some(url) => view! {
-                            <a href=url target="_blank" rel="noreferrer">{album_title.clone()}</a>
-                        }.into_any(),
-                        None => view! {
-                            <span>{album_title.clone()}</span>
-                        }.into_any(),
-                    }}
+                    <a href=detail_url>{album_title.clone()}</a>
                 </div>
                 <div class="d7-sleeve-sub">{format!("{release_date} \u{00b7} {at}")}</div>
 
@@ -456,9 +486,16 @@ fn AlbumSleeve(
                     } else {
                         view! { <span></span> }.into_any()
                     }}
-                    <button type="button" class=btn_class on:click=on_toggle title="Show tracks">
-                        <ListMusic size=14 />
-                    </button>
+                    {match tidal_btn_url {
+                        Some(url) => view! {
+                            <a href=url target="_blank" rel="noreferrer"
+                                class={cls(BTN, "d7-sleeve-action-btn")}
+                                title="Open on Tidal" aria-label="Open on Tidal">
+                                <span class="inline-block size-3" inner_html=tidal_icon_svg()></span>
+                            </a>
+                        }.into_any(),
+                        None => view! { <span></span> }.into_any(),
+                    }}
                 </div>
             </div>
         </div>
@@ -476,36 +513,5 @@ fn AlbumSleeve(
                 dispatch_with_toast(ServerAction::RemoveAlbumFiles { album_id, unmonitor }, msg);
             }
         />
-
-        // ── Tracklist detail row (spans all grid columns) ───
-        {move || {
-            if !is_expanded() {
-                return view! { <span class="hidden"></span> }.into_any();
-            }
-            view! {
-                <div class="col-span-full bg-zinc-900/40 dark:bg-zinc-900/60 backdrop-blur-[8px] border border-white/[.06] rounded-xl p-4 -mt-2">
-                    {move || match tracks.get() {
-                        None => view! {
-                            <div class="text-sm text-zinc-400 py-2">"Loading tracks\u{2026}"</div>
-                        }.into_any(),
-                        Some(Err(ref err)) => view! {
-                            <div class="text-sm text-red-400 py-2">{format!("Failed to load tracks: {err}")}</div>
-                        }.into_any(),
-                        Some(Ok(ref list)) if list.is_empty() => view! {
-                            <div class="text-sm text-zinc-400 py-2">"No tracks found"</div>
-                        }.into_any(),
-                        Some(Ok(ref list)) => view! {
-                            <div class="grid grid-cols-[auto_1fr_auto] gap-x-3 gap-y-1 text-sm">
-                                {list.iter().map(|t| view! {
-                                    <span class="text-zinc-500 tabular-nums text-right">{t.track_number}</span>
-                                    <span class="text-zinc-200 truncate">{t.title.clone()}</span>
-                                    <span class="text-zinc-500 tabular-nums">{t.duration_display.clone()}</span>
-                                }).collect_view()}
-                            </div>
-                        }.into_any(),
-                    }}
-                </div>
-            }.into_any()
-        }}
     }
 }

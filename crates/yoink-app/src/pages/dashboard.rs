@@ -7,30 +7,21 @@ use yoink_shared::{
     status_class, status_label_text,
 };
 
-use crate::components::{ConfirmDialog, Sidebar};
-use crate::components::toast::dispatch_with_toast;
-use crate::hooks::use_sse_version;
+use crate::components::{ConfirmDialog, ErrorPanel, Sidebar};
+use crate::components::toast::{dispatch_with_toast, dispatch_with_toast_loading};
+use crate::hooks::{set_page_title, use_sse_version};
+use crate::styles::{
+    BTN, BTN_DANGER, BTN_PRIMARY, EMPTY, GLASS, GLASS_HEADER, GLASS_TITLE, MUTED, btn_cls, cls,
+};
 
-// ── Tailwind class constants (matching old design7) ─────────
+// ── Page-specific Tailwind class constants ──────────────────
 
-const GLASS: &str = "bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[12px] border border-black/[.06] dark:border-white/[.08] rounded-xl mb-6 overflow-hidden";
-const GLASS_HEADER: &str = "px-5 py-3.5 border-b border-black/[.06] dark:border-white/[.06] flex items-center justify-between gap-3";
-const GLASS_TITLE: &str = "text-[15px] font-semibold text-zinc-900 dark:text-zinc-100 m-0";
-const MUTED: &str = "text-zinc-500 dark:text-zinc-400";
-const EMPTY: &str = "text-center py-10 px-4 text-zinc-400 dark:text-zinc-600 text-sm";
-const BTN: &str = "inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 bg-white/60 dark:bg-zinc-800/60 backdrop-blur-[8px] border border-black/[.08] dark:border-white/10 rounded-lg font-inherit text-[13px] font-medium cursor-pointer text-zinc-600 dark:text-zinc-300 no-underline transition-all duration-150 whitespace-nowrap hover:bg-white/85 hover:border-blue-500/20 dark:hover:bg-zinc-800/85 dark:hover:border-blue-500/30";
-const BTN_PRIMARY: &str = "inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 bg-blue-500 dark:bg-blue-500 backdrop-blur-[8px] border border-blue-500 rounded-lg font-inherit text-[13px] font-medium cursor-pointer text-white no-underline transition-all duration-150 whitespace-nowrap shadow-[0_2px_12px_rgba(59,130,246,.25)] hover:bg-blue-400 hover:border-blue-400 hover:shadow-[0_4px_20px_rgba(59,130,246,.35)]";
-const BTN_DANGER: &str = "inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 bg-red-500/[.08] dark:bg-red-500/10 backdrop-blur-[8px] border border-red-500/30 dark:border-red-400/30 rounded-lg font-inherit text-[13px] font-medium cursor-pointer text-red-600 dark:text-red-400 no-underline transition-all duration-150 whitespace-nowrap hover:bg-red-500/15 hover:border-red-600 dark:hover:bg-red-500/20 dark:hover:border-red-400";
-const STAT_CARD: &str = "d7-stat-card bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[12px] border border-black/[.06] dark:border-white/[.08] rounded-xl p-4 relative overflow-hidden transition-[transform,box-shadow] duration-150 hover:-translate-y-px hover:shadow-[0_4px_24px_rgba(59,130,246,.08)] dark:hover:shadow-[0_4px_24px_rgba(59,130,246,.12)]";
+const STAT_CARD: &str = "d7-stat-card bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[12px] border border-black/[.06] dark:border-white/[.08] rounded-xl p-4 relative overflow-hidden";
 const STAT_LABEL: &str =
     "text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400 m-0 mb-1";
 const STAT_VALUE: &str = "text-[28px] font-bold text-zinc-900 dark:text-zinc-100 m-0";
 
 const TABLE: &str = "w-full border-collapse text-[13px] [&_th]:text-left [&_th]:px-3 [&_th]:py-2.5 [&_th]:font-semibold [&_th]:text-xs [&_th]:uppercase [&_th]:tracking-wide [&_th]:text-zinc-500 dark:[&_th]:text-zinc-400 [&_th]:bg-black/[.02] dark:[&_th]:bg-white/[.02] [&_th]:border-b [&_th]:border-black/[.06] dark:[&_th]:border-white/[.06] [&_th]:whitespace-nowrap [&_td]:px-3 [&_td]:py-2 [&_td]:border-b [&_td]:border-black/[.04] dark:[&_td]:border-white/[.04] [&_td]:text-zinc-600 dark:[&_td]:text-zinc-300 [&_td]:align-middle [&_tbody_tr:hover]:bg-blue-500/[.03] dark:[&_tbody_tr:hover]:bg-blue-500/[.05] [&_tbody_tr:last-child_td]:border-b-0";
-
-fn cls(a: &str, b: &str) -> String {
-    format!("{a} {b}")
-}
 
 // ── DTO for server function response ────────────────────────
 
@@ -63,6 +54,7 @@ pub async fn get_dashboard_data() -> Result<DashboardData, ServerFnError> {
 
 #[component]
 pub fn DashboardPage() -> impl IntoView {
+    set_page_title("Dashboard");
     let version = use_sse_version();
     let data = Resource::new(move || version.get(), |_| get_dashboard_data());
 
@@ -71,16 +63,48 @@ pub fn DashboardPage() -> impl IntoView {
             <Sidebar active="dashboard" />
             <div class="ml-[220px] max-md:ml-0 flex-1 min-h-screen">
                 <Transition fallback=move || view! {
-                    <div class="bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[16px] border-b border-black/[.06] dark:border-white/[.06] px-6 py-3.5 flex items-center justify-between sticky top-0 z-40">
-                        <h1 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 m-0">"Dashboard"</h1>
-                        <span class={cls(MUTED, "text-[13px]")}>"Loading\u{2026}"</span>
+                    <div>
+                        <div class="bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[16px] border-b border-black/[.06] dark:border-white/[.06] px-6 max-md:pl-14 py-3.5 flex items-center justify-between sticky top-0 z-40">
+                            <h1 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 m-0">"Dashboard"</h1>
+                        </div>
+                        // Skeleton stat cards
+                        <div class="p-6 max-md:p-4">
+                            <div class="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-4 mb-6">
+                                {(0..5).map(|_| view! {
+                                    <div class="bg-white/70 dark:bg-zinc-800/60 rounded-xl p-4 animate-pulse">
+                                        <div class="h-3 w-20 bg-zinc-200 dark:bg-zinc-700 rounded mb-3"></div>
+                                        <div class="h-8 w-14 bg-zinc-200 dark:bg-zinc-700 rounded"></div>
+                                    </div>
+                                }).collect_view()}
+                            </div>
+                            // Skeleton table rows
+                            <div class="bg-white/70 dark:bg-zinc-800/60 rounded-xl overflow-hidden border border-black/[.06] dark:border-white/[.08]">
+                                <div class="px-5 py-3 border-b border-black/[.06] dark:border-white/[.06]">
+                                    <div class="h-4 w-32 bg-zinc-200 dark:bg-zinc-700 rounded animate-pulse"></div>
+                                </div>
+                                {(0..6).map(|_| view! {
+                                    <div class="flex items-center gap-4 px-5 py-3 border-b border-black/[.04] dark:border-white/[.04] animate-pulse">
+                                        <div class="h-3.5 w-32 bg-zinc-200 dark:bg-zinc-700 rounded"></div>
+                                        <div class="h-3.5 w-20 bg-zinc-200 dark:bg-zinc-700 rounded"></div>
+                                        <div class="h-5 w-14 bg-zinc-200 dark:bg-zinc-700 rounded-full"></div>
+                                        <div class="h-3.5 w-10 bg-zinc-200 dark:bg-zinc-700 rounded"></div>
+                                        <div class="h-5 w-20 bg-zinc-200 dark:bg-zinc-700 rounded-full"></div>
+                                        <div class="h-3.5 w-24 bg-zinc-200 dark:bg-zinc-700 rounded"></div>
+                                    </div>
+                                }).collect_view()}
+                            </div>
+                        </div>
                     </div>
                 }>
                     {move || {
                         data.get().map(|result| match result {
                             Err(e) => view! {
                                 <div class="p-6">
-                                    <div class="text-red-500">{format!("Error loading dashboard: {e}")}</div>
+                                    <ErrorPanel
+                                        message="Failed to load dashboard data."
+                                        details=e.to_string()
+                                        retry_href="/"
+                                    />
                                 </div>
                             }.into_any(),
                             Ok(data) => {
@@ -118,17 +142,24 @@ fn DashboardContent(data: DashboardData) -> impl IntoView {
         .iter()
         .any(|j| matches!(j.status, DownloadStatus::Completed));
 
-    let recent_jobs: Vec<_> = {
+    let all_jobs: Vec<_> = {
         let mut sorted = data.jobs;
         sorted.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
-        sorted.into_iter().take(25).collect()
+        sorted
     };
+    let total_jobs = all_jobs.len();
+    let all_jobs = StoredValue::new(all_jobs);
+    let (visible_count, set_visible_count) = signal(25usize);
 
     let show_clear_completed = RwSignal::new(false);
 
+    // Loading state signals for header buttons
+    let scan_loading = RwSignal::new(false);
+    let retag_loading = RwSignal::new(false);
+
     view! {
         // Header bar
-        <div class="bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[16px] border-b border-black/[.06] dark:border-white/[.06] px-6 py-3.5 flex items-center justify-between sticky top-0 z-40">
+        <div class="bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[16px] border-b border-black/[.06] dark:border-white/[.06] px-6 max-md:pl-14 py-3.5 flex items-center justify-between sticky top-0 z-40">
             <h1 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 m-0">"Dashboard"</h1>
         </div>
 
@@ -174,14 +205,22 @@ fn DashboardContent(data: DashboardData) -> impl IntoView {
                 <div class=GLASS_HEADER>
                     <h2 class=GLASS_TITLE>"Recent Activity"</h2>
                     <div class="flex flex-wrap items-center gap-2">
-                        <button type="button" class={cls(BTN_PRIMARY, "px-2.5 py-0.5 text-xs")}
+                        <button type="button"
+                            class=move || btn_cls(BTN_PRIMARY, "px-2.5 py-0.5 text-xs", scan_loading.get())
+                            disabled=move || scan_loading.get()
                             on:click=move |_| {
-                                dispatch_with_toast(ServerAction::ScanImportLibrary, "Library scan started");
-                            }>"Scan Drive + Import"</button>
-                        <button type="button" class={cls(BTN, "px-2.5 py-0.5 text-xs")}
+                                dispatch_with_toast_loading(ServerAction::ScanImportLibrary, "Library scan started", Some(scan_loading));
+                            }>
+                            {move || if scan_loading.get() { "Scanning\u{2026}" } else { "Scan Drive + Import" }}
+                        </button>
+                        <button type="button"
+                            class=move || btn_cls(BTN, "px-2.5 py-0.5 text-xs", retag_loading.get())
+                            disabled=move || retag_loading.get()
                             on:click=move |_| {
-                                dispatch_with_toast(ServerAction::RetagLibrary, "Retagging started");
-                            }>"Retag Existing Files"</button>
+                                dispatch_with_toast_loading(ServerAction::RetagLibrary, "Retagging started", Some(retag_loading));
+                            }>
+                            {move || if retag_loading.get() { "Retagging\u{2026}" } else { "Retag Existing Files" }}
+                        </button>
                         {if has_completed {
                             view! {
                                 <button type="button" class={cls(BTN, "px-2.5 py-0.5 text-xs")}
@@ -194,28 +233,55 @@ fn DashboardContent(data: DashboardData) -> impl IntoView {
                         }}
                     </div>
                 </div>
-                {if recent_jobs.is_empty() {
+                {if total_jobs == 0 {
                     view! { <div class=EMPTY>"No download jobs yet."</div> }.into_any()
                 } else {
+                    let names = artist_names.clone();
                     view! {
-                        <table class=TABLE>
-                            <thead>
-                                <tr>
-                                    <th>"Album"</th>
-                                    <th>"Artist"</th>
-                                    <th>"Quality"</th>
-                                    <th>"Progress"</th>
-                                    <th>"Status"</th>
-                                    <th>"Updated"</th>
-                                    <th>"Actions"</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {recent_jobs.into_iter().map(|job| {
-                                    view! { <JobRow job=job artist_names=artist_names.clone() /> }
-                                }).collect_view()}
-                            </tbody>
-                        </table>
+                        <div class="overflow-x-auto">
+                            <table class=TABLE aria-label="Recent download activity">
+                                <thead>
+                                    <tr>
+                                        <th>"Album"</th>
+                                        <th>"Artist"</th>
+                                        <th>"Quality"</th>
+                                        <th>"Progress"</th>
+                                        <th>"Status"</th>
+                                        <th>"Updated"</th>
+                                        <th>"Actions"</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {move || {
+                                        let count = visible_count.get();
+                                        let names_inner = names.clone();
+                                        all_jobs.with_value(|jobs| {
+                                            jobs.iter().take(count).map(|job| {
+                                                view! { <JobRow job=job.clone() artist_names=names_inner.clone() /> }
+                                            }).collect_view()
+                                        })
+                                    }}
+                                </tbody>
+                            </table>
+                        </div>
+                        // Show more / pagination footer
+                        <div class="px-5 py-3 border-t border-black/[.04] dark:border-white/[.04] flex items-center justify-between">
+                            <span class={cls(MUTED, "text-xs")}>
+                                {move || {
+                                    let shown = visible_count.get().min(total_jobs);
+                                    format!("Showing {shown} of {total_jobs}")
+                                }}
+                            </span>
+                            <Show when=move || visible_count.get() < total_jobs>
+                                <button type="button"
+                                    class={cls(BTN, "px-2.5 py-0.5 text-xs")}
+                                    on:click=move |_| {
+                                        set_visible_count.update(|c| *c += 25);
+                                    }>
+                                    "Show More"
+                                </button>
+                            </Show>
+                        </div>
                     }.into_any()
                 }}
             </div>

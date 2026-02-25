@@ -65,6 +65,7 @@ pub(crate) struct HifiAlbum {
 pub(crate) struct HifiTrack {
     pub(crate) id: i64,
     pub(crate) title: String,
+    pub(crate) version: Option<String>,
     #[serde(rename = "trackNumber")]
     pub(crate) track_number: Option<u32>,
     pub(crate) duration: Option<u32>,
@@ -77,6 +78,7 @@ pub(crate) struct HifiTrack {
 pub(crate) struct TrackInfo {
     pub(crate) id: i64,
     pub(crate) title: String,
+    pub(crate) version: Option<String>,
     pub(crate) track_number: u32,
     pub(crate) duration_secs: u32,
     pub(crate) duration_display: String,

@@ -87,6 +87,7 @@ async fn album_tracks(
                     TrackInfo {
                         id: track.id,
                         title: track.title,
+                        version: track.version,
                         track_number: track.track_number.unwrap_or((idx + 1) as u32),
                         duration_secs: secs,
                         duration_display: format!("{}:{:02}", mins, rem),

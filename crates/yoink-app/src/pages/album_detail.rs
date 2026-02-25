@@ -1,0 +1,492 @@
+use leptos::prelude::*;
+use lucide_leptos::{ArrowLeft, ChevronRight};
+
+use yoink_shared::{
+    DownloadJob, DownloadStatus, MonitoredAlbum, MonitoredArtist, ServerAction, TrackInfo,
+    album_cover_url, album_profile_url, album_type_label, build_latest_jobs, status_class,
+    status_label_text,
+};
+
+use crate::components::toast::{dispatch_with_toast, dispatch_with_toast_loading};
+use crate::components::{ConfirmDialog, ErrorPanel, Sidebar};
+use crate::hooks::{set_page_title, use_sse_version};
+use crate::styles::{
+    BTN, BTN_DANGER, BTN_PRIMARY, GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, MUTED, btn_cls,
+    cls, tidal_icon_svg,
+};
+
+// ── DTO ─────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct AlbumDetailData {
+    pub album: Option<MonitoredAlbum>,
+    pub artist: Option<MonitoredArtist>,
+    pub tracks: Vec<TrackInfo>,
+    pub jobs: Vec<DownloadJob>,
+}
+
+// ── Server function ─────────────────────────────────────────
+
+#[server(GetAlbumDetail, "/leptos")]
+pub async fn get_album_detail(album_id: i64) -> Result<AlbumDetailData, ServerFnError> {
+    let ctx = use_context::<yoink_shared::ServerContext>()
+        .ok_or_else(|| ServerFnError::new("ServerContext not available"))?;
+
+    let albums = ctx.monitored_albums.read().await;
+    let album = albums.iter().find(|a| a.id == album_id).cloned();
+    drop(albums);
+
+    let artist = if let Some(ref a) = album {
+        let artists = ctx.monitored_artists.read().await;
+        artists.iter().find(|ar| ar.id == a.artist_id).cloned()
+    } else {
+        None
+    };
+
+    let tracks = (ctx.fetch_tracks)(album_id)
+        .await
+        .unwrap_or_default();
+
+    let jobs = ctx.download_jobs.read().await.clone();
+
+    Ok(AlbumDetailData {
+        album,
+        artist,
+        tracks,
+        jobs,
+    })
+}
+
+// ── Page component ──────────────────────────────────────────
+
+#[component]
+pub fn AlbumDetailPage() -> impl IntoView {
+    set_page_title("Album");
+    let params = leptos_router::hooks::use_params_map();
+    let album_id = move || {
+        params
+            .read()
+            .get("album_id")
+            .and_then(|s| s.parse::<i64>().ok())
+            .unwrap_or(0)
+    };
+    let artist_id = move || {
+        params
+            .read()
+            .get("artist_id")
+            .and_then(|s| s.parse::<i64>().ok())
+            .unwrap_or(0)
+    };
+
+    let version = use_sse_version();
+    let data = Resource::new(
+        move || (album_id(), version.get()),
+        |(id, _)| get_album_detail(id),
+    );
+
+    view! {
+        <div class="flex min-h-screen">
+            <Sidebar active="artists" />
+            <div class="ml-[220px] max-md:ml-0 flex-1 min-h-screen">
+                <Transition fallback=move || view! {
+                    <div>
+                        <div class="bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[16px] border-b border-black/[.06] dark:border-white/[.06] px-6 max-md:pl-14 py-3.5 flex items-center justify-between sticky top-0 z-40">
+                            <div class="h-5 w-36 bg-zinc-200 dark:bg-zinc-700 rounded animate-pulse"></div>
+                        </div>
+                        <div class="p-6 max-md:p-4">
+                            // Skeleton hero card
+                            <div class="mb-5 bg-white/70 dark:bg-zinc-800/60 rounded-xl border border-black/[.06] dark:border-white/[.08] p-5">
+                                <div class="flex flex-col md:flex-row gap-6 animate-pulse">
+                                    <div class="size-60 max-md:size-48 max-md:mx-auto rounded-xl bg-zinc-200 dark:bg-zinc-700 shrink-0"></div>
+                                    <div class="flex-1 min-w-0">
+                                        <div class="h-4 w-32 bg-zinc-200 dark:bg-zinc-700 rounded mb-3"></div>
+                                        <div class="h-7 w-56 bg-zinc-200 dark:bg-zinc-700 rounded mb-3"></div>
+                                        <div class="h-3.5 w-40 bg-zinc-200 dark:bg-zinc-700 rounded mb-4"></div>
+                                        <div class="flex flex-wrap gap-1.5 mb-4">
+                                            {(0..4).map(|_| view! {
+                                                <div class="h-7 w-20 bg-zinc-200 dark:bg-zinc-700 rounded-lg"></div>
+                                            }).collect_view()}
+                                        </div>
+                                        <div class="flex flex-wrap gap-1.5">
+                                            {(0..3).map(|_| view! {
+                                                <div class="h-8 w-24 bg-zinc-200 dark:bg-zinc-700 rounded-lg"></div>
+                                            }).collect_view()}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            // Skeleton tracklist
+                            <div class="bg-white/70 dark:bg-zinc-800/60 rounded-xl border border-black/[.06] dark:border-white/[.08] overflow-hidden">
+                                <div class="px-5 py-3 border-b border-black/[.06] dark:border-white/[.06]">
+                                    <div class="h-4 w-24 bg-zinc-200 dark:bg-zinc-700 rounded animate-pulse"></div>
+                                </div>
+                                <div class="p-5">
+                                    {(0..8).map(|_| view! {
+                                        <div class="flex gap-3 mb-2.5 animate-pulse">
+                                            <div class="h-3.5 w-6 bg-zinc-200 dark:bg-zinc-700 rounded"></div>
+                                            <div class="h-3.5 flex-1 bg-zinc-200 dark:bg-zinc-700 rounded"></div>
+                                            <div class="h-3.5 w-10 bg-zinc-200 dark:bg-zinc-700 rounded"></div>
+                                        </div>
+                                    }).collect_view()}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                }>
+                    {move || {
+                        let aid = artist_id();
+                        data.get().map(|result| match result {
+                            Err(e) => view! {
+                                <div class="p-6">
+                                    <ErrorPanel
+                                        message="Failed to load album details."
+                                        details=e.to_string()
+                                    />
+                                </div>
+                            }.into_any(),
+                            Ok(data) => match data.album {
+                                None => view! {
+                                    <div class="p-6">
+                                        <div class="text-zinc-500">"Album not found."</div>
+                                        <a href="/artists" class={cls(BTN, "mt-4 inline-flex items-center gap-1.5")}>
+                                            <ArrowLeft size=14 />
+                                            "All Artists"
+                                        </a>
+                                    </div>
+                                }.into_any(),
+                                Some(album) => {
+                                    view! {
+                                        <AlbumDetailContent
+                                            album=album
+                                            artist=data.artist
+                                            tracks=data.tracks
+                                            jobs=data.jobs
+                                            artist_id_param=aid
+                                        />
+                                    }.into_any()
+                                }
+                            }
+                        })
+                    }}
+                </Transition>
+            </div>
+        </div>
+    }
+}
+
+// ── Detail content ──────────────────────────────────────────
+
+#[component]
+fn AlbumDetailContent(
+    album: MonitoredAlbum,
+    artist: Option<MonitoredArtist>,
+    tracks: Vec<TrackInfo>,
+    jobs: Vec<DownloadJob>,
+    artist_id_param: i64,
+) -> impl IntoView {
+    set_page_title(&album.title);
+
+    let album_id = album.id;
+    let album_title = album.title.clone();
+    let release_date = album
+        .release_date
+        .clone()
+        .unwrap_or_else(|| "\u{2014}".to_string());
+    let at = album_type_label(album.album_type.as_deref(), &album.title);
+    let is_explicit = album.explicit;
+    let is_monitored = album.monitored;
+    let is_wanted = album.wanted;
+    let is_acquired = album.acquired;
+
+    let cover_url = album_cover_url(&album, 640);
+    let profile_url = album_profile_url(&album);
+
+    let latest_jobs = build_latest_jobs(jobs);
+    let latest_job = latest_jobs.get(&album.id).cloned();
+    let job_status = latest_job.as_ref().map(|j| j.status.clone());
+    let job_progress = latest_job
+        .as_ref()
+        .map(|j| (j.completed_tracks, j.total_tracks));
+    let job_error = latest_job.as_ref().and_then(|j| j.error.clone());
+    let job_quality = latest_job.as_ref().map(|j| j.quality.clone());
+
+    let status_pill_class = match &job_status {
+        Some(s) => status_class(s).to_string(),
+        None => "pill".to_string(),
+    };
+    let status_pill_text = match &job_status {
+        Some(s) => status_label_text(
+            s,
+            job_progress.map(|(c, _)| c).unwrap_or(0),
+            job_progress.map(|(_, t)| t).unwrap_or(0),
+        ),
+        None => "\u{2014}".to_string(),
+    };
+
+    let artist_name = artist
+        .as_ref()
+        .map(|a| a.name.clone())
+        .unwrap_or_else(|| "Unknown Artist".to_string());
+    let artist_quality = artist
+        .as_ref()
+        .map(|a| a.quality_profile.clone())
+        .unwrap_or_default();
+    let artist_link = format!("/artists/{artist_id_param}");
+
+    let fallback_initial = album_title
+        .chars()
+        .next()
+        .map(|c| c.to_uppercase().to_string())
+        .unwrap_or_else(|| "?".to_string());
+
+    let total_duration_secs: u32 = tracks.iter().map(|t| t.duration_secs).sum();
+    let total_mins = total_duration_secs / 60;
+    let total_secs = total_duration_secs % 60;
+    let track_count = tracks.len();
+    let duration_display = if total_mins >= 60 {
+        let hrs = total_mins / 60;
+        let mins = total_mins % 60;
+        format!("{hrs} hr {mins} min")
+    } else {
+        format!("{total_mins} min {total_secs:02} sec")
+    };
+
+    // Confirmation dialog signals
+    let show_remove_files = RwSignal::new(false);
+
+    // Loading state signals
+    let download_loading = RwSignal::new(false);
+
+    // Can we show a download / retry button?
+    let can_download = is_wanted && !is_acquired;
+    let can_retry = matches!(job_status, Some(DownloadStatus::Failed));
+
+    let monitor_title = if is_monitored {
+        "Unmonitor album"
+    } else {
+        "Monitor album"
+    };
+    let monitor_label = if is_monitored {
+        "Unmonitor"
+    } else {
+        "Monitor"
+    };
+
+    view! {
+        // ── Sticky header with breadcrumb ───────────────────
+        <div class="bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[16px] border-b border-black/[.06] dark:border-white/[.06] px-6 max-md:pl-14 py-3.5 flex items-center justify-between sticky top-0 z-40">
+            <nav class="flex items-center gap-1.5 text-sm min-w-0" aria-label="Breadcrumb">
+                <a href=artist_link.clone() class="text-zinc-500 dark:text-zinc-400 hover:text-blue-500 dark:hover:text-blue-400 no-underline truncate max-w-[200px]">
+                    {artist_name.clone()}
+                </a>
+                <span class="text-zinc-400 dark:text-zinc-500 shrink-0"><ChevronRight size=14 /></span>
+                <span class="text-zinc-900 dark:text-zinc-100 font-semibold truncate">{album_title.clone()}</span>
+            </nav>
+            <a href=artist_link.clone() class={cls(BTN, "px-2.5 py-0.5 text-xs no-underline inline-flex items-center gap-1.5 shrink-0")}>
+                <ArrowLeft size=14 />
+                "Back"
+            </a>
+        </div>
+
+        <div class="p-6 max-md:p-4">
+            // ── Hero card ───────────────────────────────────
+            <div class={cls(GLASS, "mb-5")}>
+                <div class={cls(GLASS_BODY, "p-0!")}>
+                    <div class="flex flex-col md:flex-row gap-0">
+                        // Cover art with glow — using d7-sleeve classes so the glow script picks it up
+                        <div class="d7-sleeve md:w-64 md:shrink-0 rounded-none border-0 md:rounded-l-xl md:rounded-r-none overflow-hidden" style="background:transparent;backdrop-filter:none">
+                            <div class="d7-sleeve-cover-wrap">
+                                {match cover_url.clone() {
+                                    Some(url) => view! {
+                                        <img class="d7-sleeve-cover" src=url alt="" />
+                                    }.into_any(),
+                                    None => view! {
+                                        <div class="d7-sleeve-fallback">{fallback_initial}</div>
+                                    }.into_any(),
+                                }}
+                            </div>
+                        </div>
+
+                        // Metadata & actions
+                        <div class="flex-1 min-w-0 p-5 md:p-6 flex flex-col justify-center">
+                            // Album type + explicit
+                            <div class="flex items-center gap-2 mb-1.5">
+                                <span class="text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">{at}</span>
+                                {if is_explicit {
+                                    view! { <span class="pill text-[10px] px-1.5 py-0 bg-zinc-200/80 dark:bg-zinc-700/80 text-zinc-500 dark:text-zinc-400">"Explicit"</span> }.into_any()
+                                } else {
+                                    view! { <span></span> }.into_any()
+                                }}
+                            </div>
+
+                            // Title
+                            <h1 class="text-2xl md:text-3xl font-bold text-zinc-900 dark:text-zinc-100 m-0 mb-1 leading-tight">{album_title.clone()}</h1>
+
+                            // Artist + date + duration
+                            <div class={cls(MUTED, "text-sm mb-4 flex flex-wrap items-center gap-1.5")}>
+                                <a href=artist_link.clone() class="text-zinc-600 dark:text-zinc-300 hover:text-blue-500 dark:hover:text-blue-400 no-underline font-medium">
+                                    {artist_name.clone()}
+                                </a>
+                                <span>"\u{00b7}"</span>
+                                <span>{release_date.clone()}</span>
+                                <span>"\u{00b7}"</span>
+                                <span>{format!("{track_count} tracks, {duration_display}")}</span>
+                            </div>
+
+                            // Status pills
+                            <div class="flex flex-wrap items-center gap-2 mb-4">
+                                {if is_wanted && !is_acquired {
+                                    view! { <span class="pill" style="background:rgba(245,158,11,.12);color:#f59e0b">"Wanted"</span> }.into_any()
+                                } else if is_acquired {
+                                    view! { <span class="pill" style="background:rgba(34,197,94,.12);color:#22c55e">"Acquired"</span> }.into_any()
+                                } else {
+                                    view! { <span class="pill">"Not Wanted"</span> }.into_any()
+                                }}
+                                {if is_monitored {
+                                    view! { <span class="pill" style="background:rgba(59,130,246,.12);color:#3b82f6">"Monitored"</span> }.into_any()
+                                } else {
+                                    view! { <span class="pill">"Unmonitored"</span> }.into_any()
+                                }}
+                                <span class=status_pill_class>{status_pill_text}</span>
+                                {match &job_quality {
+                                    Some(q) => view! { <span class="pill d7-pill-muted">{q.clone()}</span> }.into_any(),
+                                    None => {
+                                        if !artist_quality.is_empty() {
+                                            view! { <span class="pill d7-pill-muted">{artist_quality.clone()}</span> }.into_any()
+                                        } else {
+                                            view! { <span></span> }.into_any()
+                                        }
+                                    }
+                                }}
+                            </div>
+
+                            // Error message if job failed
+                            {match &job_error {
+                                Some(err) => view! {
+                                    <div class="mb-4 text-sm text-red-600 dark:text-red-400 bg-red-500/[.06] dark:bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+                                        {err.clone()}
+                                    </div>
+                                }.into_any(),
+                                None => view! { <span></span> }.into_any(),
+                            }}
+
+                            // Action buttons
+                            <div class="flex flex-wrap gap-1.5">
+                                {if can_retry {
+                                    view! {
+                                        <button type="button"
+                                            class=move || btn_cls(BTN_PRIMARY, "px-3 py-1.5 text-xs", download_loading.get())
+                                            disabled=move || download_loading.get()
+                                            on:click=move |_| {
+                                                dispatch_with_toast_loading(ServerAction::RetryDownload { album_id }, "Download requeued", Some(download_loading));
+                                            }>
+                                            {move || if download_loading.get() { "Retrying\u{2026}" } else { "Retry Download" }}
+                                        </button>
+                                    }.into_any()
+                                } else if can_download {
+                                    view! {
+                                        <button type="button"
+                                            class=move || btn_cls(BTN_PRIMARY, "px-3 py-1.5 text-xs", download_loading.get())
+                                            disabled=move || download_loading.get()
+                                            on:click=move |_| {
+                                                dispatch_with_toast_loading(ServerAction::RetryDownload { album_id }, "Download started", Some(download_loading));
+                                            }>
+                                            {move || if download_loading.get() { "Starting\u{2026}" } else { "Download" }}
+                                        </button>
+                                    }.into_any()
+                                } else {
+                                    view! { <span></span> }.into_any()
+                                }}
+
+                                <button type="button" class={cls(BTN, "px-3 py-1.5 text-xs")} title=monitor_title
+                                    on:click=move |_| {
+                                        let next = !is_monitored;
+                                        let msg = if next { "Album monitored" } else { "Album unmonitored" };
+                                        dispatch_with_toast(ServerAction::ToggleAlbumMonitor { album_id, monitored: next }, msg);
+                                    }>{monitor_label}</button>
+
+                                {if is_acquired {
+                                    view! {
+                                        <button type="button" class={cls(BTN_DANGER, "px-3 py-1.5 text-xs")} title="Delete downloaded files"
+                                            on:click=move |_| {
+                                                show_remove_files.set(true);
+                                            }>
+                                            "Remove Files"
+                                        </button>
+                                    }.into_any()
+                                } else {
+                                    view! { <span></span> }.into_any()
+                                }}
+
+                                {match profile_url {
+                                    Some(url) => view! {
+                                        <a href=url target="_blank" rel="noreferrer" class={cls(BTN, "px-3 py-1.5 text-xs")}>
+                                            <span class="inline-block size-3.5 shrink-0" inner_html=tidal_icon_svg()></span>
+                                            "Tidal"
+                                        </a>
+                                    }.into_any(),
+                                    None => view! { <span></span> }.into_any(),
+                                }}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            // ── Tracklist card ───────────────────────────────
+            <div class=GLASS>
+                <div class=GLASS_HEADER>
+                    <h2 class=GLASS_TITLE>"Tracklist"</h2>
+                    <span class={cls(MUTED, "text-xs")}>{format!("{track_count} tracks \u{00b7} {duration_display}")}</span>
+                </div>
+                {if tracks.is_empty() {
+                    view! {
+                        <div class="text-center py-10 px-4 text-zinc-400 dark:text-zinc-600 text-sm">"No tracks available."</div>
+                    }.into_any()
+                } else {
+                    view! {
+                        <div class={cls(GLASS_BODY, "p-0!")}>
+                            <div class="divide-y divide-black/[.04] dark:divide-white/[.04]">
+                                {tracks.iter().map(|t| {
+                                    let num = t.track_number;
+                                    let title = t.title.clone();
+                                    let version = t.version.clone();
+                                    let dur = t.duration_display.clone();
+                                    view! {
+                                        <div class="flex items-center gap-3 px-5 py-2.5 transition-colors duration-100 hover:bg-blue-500/[.03] dark:hover:bg-blue-500/[.05]">
+                                            <span class="w-8 text-right text-xs tabular-nums text-zinc-400 dark:text-zinc-500 shrink-0">{num}</span>
+                                            <div class="flex-1 min-w-0 truncate">
+                                                <span class="text-sm text-zinc-800 dark:text-zinc-200">{title}</span>
+                                                {match version {
+                                                    Some(v) if !v.is_empty() => view! {
+                                                        <span class="text-xs text-zinc-400 dark:text-zinc-500 ml-1.5">{format!("({v})")}</span>
+                                                    }.into_any(),
+                                                    _ => view! { <span></span> }.into_any(),
+                                                }}
+                                            </div>
+                                            <span class="text-xs tabular-nums text-zinc-400 dark:text-zinc-500 shrink-0">{dur}</span>
+                                        </div>
+                                    }
+                                }).collect_view()}
+                            </div>
+                        </div>
+                    }.into_any()
+                }}
+            </div>
+        </div>
+
+        // ── Confirmation dialog for removing album files ────
+        <ConfirmDialog
+            open=show_remove_files
+            title="Remove Files"
+            message=format!("This will delete all downloaded files for \u{201c}{album_title}\u{201d} from disk.")
+            confirm_label="Remove Files"
+            danger=true
+            checkbox_label="Also unmonitor this album"
+            on_confirm=move |unmonitor: bool| {
+                let msg = if unmonitor { "Album files removed and unmonitored" } else { "Album files removed" };
+                dispatch_with_toast(ServerAction::RemoveAlbumFiles { album_id, unmonitor }, msg);
+            }
+        />
+    }
+}

@@ -77,6 +77,7 @@ pub struct MonitoredAlbum {
 pub struct TrackInfo {
     pub id: i64,
     pub title: String,
+    pub version: Option<String>,
     pub track_number: u32,
     pub duration_secs: u32,
     pub duration_display: String,
@@ -228,7 +229,8 @@ pub fn album_type_rank(album_type: Option<&str>, title: &str) -> u8 {
 
 pub fn status_class(status: &DownloadStatus) -> &'static str {
     match status {
-        DownloadStatus::Queued | DownloadStatus::Resolving => "pill status-queued",
+        DownloadStatus::Queued => "pill status-queued",
+        DownloadStatus::Resolving => "pill status-resolving",
         DownloadStatus::Downloading => "pill status-downloading",
         DownloadStatus::Completed => "pill status-completed",
         DownloadStatus::Failed => "pill status-failed",

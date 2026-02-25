@@ -38,7 +38,8 @@ tokio = { version = "1", features = [
   "sync",
 ] }
 tokio-stream = { version = "0.1", features = ["sync"] }
-tower-http = { version = "0.6", features = ["fs", "trace"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["fs", "normalize-path", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = [
   "env-filter",
@@ -73,7 +74,7 @@ web-sys = { version = "0.3", features = [
   "Response",
   "EventSource",
 ] }
-gloo-timers = { version = "0.3", features = ["futures"] }
+simpleicons-rs = "16"
 
 # ── Internal crates ─────────────────────────────────────────
 yoink-shared = { path = "crates/yoink-shared" }

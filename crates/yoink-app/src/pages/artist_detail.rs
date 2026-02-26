@@ -516,7 +516,7 @@ fn ArtistDetailContent(
                                         key=|album| album.id.clone()
                                         let:album
                                     >
-                                        <AlbumSleeve album=album jobs=jobs artist_id=artist.clone() />
+                                        <AlbumSleeve album=album albums=albums jobs=jobs artist_id=artist.clone() />
                                     </For>
                                 </div>
                             </div>
@@ -531,17 +531,18 @@ fn ArtistDetailContent(
 /// Album sleeve card in the discography grid.
 ///
 /// The title links to the album detail page.
-/// Accepts `jobs` as a signal so download status updates reactively
-/// without recreating the component.
+/// Mutable album state (monitored, wanted, acquired) is derived reactively
+/// from the `albums` signal so that changes (e.g. toggling monitor) are
+/// reflected immediately without recreating the component — `<For>` keeps
+/// the same instance alive as long as the key (album ID) exists.
 #[component]
 fn AlbumSleeve(
     album: MonitoredAlbum,
+    albums: RwSignal<Vec<MonitoredAlbum>>,
     jobs: RwSignal<Vec<DownloadJob>>,
     artist_id: RwSignal<Option<MonitoredArtist>>,
 ) -> impl IntoView {
     let album_id = album.id.clone();
-    let album_id_monitor = album.id.clone();
-    let album_id_remove = album.id.clone();
     let album_id_str = album.id.clone();
     let album_id_for_url = album.id.clone();
     let album_title = album.title.clone();
@@ -551,14 +552,28 @@ fn AlbumSleeve(
         .unwrap_or_else(|| "\u{2014}".to_string());
     let at = album_type_label(album.album_type.as_deref(), &album.title);
     let is_explicit = album.explicit;
-    let is_monitored = album.monitored;
-    let is_wanted = album.wanted;
-    let is_acquired = album.acquired;
 
     let show_remove_files = RwSignal::new(false);
 
     let cover_url = album_cover_url(&album, 640);
     let detail_url = format!("/artists/{}/albums/{}", artist_id.get_untracked().map(|a| a.id).unwrap_or_default(), album_id_for_url);
+
+    // Reactively derive mutable album flags from the canonical albums signal.
+    // This ensures that when the server updates an album (e.g. toggling monitor),
+    // the UI reflects the change without needing to recreate the component.
+    // We use a Memo so the flags are computed once per change and can be read
+    // cheaply from multiple reactive closures (Memo is Copy).
+    let aid_flags = album_id.clone();
+    let flags = Memo::new(move |_| {
+        let all = albums.get();
+        all.iter()
+            .find(|a| a.id == aid_flags)
+            .map(|a| (a.monitored, a.wanted, a.acquired))
+            .unwrap_or((false, false, false))
+    });
+    let is_monitored = move || flags.get().0;
+    let is_wanted = move || flags.get().1;
+    let is_acquired = move || flags.get().2;
 
     // Reactively derive job status from the jobs signal
     let album_id_for_job = album.id.clone();
@@ -568,20 +583,14 @@ fn AlbumSleeve(
         latest.get(&album_id_for_job).cloned()
     };
 
-    let wanted_pill_text = if is_wanted { "Wanted" } else { "Not Wanted" };
-
     let fallback_initial = album_title
         .chars()
         .next()
         .map(|c| c.to_uppercase().to_string())
         .unwrap_or_else(|| "?".to_string());
 
-    let monitor_title = if is_monitored {
-        "Unmonitor album"
-    } else {
-        "Monitor album"
-    };
-    let monitor_label = if is_monitored { "Unmonitor" } else { "Monitor" };
+    let album_id_action = album_id.clone();
+    let album_id_remove = album_id.clone();
 
     view! {
         // ── Album card (grid cell) ──────────────────────────
@@ -596,12 +605,17 @@ fn AlbumSleeve(
                             <div class="d7-sleeve-fallback">{fallback_initial}</div>
                         }.into_any(),
                     }}
-                    {if is_wanted && !is_acquired {
-                        view! { <span class="d7-badge d7-badge-wanted">"Wanted"</span> }.into_any()
-                    } else if is_acquired {
-                        view! { <span class="d7-badge d7-badge-acquired">"Acquired"</span> }.into_any()
-                    } else {
-                        view! { <span></span> }.into_any()
+                    // Badges — reactive
+                    {move || {
+                        let wanted = is_wanted();
+                        let acquired = is_acquired();
+                        if wanted && !acquired {
+                            view! { <span class="d7-badge d7-badge-wanted">"Wanted"</span> }.into_any()
+                        } else if acquired {
+                            view! { <span class="d7-badge d7-badge-acquired">"Acquired"</span> }.into_any()
+                        } else {
+                            view! { <span></span> }.into_any()
+                        }
                     }}
                     {if is_explicit {
                         view! { <span class="d7-badge d7-badge-explicit">"E"</span> }.into_any()
@@ -630,33 +644,46 @@ fn AlbumSleeve(
                         };
                         view! { <span class=status_pill_class data-job-status>{status_pill_text}</span> }
                     }}
-                    <span class={cls(MUTED, "text-[10px]")} data-wanted-pill>{wanted_pill_text}</span>
-                </div>
-
-                <div class="d7-sleeve-actions">
-                    <button type="button" class={cls(BTN, "d7-sleeve-action-btn")} title=monitor_title
-                        on:click={
-                            let aid = album_id_monitor.clone();
-                            move |_| {
-                                let next = !is_monitored;
-                                let msg = if next { "Album monitored" } else { "Album unmonitored" };
-                                dispatch_with_toast(ServerAction::ToggleAlbumMonitor { album_id: aid.clone(), monitored: next }, msg);
-                            }
-                        }>{monitor_label}</button>
-                    {if is_acquired {
-                        let _aid = album_id_remove.clone();
-                        view! {
-                            <button type="button" class={cls(BTN_DANGER, "d7-sleeve-action-btn")} title="Delete downloaded files"
-                                on:click=move |_| {
-                                    show_remove_files.set(true);
-                                }>
-                                "Remove Files"
-                            </button>
-                        }.into_any()
-                    } else {
-                        view! { <span></span> }.into_any()
+                    {move || {
+                        let pill = if is_wanted() { "Wanted" } else { "Not Wanted" };
+                        view! { <span class={cls(MUTED, "text-[10px]")} data-wanted-pill>{pill}</span> }
                     }}
                 </div>
+
+                // Actions — reactive monitor/remove buttons
+                {move || {
+                    let monitored = is_monitored();
+                    let acquired = is_acquired();
+                    let monitor_title = if monitored { "Unmonitor album" } else { "Monitor album" };
+                    let monitor_label = if monitored { "Unmonitor" } else { "Monitor" };
+                    let aid_m = album_id_action.clone();
+                    let aid_r = album_id_remove.clone();
+                    view! {
+                        <div class="d7-sleeve-actions">
+                            <button type="button" class={cls(BTN, "d7-sleeve-action-btn")} title=monitor_title
+                                on:click=move |_| {
+                                    let next = !monitored;
+                                    let msg = if next { "Album monitored" } else { "Album unmonitored" };
+                                    dispatch_with_toast(ServerAction::ToggleAlbumMonitor { album_id: aid_m.clone(), monitored: next }, msg);
+                                }>{monitor_label}</button>
+                            {if acquired {
+                                view! {
+                                    <button type="button" class={cls(BTN_DANGER, "d7-sleeve-action-btn")} title="Delete downloaded files"
+                                        on:click={
+                                            let _aid = aid_r.clone();
+                                            move |_| {
+                                                show_remove_files.set(true);
+                                            }
+                                        }>
+                                        "Remove Files"
+                                    </button>
+                                }.into_any()
+                            } else {
+                                view! { <span></span> }.into_any()
+                            }}
+                        </div>
+                    }
+                }}
             </div>
         </div>
 

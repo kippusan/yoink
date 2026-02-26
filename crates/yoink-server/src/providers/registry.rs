@@ -91,7 +91,6 @@ impl ProviderRegistry {
     }
 
     /// Search artists using a specific metadata provider.
-    #[allow(dead_code)]
     pub async fn search_artists(
         &self,
         provider_id: &str,

@@ -308,6 +308,13 @@ pub type SearchArtistsFn =
     std::sync::Arc<dyn Fn(String) -> AsyncFnResult<Vec<SearchArtistResult>> + Send + Sync>;
 
 #[cfg(feature = "ssr")]
+pub type SearchArtistsScopedFn =
+    std::sync::Arc<dyn Fn(String, String) -> AsyncFnResult<Vec<SearchArtistResult>> + Send + Sync>;
+
+#[cfg(feature = "ssr")]
+pub type ListProvidersFn = std::sync::Arc<dyn Fn() -> Vec<String> + Send + Sync>;
+
+#[cfg(feature = "ssr")]
 pub type FetchTracksFn =
     std::sync::Arc<dyn Fn(String) -> AsyncFnResult<Vec<TrackInfo>> + Send + Sync>;
 
@@ -329,6 +336,8 @@ pub struct ServerContext {
     pub monitored_albums: std::sync::Arc<tokio::sync::RwLock<Vec<MonitoredAlbum>>>,
     pub download_jobs: std::sync::Arc<tokio::sync::RwLock<Vec<DownloadJob>>>,
     pub search_artists: SearchArtistsFn,
+    pub search_artists_scoped: SearchArtistsScopedFn,
+    pub list_providers: ListProvidersFn,
     pub fetch_tracks: FetchTracksFn,
     pub fetch_artist_links: FetchArtistLinksFn,
     pub fetch_album_links: FetchAlbumLinksFn,

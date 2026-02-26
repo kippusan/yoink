@@ -128,6 +128,40 @@ async fn main() {
         })
     });
 
+    let scoped_search_state = state.clone();
+    let search_scoped_fn: yoink_shared::SearchArtistsScopedFn =
+        std::sync::Arc::new(move |provider_id: String, query: String| {
+            let s = scoped_search_state.clone();
+            Box::pin(async move {
+                let artists = s
+                    .registry
+                    .search_artists(&provider_id, &query)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                let results = artists
+                    .into_iter()
+                    .map(|a| {
+                        let image_url = a
+                            .image_ref
+                            .as_deref()
+                            .map(|r| yoink_shared::provider_image_url(&provider_id, r, 160));
+                        yoink_shared::SearchArtistResult {
+                            provider: provider_id.clone(),
+                            external_id: a.external_id,
+                            name: a.name,
+                            image_url,
+                            url: a.url,
+                        }
+                    })
+                    .collect();
+                Ok(results)
+            })
+        });
+
+    let list_providers_registry = state.registry.clone();
+    let list_providers_fn: yoink_shared::ListProvidersFn =
+        std::sync::Arc::new(move || list_providers_registry.metadata_provider_ids());
+
     let tracks_state = state.clone();
     let fetch_tracks_fn: yoink_shared::FetchTracksFn =
         std::sync::Arc::new(move |album_id: String| {
@@ -233,6 +267,8 @@ async fn main() {
         monitored_albums: state.monitored_albums.clone(),
         download_jobs: state.download_jobs.clone(),
         search_artists: search_fn,
+        search_artists_scoped: search_scoped_fn,
+        list_providers: list_providers_fn,
         fetch_tracks: fetch_tracks_fn,
         fetch_artist_links: fetch_artist_links_fn,
         fetch_album_links: fetch_album_links_fn,

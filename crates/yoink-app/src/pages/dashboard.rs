@@ -291,19 +291,16 @@ fn DashboardContent(data: DashboardData) -> impl IntoView {
 
 /// A single job row in the recent activity table.
 #[component]
-fn JobRow(job: DownloadJob, artist_names: HashMap<i64, String>) -> impl IntoView {
+fn JobRow(job: DownloadJob, #[allow(unused_variables)] artist_names: HashMap<String, String>) -> impl IntoView {
     let sc = status_class(&job.status).to_string();
     let st_label = status_label_text(&job.status, job.completed_tracks, job.total_tracks);
     let progress = format!("{}/{}", job.completed_tracks, job.total_tracks);
-    let artist_name = artist_names
-        .get(&job.artist_id)
-        .cloned()
-        .unwrap_or_else(|| format!("#{}", job.artist_id));
+    let artist_name = job.artist_name.clone();
     let updated = job.updated_at.format("%Y-%m-%d %H:%M").to_string();
     let is_queued = matches!(job.status, DownloadStatus::Queued);
     let is_failed = matches!(job.status, DownloadStatus::Failed);
-    let job_id_val = job.id;
-    let album_id_val = job.album_id;
+    let job_id_val = job.id.clone();
+    let album_id_retry = job.album_id.clone();
     let error_msg = job.error.clone().unwrap_or_default();
 
     view! {
@@ -326,14 +323,14 @@ fn JobRow(job: DownloadJob, artist_names: HashMap<i64, String>) -> impl IntoView
                     view! {
                         <button type="button" class={cls(BTN_DANGER, "px-2.5 py-0.5 text-xs")}
                             on:click=move |_| {
-                                dispatch_with_toast(ServerAction::CancelDownload { job_id: job_id_val }, "Download cancelled");
+                                dispatch_with_toast(ServerAction::CancelDownload { job_id: job_id_val.clone() }, "Download cancelled");
                             }>"Cancel"</button>
                     }.into_any()
                 } else if is_failed {
                     view! {
                         <button type="button" class={cls(BTN, "px-2.5 py-0.5 text-xs")}
                             on:click=move |_| {
-                                dispatch_with_toast(ServerAction::RetryDownload { album_id: album_id_val }, "Download queued for retry");
+                                dispatch_with_toast(ServerAction::RetryDownload { album_id: album_id_retry.clone() }, "Download queued for retry");
                             }>"Retry"</button>
                     }.into_any()
                 } else {

@@ -1,0 +1,279 @@
+pub(crate) mod api;
+pub(crate) mod instances;
+pub(crate) mod manifest;
+pub(crate) mod models;
+
+use std::{collections::HashMap, sync::Arc, time::Duration};
+
+use async_trait::async_trait;
+use tokio::sync::RwLock;
+use tracing::warn;
+
+use self::{
+    api::hifi_get_json,
+    instances::InstanceCache,
+    manifest::{extract_download_payload, summarize_manifest_for_logs},
+    models::*,
+};
+use super::{
+    DownloadSource, MetadataProvider, PlaybackInfo, ProviderAlbum, ProviderArtist, ProviderError,
+    ProviderTrack, Quality,
+};
+
+// ── TidalProvider ───────────────────────────────────────────────────
+
+pub(crate) struct TidalProvider {
+    pub http: reqwest::Client,
+    pub manual_base_url: Option<String>,
+    pub instance_cache: Arc<RwLock<InstanceCache>>,
+}
+
+impl TidalProvider {
+    pub fn new(http: reqwest::Client, manual_base_url: Option<String>) -> Self {
+        Self {
+            http,
+            manual_base_url,
+            instance_cache: Arc::new(RwLock::new(InstanceCache::new())),
+        }
+    }
+
+    /// Low-level hifi API call with instance failover (exposed for internal use).
+    pub async fn hifi_get<T: serde::de::DeserializeOwned>(
+        &self,
+        path: &str,
+        query: Vec<(String, String)>,
+    ) -> Result<T, String> {
+        hifi_get_json(
+            &self.http,
+            self.manual_base_url.as_deref(),
+            &self.instance_cache,
+            path,
+            query,
+        )
+        .await
+    }
+
+    /// Get the instances payload for the /api/tidal/instances debug endpoint.
+    pub async fn list_instances_payload(&self) -> models::InstancesResponse {
+        instances::list_instances_payload(
+            self.manual_base_url.as_deref(),
+            &self.instance_cache,
+            &self.http,
+        )
+        .await
+    }
+}
+
+#[async_trait]
+impl MetadataProvider for TidalProvider {
+    fn id(&self) -> &str {
+        "tidal"
+    }
+
+    fn display_name(&self) -> &str {
+        "Tidal"
+    }
+
+    async fn search_artists(&self, query: &str) -> Result<Vec<ProviderArtist>, ProviderError> {
+        let parsed = self
+            .hifi_get::<HifiResponse>(
+                "/search/",
+                vec![("a".to_string(), query.to_string())],
+            )
+            .await
+            .map_err(ProviderError::from)?;
+
+        let artists = parsed
+            .data
+            .artists
+            .map(|paged| paged.items)
+            .or(parsed.data.items)
+            .unwrap_or_default();
+
+        Ok(artists
+            .into_iter()
+            .map(|a| ProviderArtist {
+                external_id: a.id.to_string(),
+                name: a.name,
+                image_ref: a.picture.or(a.selected_album_cover_fallback),
+                url: a.url,
+            })
+            .collect())
+    }
+
+    async fn fetch_albums(
+        &self,
+        external_artist_id: &str,
+    ) -> Result<Vec<ProviderAlbum>, ProviderError> {
+        let response = self
+            .hifi_get::<HifiArtistAlbumsResponse>(
+                "/artist/",
+                vec![
+                    ("f".to_string(), external_artist_id.to_string()),
+                    ("skip_tracks".to_string(), "true".to_string()),
+                ],
+            )
+            .await
+            .map_err(ProviderError::from)?;
+
+        Ok(response
+            .albums
+            .items
+            .into_iter()
+            .map(|a| ProviderAlbum {
+                external_id: a.id.to_string(),
+                title: a.title,
+                album_type: a.album_type,
+                release_date: a.release_date,
+                cover_ref: a.cover,
+                url: a.url,
+                explicit: a.explicit.unwrap_or(false),
+            })
+            .collect())
+    }
+
+    async fn fetch_tracks(
+        &self,
+        external_album_id: &str,
+    ) -> Result<(Vec<ProviderTrack>, HashMap<String, serde_json::Value>), ProviderError> {
+        let response = self
+            .hifi_get::<HifiAlbumResponse>(
+                "/album/",
+                vec![("id".to_string(), external_album_id.to_string())],
+            )
+            .await
+            .map_err(ProviderError::from)?;
+
+        let album_extra = response.data.extra;
+        let tracks = response
+            .data
+            .items
+            .into_iter()
+            .enumerate()
+            .map(|(idx, item)| {
+                let track = match item {
+                    HifiAlbumItem::Item { item } => item,
+                    HifiAlbumItem::Track(t) => t,
+                };
+                ProviderTrack {
+                    external_id: track.id.to_string(),
+                    title: track.title,
+                    version: track.version,
+                    track_number: track.track_number.unwrap_or((idx + 1) as u32),
+                    disc_number: None, // extracted later from extra
+                    duration_secs: track.duration.unwrap_or(0),
+                    isrc: None,
+                    extra: track.extra,
+                }
+            })
+            .collect();
+
+        Ok((tracks, album_extra))
+    }
+
+    async fn fetch_track_info_extra(
+        &self,
+        external_track_id: &str,
+    ) -> Option<HashMap<String, serde_json::Value>> {
+        let response = self
+            .hifi_get::<serde_json::Value>(
+                "/info/",
+                vec![("id".to_string(), external_track_id.to_string())],
+            )
+            .await
+            .ok()?;
+
+        let data = response.get("data")?.as_object()?;
+        Some(
+            data.iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect(),
+        )
+    }
+
+    fn validate_image_id(&self, image_id: &str) -> bool {
+        // Tidal image IDs are hex UUIDs with hyphens, max 60 chars
+        image_id.len() <= 60 && image_id.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
+    }
+
+    fn image_url(&self, image_ref: &str, size: u16) -> String {
+        format!(
+            "https://resources.tidal.com/images/{}/{size}x{size}.jpg",
+            image_ref.replace('-', "/")
+        )
+    }
+
+    async fn fetch_cover_art_bytes(&self, image_ref: &str) -> Option<Vec<u8>> {
+        let url = format!(
+            "https://resources.tidal.com/images/{}/1080x1080.jpg",
+            image_ref.replace('-', "/")
+        );
+        let resp = self
+            .http
+            .get(url)
+            .timeout(Duration::from_secs(20))
+            .send()
+            .await
+            .ok()?
+            .error_for_status()
+            .ok()?;
+        resp.bytes().await.ok().map(|b| b.to_vec())
+    }
+}
+
+#[async_trait]
+impl DownloadSource for TidalProvider {
+    fn id(&self) -> &str {
+        "tidal"
+    }
+
+    async fn resolve_playback(
+        &self,
+        external_track_id: &str,
+        quality: &Quality,
+    ) -> Result<PlaybackInfo, ProviderError> {
+        let quality_str = quality.as_str().to_string();
+        let playback = self
+            .hifi_get::<HifiPlaybackResponse>(
+                "/track/",
+                vec![
+                    ("id".to_string(), external_track_id.to_string()),
+                    ("quality".to_string(), quality_str),
+                ],
+            )
+            .await
+            .map_err(ProviderError::from)?;
+
+        match extract_download_payload(&playback.data) {
+            Ok(payload) => Ok(payload),
+            Err(err)
+                if playback.data.manifest_mime_type == "application/dash+xml"
+                    && *quality == Quality::HiRes =>
+            {
+                let dash_summary = summarize_manifest_for_logs(&playback.data);
+                warn!(
+                    track_id = external_track_id,
+                    error = %err,
+                    manifest_summary = %dash_summary,
+                    "HI_RES DASH manifest unsupported, falling back to LOSSLESS"
+                );
+
+                // Retry with lossless
+                let fallback_playback = self
+                    .hifi_get::<HifiPlaybackResponse>(
+                        "/track/",
+                        vec![
+                            ("id".to_string(), external_track_id.to_string()),
+                            ("quality".to_string(), "LOSSLESS".to_string()),
+                        ],
+                    )
+                    .await
+                    .map_err(ProviderError::from)?;
+
+                extract_download_payload(&fallback_playback.data)
+                    .map_err(ProviderError::from)
+            }
+            Err(err) => Err(ProviderError::from(err)),
+        }
+    }
+}

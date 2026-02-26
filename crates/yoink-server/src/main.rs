@@ -3,12 +3,13 @@ mod config;
 mod db;
 mod logging;
 mod models;
+mod providers;
 mod routes;
 mod services;
 mod state;
 mod ui;
 
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use axum::routing::{get, get_service};
 use tower::layer::Layer;
@@ -21,6 +22,7 @@ use crate::{
     app_config::AppConfig,
     config::QUALITY_WARNING,
     logging::init_logging,
+    providers::{registry::ProviderRegistry, tidal::TidalProvider},
     routes::build_router,
     services::{download_worker_loop, reconcile_library_files},
     state::AppState,
@@ -40,7 +42,6 @@ async fn main() {
     // generate_route_list calls any_spawner::Executor::init_tokio() internally.
     let _leptos_routes = leptos_axum::generate_route_list(App);
 
-    let manual_hifi_base_url = Some(app_config.hifi_api_base_url.clone());
     let music_root = app_config.music_root_path();
     let default_quality = app_config.default_quality.clone();
     let default_quality_for_log = default_quality.clone();
@@ -54,12 +55,27 @@ async fn main() {
     let db_url = app_config.database_url.clone();
     let db_url_for_log = db_url.clone();
 
+    // ── Build provider registry ─────────────────────────────────
+    let mut registry = ProviderRegistry::new();
+
+    if app_config.tidal_enabled {
+        let tidal_base_url = app_config.resolved_tidal_base_url();
+        let tidal = Arc::new(TidalProvider::new(
+            reqwest::Client::new(),
+            Some(tidal_base_url),
+        ));
+        registry.register_metadata(Arc::clone(&tidal) as Arc<dyn providers::MetadataProvider>);
+        registry.register_download(Arc::clone(&tidal) as Arc<dyn providers::DownloadSource>);
+        registry.set_tidal(Arc::clone(&tidal));
+        info!("Tidal provider enabled");
+    }
+
     let state = AppState::new(
-        manual_hifi_base_url,
         music_root,
         default_quality,
         app_config.download_lyrics,
         &db_url,
+        registry,
     )
     .await;
     let download_lyrics_for_log = state.download_lyrics;
@@ -91,61 +107,119 @@ async fn main() {
     let search_fn: yoink_shared::SearchArtistsFn = std::sync::Arc::new(move |query: String| {
         let s = search_state.clone();
         Box::pin(async move {
-            match services::search_hifi_artists(&s, &query).await {
-                Ok(artists) => Ok(artists
-                    .into_iter()
-                    .map(|a| yoink_shared::SearchArtistResult {
-                        id: a.id,
+            let all_results = s.registry.search_artists_all(&query).await;
+            let mut results = Vec::new();
+            for (provider_id, artists) in all_results {
+                for a in artists {
+                    let image_url = a
+                        .image_ref
+                        .as_deref()
+                        .map(|r| yoink_shared::provider_image_url(&provider_id, r, 160));
+                    results.push(yoink_shared::SearchArtistResult {
+                        provider: provider_id.clone(),
+                        external_id: a.external_id,
                         name: a.name,
-                        picture: a.picture.or(a.selected_album_cover_fallback),
+                        image_url,
                         url: a.url,
-                    })
-                    .collect()),
-                Err(err) => Err(format!("Search failed: {err}")),
+                    });
+                }
             }
+            Ok(results)
         })
     });
 
     let tracks_state = state.clone();
-    let fetch_tracks_fn: yoink_shared::FetchTracksFn = std::sync::Arc::new(move |album_id: i64| {
-        let s = tracks_state.clone();
-        Box::pin(async move {
-            use models::{HifiAlbumItem, HifiAlbumResponse};
-            use services::hifi::hifi_get_json;
+    let fetch_tracks_fn: yoink_shared::FetchTracksFn =
+        std::sync::Arc::new(move |album_id: String| {
+            let s = tracks_state.clone();
+            Box::pin(async move {
+                // First try to load from local DB
+                let tracks = db::load_tracks_for_album(&s.db, &album_id)
+                    .await
+                    .map_err(|e| format!("Failed to load tracks: {e}"))?;
 
-            let response = hifi_get_json::<HifiAlbumResponse>(
-                &s,
-                "/album/",
-                vec![("id".to_string(), album_id.to_string())],
-            )
-            .await
-            .map_err(|e| format!("Failed to fetch tracks: {e}"))?;
+                if !tracks.is_empty() {
+                    return Ok(tracks);
+                }
 
-            Ok(response
-                .data
-                .items
-                .into_iter()
-                .enumerate()
-                .map(|(idx, item)| {
-                    let track = match item {
-                        HifiAlbumItem::Item { item } => item,
-                        HifiAlbumItem::Track(t) => t,
+                // Fallback: try to fetch from any linked metadata provider
+                let links = db::load_album_provider_links(&s.db, &album_id)
+                    .await
+                    .map_err(|e| format!("Failed to load album links: {e}"))?;
+
+                for link in &links {
+                    let Some(provider) = s.registry.metadata_provider(&link.provider) else {
+                        continue;
                     };
-                    let secs = track.duration.unwrap_or(0);
-                    let mins = secs / 60;
-                    let rem = secs % 60;
-                    yoink_shared::TrackInfo {
-                        id: track.id,
-                        title: track.title,
-                        version: track.version,
-                        track_number: track.track_number.unwrap_or((idx + 1) as u32),
-                        duration_secs: secs,
-                        duration_display: format!("{mins}:{rem:02}"),
+
+                    match provider.fetch_tracks(&link.external_id).await {
+                        Ok((provider_tracks, _album_extra)) => {
+                            return Ok(provider_tracks
+                                .into_iter()
+                                .map(|t| {
+                                    let secs = t.duration_secs;
+                                    let mins = secs / 60;
+                                    let rem = secs % 60;
+                                    yoink_shared::TrackInfo {
+                                        id: db::uuid_to_string(&db::new_uuid()),
+                                        title: t.title,
+                                        version: t.version,
+                                        disc_number: t.disc_number.unwrap_or(1),
+                                        track_number: t.track_number,
+                                        duration_secs: secs,
+                                        duration_display: format!("{mins}:{rem:02}"),
+                                        isrc: t.isrc,
+                                    }
+                                })
+                                .collect());
+                        }
+                        Err(_) => continue,
                     }
-                })
-                .collect())
-        })
-    });
+                }
+
+                Ok(Vec::new())
+            })
+        });
+
+    let links_state = state.clone();
+    let fetch_artist_links_fn: yoink_shared::FetchArtistLinksFn =
+        std::sync::Arc::new(move |artist_id: String| {
+            let s = links_state.clone();
+            Box::pin(async move {
+                let links = db::load_artist_provider_links(&s.db, &artist_id)
+                    .await
+                    .map_err(|e| format!("Failed to load provider links: {e}"))?;
+                Ok(links
+                    .into_iter()
+                    .map(|l| yoink_shared::ProviderLink {
+                        provider: l.provider,
+                        external_id: l.external_id,
+                        external_url: l.external_url,
+                        external_name: l.external_name,
+                    })
+                    .collect())
+            })
+        });
+
+    let album_links_state = state.clone();
+    let fetch_album_links_fn: yoink_shared::FetchAlbumLinksFn =
+        std::sync::Arc::new(move |album_id: String| {
+            let s = album_links_state.clone();
+            Box::pin(async move {
+                let links = db::load_album_provider_links(&s.db, &album_id)
+                    .await
+                    .map_err(|e| format!("Failed to load album provider links: {e}"))?;
+                Ok(links
+                    .into_iter()
+                    .map(|l| yoink_shared::ProviderLink {
+                        provider: l.provider,
+                        external_id: l.external_id,
+                        external_url: l.external_url,
+                        external_name: l.external_title,
+                    })
+                    .collect())
+            })
+        });
 
     let action_state = state.clone();
     let dispatch_action_fn: yoink_shared::DispatchActionFn =
@@ -160,6 +234,8 @@ async fn main() {
         download_jobs: state.download_jobs.clone(),
         search_artists: search_fn,
         fetch_tracks: fetch_tracks_fn,
+        fetch_artist_links: fetch_artist_links_fn,
+        fetch_album_links: fetch_album_links_fn,
         dispatch_action: dispatch_action_fn,
     };
 
@@ -179,15 +255,16 @@ async fn main() {
     };
 
     // Old Axum routes + new Leptos-rendered pages.
-    // render_app_to_stream_with_context injects ServerContext into Leptos context
-    // so #[server] functions can access data via use_context::<ServerContext>().
     let leptos_handler = || {
         let ctx = provide_server_ctx.clone();
         get(leptos_axum::render_app_to_stream_with_context(ctx, shell))
     };
 
     let app = build_router(state)
-        .route("/leptos/{*fn_name}", get(server_fn_handler.clone()).post(server_fn_handler))
+        .route(
+            "/leptos/{*fn_name}",
+            get(server_fn_handler.clone()).post(server_fn_handler),
+        )
         .route("/", leptos_handler())
         .route("/artists", leptos_handler())
         .route("/artists/{artist_id}", leptos_handler())
@@ -195,21 +272,33 @@ async fn main() {
         .route("/wanted", leptos_handler())
         .fallback_service(get_service(ServeDir::new(site_root)))
         .layer(
-        TraceLayer::new_for_http()
-            .on_request(|request: &axum::http::Request<_>, _span: &tracing::Span| {
-                debug!(method = %request.method(), uri = %request.uri(), "HTTP request started");
-            })
-            .on_response(
-                |response: &axum::http::Response<_>, latency: Duration, _span: &tracing::Span| {
-                    let status = response.status().as_u16();
-                    if status >= 500 {
-                        error!(status, latency_ms = latency.as_millis(), "HTTP request failed");
-                    } else if status >= 400 {
-                        warn!(status, latency_ms = latency.as_millis(), "HTTP client error");
-                    }
-                },
-            ),
-    );
+            TraceLayer::new_for_http()
+                .on_request(
+                    |request: &axum::http::Request<_>, _span: &tracing::Span| {
+                        debug!(method = %request.method(), uri = %request.uri(), "HTTP request started");
+                    },
+                )
+                .on_response(
+                    |response: &axum::http::Response<_>,
+                     latency: Duration,
+                     _span: &tracing::Span| {
+                        let status = response.status().as_u16();
+                        if status >= 500 {
+                            error!(
+                                status,
+                                latency_ms = latency.as_millis(),
+                                "HTTP request failed"
+                            );
+                        } else if status >= 400 {
+                            warn!(
+                                status,
+                                latency_ms = latency.as_millis(),
+                                "HTTP client error"
+                            );
+                        }
+                    },
+                ),
+        );
 
     // NormalizePath strips trailing slashes so `/artists/` matches `/artists`.
     let app = NormalizePathLayer::trim_trailing_slash().layer(app);
@@ -236,10 +325,6 @@ async fn main() {
 }
 
 /// Execute a `ServerAction` against the real `AppState`.
-///
-/// This runs in the server process and has access to all binary-crate modules
-/// (services, db, state). After mutating state it fires SSE so connected
-/// clients refresh.
 async fn dispatch_action_impl(
     state: AppState,
     action: yoink_shared::ServerAction,
@@ -260,7 +345,7 @@ async fn dispatch_action_impl(
                     services::update_wanted(album);
                     let _ = db::update_album_flags(
                         &state.db,
-                        album.id,
+                        &album.id,
                         album.monitored,
                         album.acquired,
                         album.wanted,
@@ -289,7 +374,7 @@ async fn dispatch_action_impl(
                     services::update_wanted(album);
                     let _ = db::update_album_flags(
                         &state.db,
-                        album.id,
+                        &album.id,
                         album.monitored,
                         album.acquired,
                         album.wanted,
@@ -307,7 +392,7 @@ async fn dispatch_action_impl(
         }
 
         ServerAction::SyncArtistAlbums { artist_id } => {
-            let _ = services::sync_artist_albums_from_hifi(&state, artist_id).await;
+            let _ = services::sync_artist_albums(&state, &artist_id).await;
             state.notify_sse();
         }
 
@@ -327,15 +412,15 @@ async fn dispatch_action_impl(
                 for album in &acquired {
                     if let Err(e) = services::remove_downloaded_album_files(&state, album).await {
                         warn!(
-                            album_id = album.id,
+                            album_id = %album.id,
                             error = %e,
                             "Failed to remove files for album while removing artist"
                         );
                     }
                 }
             }
-            let _ = db::delete_albums_by_artist(&state.db, artist_id).await;
-            let _ = db::delete_artist(&state.db, artist_id).await;
+            let _ = db::delete_albums_by_artist(&state.db, &artist_id).await;
+            let _ = db::delete_artist(&state.db, &artist_id).await;
             {
                 let mut albums = state.monitored_albums.write().await;
                 albums.retain(|a| a.artist_id != artist_id);
@@ -344,32 +429,89 @@ async fn dispatch_action_impl(
                 let mut artists = state.monitored_artists.write().await;
                 artists.retain(|a| a.id != artist_id);
             }
-            info!(artist_id, remove_files, "Removed artist and their albums");
+            info!(%artist_id, remove_files, "Removed artist and their albums");
             state.notify_sse();
         }
 
         ServerAction::AddArtist {
-            id,
             name,
-            picture,
-            tidal_url,
+            provider,
+            external_id,
+            image_url,
+            external_url,
         } => {
-            {
-                let mut artists = state.monitored_artists.write().await;
-                if artists.iter().all(|a| a.id != id) {
-                    let artist = yoink_shared::MonitoredArtist {
-                        id,
-                        name,
-                        picture: picture.filter(|s| !s.is_empty()),
-                        tidal_url: tidal_url.filter(|s| !s.is_empty()),
-                        quality_profile: state.default_quality.clone(),
-                        added_at: Utc::now(),
-                    };
-                    let _ = db::upsert_artist(&state.db, &artist).await;
+            // Check if we already have this provider link
+            let existing_artist_id =
+                db::find_artist_by_provider_link(&state.db, &provider, &external_id)
+                    .await
+                    .ok()
+                    .flatten();
+
+            let artist_id = if let Some(id) = existing_artist_id {
+                id
+            } else {
+                // Create new local artist
+                let new_id = db::uuid_to_string(&db::new_uuid());
+                let artist = yoink_shared::MonitoredArtist {
+                    id: new_id.clone(),
+                    name: name.clone(),
+                    image_url: image_url.clone(),
+                    added_at: Utc::now(),
+                };
+                let _ = db::upsert_artist(&state.db, &artist).await;
+                {
+                    let mut artists = state.monitored_artists.write().await;
                     artists.push(artist);
                 }
-            }
-            let _ = services::sync_artist_albums_from_hifi(&state, id).await;
+
+                // Create the provider link
+                let link = db::ArtistProviderLink {
+                    id: db::uuid_to_string(&db::new_uuid()),
+                    artist_id: new_id.clone(),
+                    provider: provider.clone(),
+                    external_id: external_id.clone(),
+                    external_url: external_url.clone(),
+                    external_name: Some(name),
+                    image_ref: None,
+                };
+                let _ = db::upsert_artist_provider_link(&state.db, &link).await;
+
+                new_id
+            };
+
+            let _ = services::sync_artist_albums(&state, &artist_id).await;
+            state.notify_sse();
+        }
+
+        ServerAction::LinkArtistProvider {
+            artist_id,
+            provider,
+            external_id,
+            external_url,
+            external_name,
+            image_ref,
+        } => {
+            let link = db::ArtistProviderLink {
+                id: db::uuid_to_string(&db::new_uuid()),
+                artist_id,
+                provider,
+                external_id,
+                external_url,
+                external_name,
+                image_ref,
+            };
+            let _ = db::upsert_artist_provider_link(&state.db, &link).await;
+            state.notify_sse();
+        }
+
+        ServerAction::UnlinkArtistProvider {
+            artist_id,
+            provider,
+            external_id,
+        } => {
+            let _ =
+                db::delete_artist_provider_link(&state.db, &artist_id, &provider, &external_id)
+                    .await;
             state.notify_sse();
         }
 
@@ -382,7 +524,7 @@ async fn dispatch_action_impl(
                 job.error = Some("Cancelled by user".to_string());
                 job.updated_at = Utc::now();
                 let _ = db::update_job(&state.db, job).await;
-                info!(job_id, "Cancelled download job");
+                info!(%job_id, "Cancelled download job");
             }
             drop(jobs);
             state.notify_sse();
@@ -411,8 +553,8 @@ async fn dispatch_action_impl(
                     job.updated_at = Utc::now();
                     let _ = db::update_job(&state.db, job).await;
                     info!(
-                        album_id,
-                        job_id = job.id,
+                        %album_id,
+                        job_id = %job.id,
                         previous_quality = %previous_quality,
                         retry_quality = %job.quality,
                         "Retrying failed download job"
@@ -428,7 +570,7 @@ async fn dispatch_action_impl(
                 albums.iter().find(|a| a.id == album_id).cloned()
             };
             if let Some(album) = album {
-                info!(album_id = album.id, title = %album.title, "Creating retry download job");
+                info!(album_id = %album.id, title = %album.title, "Creating retry download job");
                 services::enqueue_album_download(&state, &album).await;
             }
             state.notify_sse();
@@ -457,7 +599,7 @@ async fn dispatch_action_impl(
                     services::update_wanted(existing);
                     let _ = db::update_album_flags(
                         &state.db,
-                        existing.id,
+                        &existing.id,
                         existing.monitored,
                         existing.acquired,
                         existing.wanted,
@@ -476,13 +618,13 @@ async fn dispatch_action_impl(
                     let should_remove = j.album_id == album_id
                         && j.status == yoink_shared::DownloadStatus::Completed;
                     if should_remove {
-                        removed_completed_ids.push(j.id);
+                        removed_completed_ids.push(j.id.clone());
                     }
                     !should_remove
                 });
             }
             for job_id in removed_completed_ids {
-                let _ = db::delete_job(&state.db, job_id).await;
+                let _ = db::delete_job(&state.db, &job_id).await;
             }
 
             if let Some(album) = to_queue {
@@ -490,7 +632,7 @@ async fn dispatch_action_impl(
             }
 
             info!(
-                album_id,
+                %album_id,
                 removed, unmonitor, "Removed downloaded album files"
             );
             state.notify_sse();

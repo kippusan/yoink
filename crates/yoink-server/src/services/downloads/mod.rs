@@ -1,6 +1,5 @@
 mod io;
 mod lyrics;
-mod manifest;
 mod metadata;
 mod worker;
 
@@ -16,22 +15,21 @@ use tracing::{debug, error, info};
 
 use crate::{
     db,
-    models::{DownloadJob, DownloadStatus, HifiAlbumItem, HifiAlbumResponse, MonitoredAlbum},
+    models::{DownloadJob, DownloadStatus, MonitoredAlbum},
     state::AppState,
 };
 
-use super::hifi::hifi_get_json;
 use super::library::update_wanted;
 use io::{normalize_quality, parse_track_number_from_path, sanitize_path_component as sanitize};
 use metadata::{
-    build_full_artist_string, extract_disc_number, fetch_cover_art_bytes, fetch_track_info_extra,
+    build_full_artist_string, extract_disc_number,
 };
 use worker::download_album_job;
 
 pub(crate) async fn enqueue_album_download(state: &AppState, album: &MonitoredAlbum) {
     if !album.monitored || album.acquired {
         debug!(
-            album_id = album.id,
+            album_id = %album.id,
             monitored = album.monitored,
             acquired = album.acquired,
             "Skipping enqueue because album is not wanted"
@@ -48,7 +46,7 @@ pub(crate) async fn enqueue_album_download(state: &AppState, album: &MonitoredAl
             )
     }) {
         debug!(
-            album_id = album.id,
+            album_id = %album.id,
             "Skipping enqueue because active job exists"
         );
         return;
@@ -56,11 +54,43 @@ pub(crate) async fn enqueue_album_download(state: &AppState, album: &MonitoredAl
 
     let requested_quality = normalize_quality(&state.default_quality);
 
+    // Resolve artist name for denormalization
+    let artist_name = {
+        let artists = state.monitored_artists.read().await;
+        artists
+            .iter()
+            .find(|a| a.id == album.artist_id)
+            .map(|a| a.name.clone())
+            .unwrap_or_else(|| "Unknown Artist".to_string())
+    };
+
+    // Determine the download source from available album provider links
+    let source = {
+        let links = db::load_album_provider_links(&state.db, &album.id)
+            .await
+            .unwrap_or_default();
+        // Prefer the first link whose provider is a registered download source
+        let download_source_ids = state.registry.download_source_ids();
+        links
+            .iter()
+            .find(|l| download_source_ids.contains(&l.provider))
+            .map(|l| l.provider.clone())
+            .unwrap_or_else(|| {
+                // Fall back to the first available download source
+                download_source_ids
+                    .first()
+                    .cloned()
+                    .unwrap_or_else(|| "tidal".to_string())
+            })
+    };
+
+    let job_id = db::uuid_to_string(&db::new_uuid());
     let mut new_job = DownloadJob {
-        id: 0, // will be set from DB
-        album_id: album.id,
-        artist_id: album.artist_id,
+        id: job_id,
+        album_id: album.id.clone(),
+        source,
         album_title: album.title.clone(),
+        artist_name,
         status: DownloadStatus::Queued,
         quality: requested_quality.clone(),
         total_tracks: 0,
@@ -70,22 +100,20 @@ pub(crate) async fn enqueue_album_download(state: &AppState, album: &MonitoredAl
         updated_at: Utc::now(),
     };
 
-    // Persist to DB and get the auto-increment ID
+    // Persist to DB
     match db::insert_job(&state.db, &new_job).await {
-        Ok(row_id) => new_job.id = row_id as u64,
+        Ok(persisted_id) => new_job.id = persisted_id,
         Err(err) => {
             error!(error = %err, "Failed to persist download job to database");
-            let next_id = jobs.iter().map(|job| job.id).max().unwrap_or(0) + 1;
-            new_job.id = next_id;
         }
     }
 
     info!(
-        job_id = new_job.id,
-        album_id = album.id,
-        artist_id = album.artist_id,
+        job_id = %new_job.id,
+        album_id = %album.id,
         title = %album.title,
         quality = %requested_quality,
+        source = %new_job.source,
         "Queued album download"
     );
     jobs.push(new_job);
@@ -117,8 +145,8 @@ pub(crate) async fn download_worker_loop(state: AppState) {
         };
 
         info!(
-            job_id = job.id,
-            album_id = job.album_id,
+            job_id = %job.id,
+            album_id = %job.album_id,
             "Processing download job"
         );
 
@@ -135,8 +163,8 @@ pub(crate) async fn download_worker_loop(state: AppState) {
                     }
                 }
                 info!(
-                    job_id = job.id,
-                    album_id = job.album_id,
+                    job_id = %job.id,
+                    album_id = %job.album_id,
                     "Download job completed"
                 );
                 let mut albums = state.monitored_albums.write().await;
@@ -145,7 +173,7 @@ pub(crate) async fn download_worker_loop(state: AppState) {
                     update_wanted(album);
                     let _ = db::update_album_flags(
                         &state.db,
-                        album.id,
+                        &album.id,
                         album.monitored,
                         album.acquired,
                         album.wanted,
@@ -155,7 +183,7 @@ pub(crate) async fn download_worker_loop(state: AppState) {
                 state.notify_sse();
             }
             Err(err) => {
-                error!(job_id = job.id, album_id = job.album_id, error = %err, "Download job failed");
+                error!(job_id = %job.id, album_id = %job.album_id, error = %err, "Download job failed");
                 {
                     let mut jobs = state.download_jobs.write().await;
                     if let Some(existing) = jobs.iter_mut().find(|item| item.id == job.id) {
@@ -171,7 +199,7 @@ pub(crate) async fn download_worker_loop(state: AppState) {
                     update_wanted(album);
                     let _ = db::update_album_flags(
                         &state.db,
-                        album.id,
+                        &album.id,
                         album.monitored,
                         album.acquired,
                         album.wanted,
@@ -190,7 +218,8 @@ pub(crate) async fn retag_existing_files(
     let artists = state.monitored_artists.read().await.clone();
     let albums = state.monitored_albums.read().await.clone();
 
-    let artist_names: HashMap<i64, String> = artists.into_iter().map(|a| (a.id, a.name)).collect();
+    let artist_names: HashMap<String, String> =
+        artists.into_iter().map(|a| (a.id.clone(), a.name)).collect();
 
     let mut tagged_files = 0usize;
     let mut missing_files = 0usize;
@@ -201,11 +230,33 @@ pub(crate) async fn retag_existing_files(
             continue;
         };
 
+        // Find a metadata provider link for this album
+        let album_links = db::load_album_provider_links(&state.db, &album.id)
+            .await
+            .unwrap_or_default();
+
+        // Find the first link that has a matching metadata provider
+        let provider_link = album_links.iter().find(|l| {
+            state.registry.metadata_provider(&l.provider).is_some()
+        });
+        let Some(link) = provider_link else {
+            continue;
+        };
+
+        let provider = state.registry.metadata_provider(&link.provider).unwrap();
+
         let release_suffix = album
             .release_date
             .clone()
             .unwrap_or_else(|| "Unknown".to_string());
-        let cover_art = fetch_cover_art_bytes(&state.http, album.cover.as_deref()).await;
+
+        // Fetch cover art via provider
+        let cover_art = if let Some(cover_ref) = link.cover_ref.as_deref() {
+            provider.fetch_cover_art_bytes(cover_ref).await
+        } else {
+            fetch_cover_art_bytes_from_url(&state.http, album.cover_url.as_deref()).await
+        };
+
         let album_dir = state
             .music_root
             .join(sanitize(artist_name))
@@ -217,25 +268,20 @@ pub(crate) async fn retag_existing_files(
 
         scanned_albums += 1;
 
-        let response = hifi_get_json::<HifiAlbumResponse>(
-            state,
-            "/album/",
-            vec![("id".to_string(), album.id.to_string())],
-        )
-        .await?;
+        let (provider_tracks, album_extra) = match provider.fetch_tracks(&link.external_id).await {
+            Ok(result) => result,
+            Err(err) => {
+                info!(
+                    album_id = %album.id,
+                    provider = %link.provider,
+                    error = %err.0,
+                    "Failed to fetch tracks for retagging"
+                );
+                continue;
+            }
+        };
 
-        let album_extra = response.data.extra;
-        let tracks = response
-            .data
-            .items
-            .into_iter()
-            .enumerate()
-            .map(|(idx, item)| match item {
-                HifiAlbumItem::Item { item } => (idx, item),
-                HifiAlbumItem::Track(item) => (idx, item),
-            })
-            .collect::<Vec<_>>();
-        let total_tracks = tracks.len() as u32;
+        let total_tracks = provider_tracks.len() as u32;
 
         let mut files_by_track: HashMap<u32, PathBuf> = HashMap::new();
         let mut ordered_files: Vec<PathBuf> = Vec::new();
@@ -271,9 +317,11 @@ pub(crate) async fn retag_existing_files(
 
         ordered_files.sort();
 
-        for (idx, track) in tracks {
-            let track_number = track.track_number.unwrap_or((idx + 1) as u32);
-            let track_info_extra = fetch_track_info_extra(state, track.id).await;
+        for (idx, track) in provider_tracks.iter().enumerate() {
+            let track_number = track.track_number;
+            let track_info_extra = provider
+                .fetch_track_info_extra(&track.external_id)
+                .await;
             let track_artist = build_full_artist_string(
                 &track.title,
                 &track.extra,
@@ -360,4 +408,38 @@ pub(crate) async fn remove_downloaded_album_files(
     }
 
     Ok(true)
+}
+
+/// Fetch cover art from an already-resolved URL (or a provider image proxy URL).
+async fn fetch_cover_art_bytes_from_url(
+    http: &reqwest::Client,
+    cover_url: Option<&str>,
+) -> Option<Vec<u8>> {
+    let url = cover_url?;
+    if url.starts_with('/') {
+        // It's a proxy URL like /api/image/tidal/xxx/640
+        // Extract the image_ref and call the Tidal URL directly
+        let parts: Vec<&str> = url.split('/').collect();
+        if parts.len() >= 5 && parts[3] == "tidal" {
+            let image_ref = parts[4];
+            let size = parts.get(5).unwrap_or(&"640");
+            let tidal_url = format!(
+                "https://resources.tidal.com/images/{}/{}x{}.jpg",
+                image_ref.replace('-', "/"),
+                size,
+                size
+            );
+            let resp = http.get(&tidal_url).send().await.ok()?;
+            if resp.status().is_success() {
+                return resp.bytes().await.ok().map(|b| b.to_vec());
+            }
+        }
+        return None;
+    }
+    let resp = http.get(url).send().await.ok()?;
+    if resp.status().is_success() {
+        resp.bytes().await.ok().map(|b| b.to_vec())
+    } else {
+        None
+    }
 }

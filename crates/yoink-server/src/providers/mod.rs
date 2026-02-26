@@ -1,0 +1,168 @@
+pub(crate) mod registry;
+pub(crate) mod tidal;
+
+use std::collections::HashMap;
+
+use async_trait::async_trait;
+use serde_json::Value;
+
+// ── Provider error ──────────────────────────────────────────────────
+
+#[derive(Debug, Clone)]
+pub(crate) struct ProviderError(pub String);
+
+impl std::fmt::Display for ProviderError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl From<String> for ProviderError {
+    fn from(s: String) -> Self {
+        Self(s)
+    }
+}
+
+impl From<&str> for ProviderError {
+    fn from(s: &str) -> Self {
+        Self(s.to_string())
+    }
+}
+
+// ── Shared provider types ───────────────────────────────────────────
+
+/// An artist returned by a metadata provider search.
+#[derive(Debug, Clone)]
+pub(crate) struct ProviderArtist {
+    pub external_id: String,
+    pub name: String,
+    pub image_ref: Option<String>,
+    pub url: Option<String>,
+}
+
+/// An album returned by a metadata provider.
+#[derive(Debug, Clone)]
+pub(crate) struct ProviderAlbum {
+    pub external_id: String,
+    pub title: String,
+    pub album_type: Option<String>,
+    pub release_date: Option<String>,
+    pub cover_ref: Option<String>,
+    pub url: Option<String>,
+    pub explicit: bool,
+}
+
+/// A track returned by a metadata provider.
+#[derive(Debug, Clone)]
+pub(crate) struct ProviderTrack {
+    pub external_id: String,
+    pub title: String,
+    pub version: Option<String>,
+    pub track_number: u32,
+    pub disc_number: Option<u32>,
+    pub duration_secs: u32,
+    pub isrc: Option<String>,
+    /// Provider-specific extra metadata (for tagging).
+    pub extra: HashMap<String, Value>,
+}
+
+/// Resolved playback info for downloading a track.
+#[derive(Debug, Clone)]
+pub(crate) enum PlaybackInfo {
+    /// A single direct download URL.
+    DirectUrl(String),
+    /// Multiple segment URLs to concatenate (e.g. DASH).
+    SegmentUrls(Vec<String>),
+}
+
+// ── Quality ─────────────────────────────────────────────────────────
+
+/// Normalized quality level, provider-agnostic.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Quality {
+    Lossless,
+    HiRes,
+}
+
+impl Quality {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Quality::Lossless => "LOSSLESS",
+            Quality::HiRes => "HI_RES_LOSSLESS",
+        }
+    }
+
+    pub fn from_str_lossy(s: &str) -> Self {
+        match s.to_ascii_uppercase().as_str() {
+            "HI_RES_LOSSLESS" | "HI_RES" | "HIRES" => Quality::HiRes,
+            _ => Quality::Lossless,
+        }
+    }
+}
+
+impl std::fmt::Display for Quality {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+// ── Traits ──────────────────────────────────────────────────────────
+
+/// Provides metadata: artist search, album listing, track listing, image URLs.
+#[async_trait]
+pub(crate) trait MetadataProvider: Send + Sync {
+    /// Unique provider identifier (e.g. "tidal", "musicbrainz", "deezer").
+    fn id(&self) -> &str;
+
+    /// Human-readable display name.
+    #[allow(dead_code)]
+    fn display_name(&self) -> &str;
+
+    /// Search for artists by name.
+    async fn search_artists(&self, query: &str) -> Result<Vec<ProviderArtist>, ProviderError>;
+
+    /// Fetch all albums for an artist.
+    async fn fetch_albums(
+        &self,
+        external_artist_id: &str,
+    ) -> Result<Vec<ProviderAlbum>, ProviderError>;
+
+    /// Fetch tracks for an album (with extra metadata for tagging).
+    async fn fetch_tracks(
+        &self,
+        external_album_id: &str,
+    ) -> Result<(Vec<ProviderTrack>, HashMap<String, Value>), ProviderError>;
+
+    /// Fetch extra metadata for a single track (ISRC, BPM, key, etc.).
+    async fn fetch_track_info_extra(
+        &self,
+        external_track_id: &str,
+    ) -> Option<HashMap<String, Value>>;
+
+    /// Validate an image ID before proxying. Returns `true` if safe.
+    /// Override in provider implementations for provider-specific validation.
+    fn validate_image_id(&self, image_id: &str) -> bool {
+        let _ = image_id;
+        true
+    }
+
+    /// Build the upstream image URL for a given image ref and size.
+    fn image_url(&self, image_ref: &str, size: u16) -> String;
+
+    /// Fetch cover art bytes for an image ref (full resolution).
+    async fn fetch_cover_art_bytes(&self, image_ref: &str) -> Option<Vec<u8>>;
+}
+
+/// Provides track download (playback resolution).
+#[async_trait]
+pub(crate) trait DownloadSource: Send + Sync {
+    /// Unique source identifier (e.g. "tidal").
+    fn id(&self) -> &str;
+
+    /// Resolve playback info (download URL / segments) for a track.
+    async fn resolve_playback(
+        &self,
+        external_track_id: &str,
+        quality: &Quality,
+    ) -> Result<PlaybackInfo, ProviderError>;
+}

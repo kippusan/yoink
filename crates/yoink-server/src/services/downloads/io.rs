@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Duration;
 
 use tokio::{
@@ -8,12 +8,15 @@ use tokio::{
 
 use crate::config::DOWNLOAD_CHUNK_SIZE;
 
-use super::manifest::DownloadPayload;
+pub(crate) enum DownloadPayload {
+    DirectUrl(String),
+    DashSegmentUrls(Vec<String>),
+}
 
 pub(crate) async fn download_payload_to_file(
     http: &reqwest::Client,
     payload: &DownloadPayload,
-    path: &PathBuf,
+    path: &Path,
 ) -> Result<(), String> {
     match payload {
         DownloadPayload::DirectUrl(url) => download_to_file(http, url, path).await,
@@ -23,7 +26,7 @@ pub(crate) async fn download_payload_to_file(
     }
 }
 
-async fn download_to_file(http: &reqwest::Client, url: &str, path: &PathBuf) -> Result<(), String> {
+async fn download_to_file(http: &reqwest::Client, url: &str, path: &Path) -> Result<(), String> {
     let mut response = http
         .get(url)
         .timeout(Duration::from_secs(60))
@@ -61,7 +64,7 @@ async fn download_to_file(http: &reqwest::Client, url: &str, path: &PathBuf) -> 
 async fn download_dash_segments_to_file(
     http: &reqwest::Client,
     urls: &[String],
-    path: &PathBuf,
+    path: &Path,
 ) -> Result<(), String> {
     let mut file = fs::File::create(path)
         .await
@@ -96,7 +99,7 @@ async fn download_dash_segments_to_file(
     Ok(())
 }
 
-pub(crate) async fn has_flac_stream_marker(path: &PathBuf) -> Result<bool, String> {
+pub(crate) async fn has_flac_stream_marker(path: &Path) -> Result<bool, String> {
     let mut file = fs::File::open(path)
         .await
         .map_err(|err| format!("failed opening file {}: {err}", path.display()))?;
@@ -108,7 +111,7 @@ pub(crate) async fn has_flac_stream_marker(path: &PathBuf) -> Result<bool, Strin
     Ok(read == 4 && header == *b"fLaC")
 }
 
-pub(crate) async fn sniff_media_container(path: &PathBuf) -> Result<String, String> {
+pub(crate) async fn sniff_media_container(path: &Path) -> Result<String, String> {
     let mut file = fs::File::open(path)
         .await
         .map_err(|err| format!("failed opening file {}: {err}", path.display()))?;

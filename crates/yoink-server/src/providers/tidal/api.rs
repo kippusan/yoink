@@ -1,0 +1,56 @@
+use std::{sync::Arc, time::Duration};
+
+use serde::de::DeserializeOwned;
+use tokio::sync::RwLock;
+use tracing::{debug, warn};
+
+use super::instances::{self, InstanceCache};
+
+/// Generic JSON GET against the hifi API, with instance failover.
+pub(crate) async fn hifi_get_json<T: DeserializeOwned>(
+    http: &reqwest::Client,
+    manual_base_url: Option<&str>,
+    cache: &Arc<RwLock<InstanceCache>>,
+    path: &str,
+    query: Vec<(String, String)>,
+) -> Result<T, String> {
+    let candidates = instances::candidate_base_urls(manual_base_url, cache, http).await;
+    let mut last_error = None;
+
+    for base_url in candidates {
+        let response = http
+            .get(format!("{base_url}{path}"))
+            .query(&query)
+            .timeout(Duration::from_secs(8))
+            .send()
+            .await;
+
+        match response {
+            Ok(resp) => match resp.error_for_status() {
+                Ok(ok) => match ok.json::<T>().await {
+                    Ok(parsed) => {
+                        instances::set_active_instance(cache, &base_url).await;
+                        return Ok(parsed);
+                    }
+                    Err(err) => {
+                        debug!(base_url, error = %err, "Upstream JSON parse failed");
+                        last_error = Some(format!("{base_url}: invalid JSON ({err})"));
+                    }
+                },
+                Err(err) => {
+                    debug!(base_url, error = %err, "Upstream HTTP status failed");
+                    last_error = Some(format!("{base_url}: upstream status error ({err})"));
+                }
+            },
+            Err(err) => {
+                debug!(base_url, error = %err, "Upstream request failed");
+                last_error = Some(format!("{base_url}: request failed ({err})"));
+            }
+        }
+    }
+
+    let error_msg =
+        last_error.unwrap_or_else(|| "No healthy hifi-api instances available".to_string());
+    warn!(error = %error_msg, "All hifi-api candidates failed");
+    Err(error_msg)
+}

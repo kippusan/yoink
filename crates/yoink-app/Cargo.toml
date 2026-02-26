@@ -10,7 +10,6 @@ leptos_router = { workspace = true }
 leptos_axum = { workspace = true, optional = true }
 leptoaster = "0.2"
 lucide-leptos = { workspace = true }
-simpleicons-rs = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 

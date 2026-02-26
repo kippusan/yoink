@@ -6,12 +6,11 @@ use tracing::info;
 
 use crate::{
     db,
-    models::{HifiAlbum, HifiArtistAlbumsResponse, MonitoredAlbum, MonitoredArtist},
+    models::{MonitoredAlbum, MonitoredArtist},
+    providers::ProviderAlbum,
     services::downloads::sanitize_path_component,
     state::AppState,
 };
-
-use super::hifi::{hifi_get_json, search_hifi_artists};
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct ScanImportSummary {
@@ -25,110 +24,170 @@ pub(crate) fn update_wanted(album: &mut MonitoredAlbum) {
     album.wanted = album.monitored && !album.acquired;
 }
 
-pub(crate) async fn sync_artist_albums_from_hifi(
+/// Sync albums for an artist from all linked metadata providers.
+/// Iterates provider links, fetches albums from each, deduplicates by title+release_date,
+/// and creates/updates local album records + album provider links.
+pub(crate) async fn sync_artist_albums(
     state: &AppState,
-    artist_id: i64,
+    artist_id: &str,
 ) -> Result<(), String> {
-    let response = hifi_get_json::<HifiArtistAlbumsResponse>(
-        state,
-        "/artist/",
-        vec![
-            ("f".to_string(), artist_id.to_string()),
-            ("skip_tracks".to_string(), "true".to_string()),
-        ],
-    )
-    .await?;
+    let links = db::load_artist_provider_links(&state.db, artist_id)
+        .await
+        .map_err(|e| format!("failed to load provider links: {e}"))?;
 
-    let mut deduped: HashMap<String, HifiAlbum> = HashMap::new();
-    for incoming in response.albums.items {
+    if links.is_empty() {
+        return Err("No provider links found for this artist".to_string());
+    }
+
+    // Collect albums from all linked providers
+    let mut all_incoming: Vec<(String, ProviderAlbum)> = Vec::new(); // (provider_id, album)
+
+    for link in &links {
+        let Some(provider) = state.registry.metadata_provider(&link.provider) else {
+            continue;
+        };
+
+        match provider.fetch_albums(&link.external_id).await {
+            Ok(albums) => {
+                for album in albums {
+                    all_incoming.push((link.provider.clone(), album));
+                }
+            }
+            Err(err) => {
+                info!(
+                    provider = %link.provider,
+                    artist_id = artist_id,
+                    error = %err.0,
+                    "Failed to fetch albums from provider"
+                );
+            }
+        }
+    }
+
+    if all_incoming.is_empty() {
+        return Ok(());
+    }
+
+    // Deduplicate by title + release_date, preferring explicit, has-cover
+    let mut deduped: HashMap<String, (String, ProviderAlbum)> = HashMap::new();
+    for (provider_id, incoming) in all_incoming {
         let key = album_identity_key(&incoming.title, incoming.release_date.as_deref());
         deduped
             .entry(key)
-            .and_modify(|existing| {
+            .and_modify(|(_, existing)| {
                 if should_prefer_album(existing, &incoming) {
                     *existing = incoming.clone();
                 }
             })
-            .or_insert(incoming);
+            .or_insert((provider_id, incoming));
     }
 
-    let selected_ids_by_key = deduped
+    // Build a map of identity_key -> external_id for the selected albums
+    let selected_external_ids: HashMap<String, String> = deduped
         .iter()
-        .map(|(key, album)| (key.clone(), album.id))
-        .collect::<HashMap<_, _>>();
+        .map(|(key, (_, album))| (key.clone(), album.external_id.clone()))
+        .collect();
 
     let mut albums = state.monitored_albums.write().await;
 
-    for incoming in deduped.into_values() {
-        if let Some(existing) = albums.iter_mut().find(|album| album.id == incoming.id) {
-            existing.artist_id = artist_id;
-            existing.title = incoming.title;
-            existing.album_type = incoming.album_type;
-            existing.release_date = incoming.release_date;
-            existing.cover = incoming.cover;
-            existing.tidal_url = incoming.url;
-            existing.explicit = incoming.explicit.unwrap_or(false);
-            // Persist updated album
-            let _ = db::upsert_album(&state.db, existing).await;
+    // Process each incoming album
+    for (provider_id, incoming) in deduped.into_values() {
+        let ext_id_str = incoming.external_id.clone();
+
+        // Check if we already have a local album linked to this provider ID
+        let existing_album_id =
+            db::find_album_by_provider_link(&state.db, &provider_id, &ext_id_str)
+                .await
+                .ok()
+                .flatten();
+
+        if let Some(local_album_id) = existing_album_id {
+            // Update the existing local album
+            if let Some(existing) = albums.iter_mut().find(|a| a.id == local_album_id) {
+                existing.title = incoming.title;
+                existing.album_type = incoming.album_type;
+                existing.release_date = incoming.release_date;
+                existing.cover_url = incoming.cover_ref.as_deref().map(|c| {
+                    yoink_shared::provider_image_url(&provider_id, c, 640)
+                });
+                existing.explicit = incoming.explicit;
+                let _ = db::upsert_album(&state.db, existing).await;
+            }
         } else {
+            // Create a new local album with a UUID
+            let new_album_id = db::uuid_to_string(&db::new_uuid());
             let album = MonitoredAlbum {
-                id: incoming.id,
-                artist_id,
-                title: incoming.title,
+                id: new_album_id.clone(),
+                artist_id: artist_id.to_string(),
+                title: incoming.title.clone(),
                 album_type: incoming.album_type,
                 release_date: incoming.release_date,
-                cover: incoming.cover,
-                tidal_url: incoming.url,
-                explicit: incoming.explicit.unwrap_or(false),
+                cover_url: incoming.cover_ref.as_deref().map(|c| {
+                    yoink_shared::provider_image_url(&provider_id, c, 640)
+                }),
+                explicit: incoming.explicit,
                 monitored: false,
                 acquired: false,
                 wanted: false,
                 added_at: Utc::now(),
             };
-            // Persist new album
             let _ = db::upsert_album(&state.db, &album).await;
+
+            // Create the provider link for this album
+            let link = db::AlbumProviderLink {
+                id: db::uuid_to_string(&db::new_uuid()),
+                album_id: new_album_id.clone(),
+                provider: provider_id.clone(),
+                external_id: ext_id_str.clone(),
+                external_url: incoming.url,
+                external_title: Some(incoming.title),
+                cover_ref: incoming.cover_ref,
+            };
+            let _ = db::upsert_album_provider_link(&state.db, &link).await;
+
             albums.push(album);
         }
     }
 
-    // Remove deduped-out albums — collect IDs to delete first
-    let removed_ids: Vec<i64> = albums
+    // Remove deduped-out albums for this artist
+    let artist_album_ids: Vec<String> = albums
         .iter()
-        .filter(|album| {
-            if album.artist_id != artist_id {
-                return false;
-            }
-            let key = album_identity_key(&album.title, album.release_date.as_deref());
-            match selected_ids_by_key.get(&key) {
-                Some(selected_id) => album.id != *selected_id,
-                None => false,
-            }
-        })
-        .map(|album| album.id)
+        .filter(|a| a.artist_id == artist_id)
+        .map(|a| a.id.clone())
         .collect();
 
-    for id in &removed_ids {
-        let _ = db::delete_album(&state.db, *id).await;
+    let mut ids_to_remove = Vec::new();
+    for album_id in &artist_album_ids {
+        let album_links = db::load_album_provider_links(&state.db, album_id)
+            .await
+            .unwrap_or_default();
+
+        for album_link in &album_links {
+            let album = albums.iter().find(|a| a.id == *album_id);
+            if let Some(album) = album {
+                let key = album_identity_key(&album.title, album.release_date.as_deref());
+                if let Some(selected_ext_id) = selected_external_ids.get(&key) {
+                    if album_link.external_id != *selected_ext_id {
+                        ids_to_remove.push(album_id.clone());
+                    }
+                }
+            }
+        }
     }
 
-    albums.retain(|album| {
-        if album.artist_id != artist_id {
-            return true;
-        }
+    for id in &ids_to_remove {
+        let _ = db::delete_album(&state.db, id).await;
+    }
 
-        let key = album_identity_key(&album.title, album.release_date.as_deref());
-        match selected_ids_by_key.get(&key) {
-            Some(selected_id) => album.id == *selected_id,
-            None => true,
-        }
-    });
+    albums.retain(|album| !ids_to_remove.contains(&album.id));
 
     Ok(())
 }
 
 pub(crate) async fn reconcile_library_files(state: &AppState) -> Result<usize, String> {
     let artists = state.monitored_artists.read().await.clone();
-    let artist_names: HashMap<i64, String> = artists.into_iter().map(|a| (a.id, a.name)).collect();
+    let artist_names: HashMap<String, String> =
+        artists.into_iter().map(|a| (a.id.clone(), a.name)).collect();
     let albums_snapshot = state.monitored_albums.read().await.clone();
 
     let mut missing_ids = HashSet::new();
@@ -149,7 +208,7 @@ pub(crate) async fn reconcile_library_files(state: &AppState) -> Result<usize, S
             )));
 
         if !album_dir_has_downloaded_audio(&album_dir).await {
-            missing_ids.insert(album.id);
+            missing_ids.insert(album.id.clone());
         }
     }
 
@@ -165,7 +224,7 @@ pub(crate) async fn reconcile_library_files(state: &AppState) -> Result<usize, S
             update_wanted(album);
             let _ = db::update_album_flags(
                 &state.db,
-                album.id,
+                &album.id,
                 album.monitored,
                 album.acquired,
                 album.wanted,
@@ -223,12 +282,13 @@ pub(crate) async fn scan_and_import_library(state: &AppState) -> Result<ScanImpo
         }
 
         if !synced_artists.contains(&artist_id)
-            && sync_artist_albums_from_hifi(state, artist_id).await.is_ok()
+            && sync_artist_albums(state, &artist_id).await.is_ok()
         {
-            synced_artists.insert(artist_id);
+            synced_artists.insert(artist_id.clone());
         }
 
-        if import_local_album(state, artist_id, &local.album_title, local.year.as_deref()).await? {
+        if import_local_album(state, &artist_id, &local.album_title, local.year.as_deref()).await?
+        {
             imported_albums += 1;
         } else {
             unmatched_albums += 1;
@@ -305,10 +365,11 @@ async fn discover_local_albums(state: &AppState) -> Result<Vec<LocalAlbumDir>, S
     Ok(out)
 }
 
+/// Ensure an artist is monitored. Searches all metadata providers to find a match.
 async fn ensure_monitored_artist(
     state: &AppState,
     artist_name: &str,
-) -> Result<Option<(i64, bool)>, String> {
+) -> Result<Option<(String, bool)>, String> {
     let needle = normalize_text(artist_name);
     {
         let artists = state.monitored_artists.read().await;
@@ -321,26 +382,58 @@ async fn ensure_monitored_artist(
         }
     }
 
-    let candidates = search_hifi_artists(state, artist_name).await?;
-    let selected = candidates
-        .iter()
-        .find(|a| normalize_text(&a.name) == needle)
-        .cloned()
-        .or_else(|| candidates.into_iter().next());
+    // Search using all metadata providers
+    let all_results = state.registry.search_artists_all(artist_name).await;
 
-    let Some(artist) = selected else {
+    let mut best_match: Option<(String, crate::providers::ProviderArtist)> = None;
+    for (provider_id, candidates) in &all_results {
+        // Prefer exact name match
+        if let Some(exact) = candidates
+            .iter()
+            .find(|a| normalize_text(&a.name) == needle)
+            .cloned()
+        {
+            best_match = Some((provider_id.clone(), exact));
+            break;
+        }
+        // Otherwise take the first result from any provider
+        if best_match.is_none() {
+            if let Some(first) = candidates.first().cloned() {
+                best_match = Some((provider_id.clone(), first));
+            }
+        }
+    }
+
+    let Some((provider_id, artist)) = best_match else {
         return Ok(None);
     };
 
+    let new_id = db::uuid_to_string(&db::new_uuid());
+    let image_url = artist
+        .image_ref
+        .as_deref()
+        .map(|r| yoink_shared::provider_image_url(&provider_id, r, 640));
+
     let monitored = MonitoredArtist {
-        id: artist.id,
-        name: artist.name,
-        picture: artist.picture,
-        tidal_url: artist.url,
-        quality_profile: state.default_quality.clone(),
+        id: new_id.clone(),
+        name: artist.name.clone(),
+        image_url,
         added_at: Utc::now(),
     };
     let _ = db::upsert_artist(&state.db, &monitored).await;
+
+    // Create the provider link
+    let link = db::ArtistProviderLink {
+        id: db::uuid_to_string(&db::new_uuid()),
+        artist_id: new_id.clone(),
+        provider: provider_id,
+        external_id: artist.external_id,
+        external_url: artist.url,
+        external_name: Some(artist.name),
+        image_ref: artist.image_ref,
+    };
+    let _ = db::upsert_artist_provider_link(&state.db, &link).await;
+
     {
         let mut artists = state.monitored_artists.write().await;
         if artists.iter().all(|a| a.id != monitored.id) {
@@ -348,12 +441,12 @@ async fn ensure_monitored_artist(
         }
     }
 
-    Ok(Some((monitored.id, true)))
+    Ok(Some((new_id, true)))
 }
 
 async fn import_local_album(
     state: &AppState,
-    artist_id: i64,
+    artist_id: &str,
     album_title: &str,
     year_hint: Option<&str>,
 ) -> Result<bool, String> {
@@ -396,7 +489,7 @@ async fn import_local_album(
     if changed {
         let _ = db::update_album_flags(
             &state.db,
-            album.id,
+            &album.id,
             album.monitored,
             album.acquired,
             album.wanted,
@@ -472,18 +565,18 @@ fn album_identity_key(title: &str, release_date: Option<&str>) -> String {
     )
 }
 
-fn should_prefer_album(existing: &HifiAlbum, candidate: &HifiAlbum) -> bool {
-    let existing_cover = existing.cover.is_some();
-    let candidate_cover = candidate.cover.is_some();
+fn should_prefer_album(existing: &ProviderAlbum, candidate: &ProviderAlbum) -> bool {
+    let existing_cover = existing.cover_ref.is_some();
+    let candidate_cover = candidate.cover_ref.is_some();
     if candidate_cover != existing_cover {
         return candidate_cover;
     }
 
-    let existing_explicit = existing.explicit.unwrap_or(false);
-    let candidate_explicit = candidate.explicit.unwrap_or(false);
+    let existing_explicit = existing.explicit;
+    let candidate_explicit = candidate.explicit;
     if candidate_explicit != existing_explicit {
         return candidate_explicit;
     }
 
-    candidate.id > existing.id
+    candidate.external_id > existing.external_id
 }

@@ -4,9 +4,9 @@ use leptos::prelude::*;
 use lucide_leptos::ArrowLeft;
 
 use yoink_shared::{
-    DownloadJob, MonitoredAlbum, MonitoredArtist, ServerAction, album_cover_url, album_profile_url,
-    album_type_label, album_type_rank, build_latest_jobs, monitored_artist_image_url,
-    monitored_artist_profile_url, status_class, status_label_text,
+    DownloadJob, MonitoredAlbum, MonitoredArtist, ProviderLink, ServerAction, album_cover_url,
+    album_type_label, album_type_rank, build_latest_jobs, provider_display_name,
+    status_class, status_label_text,
 };
 
 use leptoaster::{ToastBuilder, ToastLevel, ToastPosition, expect_toaster};
@@ -17,7 +17,7 @@ use crate::components::{ConfirmDialog, ErrorPanel, Sidebar};
 use crate::hooks::{set_page_title, use_sse_version};
 use crate::styles::{
     BTN, BTN_DANGER, BTN_PRIMARY, EMPTY, GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, MUTED,
-    SELECT, btn_cls, cls, tidal_icon_svg,
+    SELECT, btn_cls, cls,
 };
 
 // ── DTO ─────────────────────────────────────────────────────
@@ -27,12 +27,13 @@ pub struct ArtistDetailData {
     pub artist: Option<MonitoredArtist>,
     pub albums: Vec<MonitoredAlbum>,
     pub jobs: Vec<DownloadJob>,
+    pub provider_links: Vec<ProviderLink>,
 }
 
 // ── Server function ─────────────────────────────────────────
 
 #[server(GetArtistDetail, "/leptos")]
-pub async fn get_artist_detail(artist_id: i64) -> Result<ArtistDetailData, ServerFnError> {
+pub async fn get_artist_detail(artist_id: String) -> Result<ArtistDetailData, ServerFnError> {
     let ctx = use_context::<yoink_shared::ServerContext>()
         .ok_or_else(|| ServerFnError::new("ServerContext not available"))?;
 
@@ -51,10 +52,17 @@ pub async fn get_artist_detail(artist_id: i64) -> Result<ArtistDetailData, Serve
 
     let jobs = ctx.download_jobs.read().await.clone();
 
+    let provider_links = if artist.is_some() {
+        (ctx.fetch_artist_links)(artist_id).await.unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
     Ok(ArtistDetailData {
         artist,
         albums,
         jobs,
+        provider_links,
     })
 }
 
@@ -68,8 +76,7 @@ pub fn ArtistDetailPage() -> impl IntoView {
         params
             .read()
             .get("id")
-            .and_then(|s| s.parse::<i64>().ok())
-            .unwrap_or(0)
+            .unwrap_or_default()
     };
 
     let version = use_sse_version();
@@ -146,9 +153,9 @@ pub fn ArtistDetailPage() -> impl IntoView {
                                         </a>
                                     </div>
                                 }.into_any(),
-                                Some(artist) => {
-                                    view! { <ArtistDetailContent artist=artist albums=data.albums jobs=data.jobs /> }.into_any()
-                                }
+                Some(artist) => {
+                    view! { <ArtistDetailContent artist=artist albums=data.albums jobs=data.jobs provider_links=data.provider_links /> }.into_any()
+                }
                             }
                         })
                     }}
@@ -163,10 +170,10 @@ fn ArtistDetailContent(
     artist: MonitoredArtist,
     albums: Vec<MonitoredAlbum>,
     jobs: Vec<DownloadJob>,
+    provider_links: Vec<ProviderLink>,
 ) -> impl IntoView {
     set_page_title(&artist.name);
-    let artist_img = monitored_artist_image_url(&artist, 320);
-    let artist_profile = monitored_artist_profile_url(&artist);
+    let artist_img = artist.image_url.clone();
     let fallback_initial = artist
         .name
         .chars()
@@ -183,7 +190,11 @@ fn ArtistDetailContent(
     let (album_sort, set_album_sort) = signal("type".to_string());
 
     let latest_jobs = build_latest_jobs(jobs);
-    let artist_id_val = artist.id;
+    let artist_id_val = artist.id.clone();
+    let artist_id_sync = artist.id.clone();
+    let artist_id_monitor = artist.id.clone();
+    let artist_id_unmonitor = artist.id.clone();
+    let artist_id_remove = artist.id.clone();
 
     // Confirmation dialog signals
     let show_unmonitor_all = RwSignal::new(false);
@@ -220,26 +231,27 @@ fn ArtistDetailContent(
                         <div class="text-[22px] font-bold mb-1">{artist.name.clone()}</div>
                         <div class={cls(MUTED, "text-[13px] mb-2 flex flex-wrap items-center gap-2")}>
                             <span>{format!("{album_count} albums \u{00b7} {monitored_count} monitored \u{00b7} {acquired_count} acquired \u{00b7} {wanted_count} wanted")}</span>
-                            <span class="pill d7-pill-muted">{artist.quality_profile.clone()}</span>
                         </div>
                         <div class="flex flex-wrap gap-1.5">
-                            <a href=artist_profile target="_blank" rel="noreferrer" class={cls(BTN, "px-2.5 py-0.5 text-xs")}>
-                                <span class="inline-block size-3.5 shrink-0" inner_html=tidal_icon_svg()></span>
-                                "Tidal"
-                            </a>
                             <button type="button"
                                 class=move || btn_cls(BTN, "px-2.5 py-0.5 text-xs", sync_loading.get())
                                 disabled=move || sync_loading.get()
-                                on:click=move |_| {
-                                    dispatch_with_toast_loading(ServerAction::SyncArtistAlbums { artist_id: artist_id_val }, "Album sync started", Some(sync_loading));
+                                on:click={
+                                    let aid = artist_id_sync.clone();
+                                    move |_| {
+                                        dispatch_with_toast_loading(ServerAction::SyncArtistAlbums { artist_id: aid.clone() }, "Album sync started", Some(sync_loading));
+                                    }
                                 }>
                                 {move || if sync_loading.get() { "Syncing\u{2026}" } else { "Sync Albums" }}
                             </button>
                             <button type="button"
                                 class=move || btn_cls(BTN_PRIMARY, "px-2.5 py-0.5 text-xs", monitor_all_loading.get())
                                 disabled=move || monitor_all_loading.get()
-                                on:click=move |_| {
-                                    dispatch_with_toast_loading(ServerAction::BulkMonitor { artist_id: artist_id_val, monitored: true }, "All albums monitored", Some(monitor_all_loading));
+                                on:click={
+                                    let aid = artist_id_monitor.clone();
+                                    move |_| {
+                                        dispatch_with_toast_loading(ServerAction::BulkMonitor { artist_id: aid.clone(), monitored: true }, "All albums monitored", Some(monitor_all_loading));
+                                    }
                                 }>
                                 {move || if monitor_all_loading.get() { "Monitoring\u{2026}" } else { "Monitor All" }}
                             </button>
@@ -256,14 +268,76 @@ fn ArtistDetailContent(
                 </div>
             </div>
 
+            // Linked providers section
+            {if !provider_links.is_empty() {
+                let artist_id_for_links = artist.id.clone();
+                view! {
+                    <div class={cls(GLASS, "mb-5")}>
+                        <div class=GLASS_HEADER>
+                            <h2 class=GLASS_TITLE>"Linked Providers"</h2>
+                        </div>
+                        <div class=GLASS_BODY>
+                            <div class="flex flex-wrap gap-2">
+                                {provider_links.iter().map(|link| {
+                                    let provider = link.provider.clone();
+                                    let display = provider_display_name(&link.provider);
+                                    let external_id = link.external_id.clone();
+                                    let external_url = link.external_url.clone();
+                                    let artist_id_unlink = artist_id_for_links.clone();
+
+                                    view! {
+                                        <div class="inline-flex items-center gap-2 px-3 py-1.5 bg-white/60 dark:bg-zinc-800/60 border border-black/[.06] dark:border-white/[.08] rounded-lg text-sm">
+                                            <span class="font-medium text-zinc-700 dark:text-zinc-300">{display}</span>
+                                            {match external_url {
+                                                Some(url) => view! {
+                                                    <a href=url class="text-blue-500 hover:text-blue-400 text-xs no-underline" target="_blank" rel="noreferrer">
+                                                        "View"
+                                                    </a>
+                                                }.into_any(),
+                                                None => view! { <span></span> }.into_any(),
+                                            }}
+                                            <button type="button"
+                                                class="text-xs text-red-500 hover:text-red-400 bg-transparent border-none cursor-pointer p-0"
+                                                title="Unlink this provider"
+                                                on:click={
+                                                    let aid = artist_id_unlink.clone();
+                                                    let prov = provider.clone();
+                                                    let eid = external_id.clone();
+                                                    move |_| {
+                                                        dispatch_with_toast(
+                                                            ServerAction::UnlinkArtistProvider {
+                                                                artist_id: aid.clone(),
+                                                                provider: prov.clone(),
+                                                                external_id: eid.clone(),
+                                                            },
+                                                            "Provider unlinked",
+                                                        );
+                                                    }
+                                                }>
+                                                "Unlink"
+                                            </button>
+                                        </div>
+                                    }
+                                }).collect_view()}
+                            </div>
+                        </div>
+                    </div>
+                }.into_any()
+            } else {
+                view! { <span></span> }.into_any()
+            }}
+
             // Confirmation dialogs
             <ConfirmDialog
                 open=show_unmonitor_all
                 title="Unmonitor All Albums"
                 message="This will unmonitor all albums for this artist."
                 confirm_label="Unmonitor All"
-                on_confirm=move |_: bool| {
-                    dispatch_with_toast(ServerAction::BulkMonitor { artist_id: artist_id_val, monitored: false }, "All albums unmonitored");
+                on_confirm={
+                    let aid = artist_id_unmonitor.clone();
+                    move |_: bool| {
+                        dispatch_with_toast(ServerAction::BulkMonitor { artist_id: aid.clone(), monitored: false }, "All albums unmonitored");
+                    }
                 }
             />
             <ConfirmDialog
@@ -273,32 +347,36 @@ fn ArtistDetailContent(
                 confirm_label="Remove"
                 danger=true
                 checkbox_label="Also remove downloaded files from disk"
-                on_confirm=move |remove_files: bool| {
-                    removing_artist.set(true);
-                    let navigate = leptos_router::hooks::use_navigate();
-                    let toaster = expect_toaster();
-                    leptos::task::spawn_local(async move {
-                        match dispatch_action(ServerAction::RemoveArtist { artist_id: artist_id_val, remove_files }).await {
-                            Ok(()) => {
-                                toaster.toast(
-                                    ToastBuilder::new("Artist removed")
-                                        .with_level(ToastLevel::Success)
-                                        .with_position(ToastPosition::BottomRight)
-                                        .with_expiry(Some(4_000)),
-                                );
-                                navigate("/artists", Default::default());
+                on_confirm={
+                    let aid = artist_id_remove.clone();
+                    move |remove_files: bool| {
+                        removing_artist.set(true);
+                        let navigate = leptos_router::hooks::use_navigate();
+                        let toaster = expect_toaster();
+                        let aid = aid.clone();
+                        leptos::task::spawn_local(async move {
+                            match dispatch_action(ServerAction::RemoveArtist { artist_id: aid, remove_files }).await {
+                                Ok(()) => {
+                                    toaster.toast(
+                                        ToastBuilder::new("Artist removed")
+                                            .with_level(ToastLevel::Success)
+                                            .with_position(ToastPosition::BottomRight)
+                                            .with_expiry(Some(4_000)),
+                                    );
+                                    navigate("/artists", Default::default());
+                                }
+                                Err(e) => {
+                                    toaster.toast(
+                                        ToastBuilder::new(format!("Error: {e}"))
+                                            .with_level(ToastLevel::Error)
+                                            .with_position(ToastPosition::BottomRight)
+                                            .with_expiry(Some(8_000)),
+                                    );
+                                }
                             }
-                            Err(e) => {
-                                toaster.toast(
-                                    ToastBuilder::new(format!("Error: {e}"))
-                                        .with_level(ToastLevel::Error)
-                                        .with_position(ToastPosition::BottomRight)
-                                        .with_expiry(Some(8_000)),
-                                );
-                            }
-                        }
-                        removing_artist.set(false);
-                    });
+                            removing_artist.set(false);
+                        });
+                    }
                 }
             />
 
@@ -329,9 +407,10 @@ fn ArtistDetailContent(
                     </div>
                 </div>
                 {move || {
+                    let artist_id_inner = artist_id_val.clone();
                     albums_stored.with_value(|all| {
                         if all.is_empty() {
-                            return view! { <div class=EMPTY>"No albums synced. Hit Sync Albums to fetch from Tidal."</div> }.into_any();
+                            return view! { <div class=EMPTY>"No albums synced. Hit Sync Albums to fetch from provider."</div> }.into_any();
                         }
 
                         let sort_key = album_sort.get();
@@ -354,7 +433,7 @@ fn ArtistDetailContent(
                             <div class={cls(GLASS_BODY, "p-4")}>
                                 <div class="d7-album-grid">
                                     {sorted.into_iter().map(|album| {
-                                        view! { <AlbumSleeve album=album latest_jobs=jobs.clone() artist_id=artist_id_val /> }
+                                        view! { <AlbumSleeve album=album latest_jobs=jobs.clone() artist_id=artist_id_inner.clone() /> }
                                     }).collect_view()}
                                 </div>
                             </div>
@@ -372,11 +451,13 @@ fn ArtistDetailContent(
 #[component]
 fn AlbumSleeve(
     album: MonitoredAlbum,
-    latest_jobs: HashMap<i64, DownloadJob>,
-    artist_id: i64,
+    latest_jobs: HashMap<String, DownloadJob>,
+    artist_id: String,
 ) -> impl IntoView {
-    let album_id = album.id;
-    let album_id_str = album.id.to_string();
+    let album_id = album.id.clone();
+    let album_id_monitor = album.id.clone();
+    let album_id_remove = album.id.clone();
+    let album_id_str = album.id.clone();
     let album_title = album.title.clone();
     let release_date = album
         .release_date
@@ -391,7 +472,6 @@ fn AlbumSleeve(
     let show_remove_files = RwSignal::new(false);
 
     let cover_url = album_cover_url(&album, 640);
-    let tidal_btn_url = album_profile_url(&album);
     let detail_url = format!("/artists/{artist_id}/albums/{album_id}");
 
     let latest_job = latest_jobs.get(&album.id).cloned();
@@ -469,12 +549,16 @@ fn AlbumSleeve(
 
                 <div class="d7-sleeve-actions">
                     <button type="button" class={cls(BTN, "d7-sleeve-action-btn")} title=monitor_title
-                        on:click=move |_| {
-                            let next = !is_monitored;
-                            let msg = if next { "Album monitored" } else { "Album unmonitored" };
-                            dispatch_with_toast(ServerAction::ToggleAlbumMonitor { album_id, monitored: next }, msg);
+                        on:click={
+                            let aid = album_id_monitor.clone();
+                            move |_| {
+                                let next = !is_monitored;
+                                let msg = if next { "Album monitored" } else { "Album unmonitored" };
+                                dispatch_with_toast(ServerAction::ToggleAlbumMonitor { album_id: aid.clone(), monitored: next }, msg);
+                            }
                         }>{monitor_label}</button>
                     {if is_acquired {
+                        let _aid = album_id_remove.clone();
                         view! {
                             <button type="button" class={cls(BTN_DANGER, "d7-sleeve-action-btn")} title="Delete downloaded files"
                                 on:click=move |_| {
@@ -485,16 +569,6 @@ fn AlbumSleeve(
                         }.into_any()
                     } else {
                         view! { <span></span> }.into_any()
-                    }}
-                    {match tidal_btn_url {
-                        Some(url) => view! {
-                            <a href=url target="_blank" rel="noreferrer"
-                                class={cls(BTN, "d7-sleeve-action-btn")}
-                                title="Open on Tidal" aria-label="Open on Tidal">
-                                <span class="inline-block size-3" inner_html=tidal_icon_svg()></span>
-                            </a>
-                        }.into_any(),
-                        None => view! { <span></span> }.into_any(),
                     }}
                 </div>
             </div>
@@ -508,9 +582,12 @@ fn AlbumSleeve(
             confirm_label="Remove Files"
             danger=true
             checkbox_label="Also unmonitor this album"
-            on_confirm=move |unmonitor: bool| {
-                let msg = if unmonitor { "Album files removed and unmonitored" } else { "Album files removed" };
-                dispatch_with_toast(ServerAction::RemoveAlbumFiles { album_id, unmonitor }, msg);
+            on_confirm={
+                let aid = album_id.clone();
+                move |unmonitor: bool| {
+                    let msg = if unmonitor { "Album files removed and unmonitored" } else { "Album files removed" };
+                    dispatch_with_toast(ServerAction::RemoveAlbumFiles { album_id: aid.clone(), unmonitor }, msg);
+                }
             }
         />
     }

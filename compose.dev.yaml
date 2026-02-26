@@ -1,0 +1,17 @@
+---
+services:
+  slskd:
+    image: slskd/slskd
+    container_name: slskd
+    ports:
+      - "5030:5030"
+      - "5031:5031"
+      - "50300:50300"
+    environment:
+      - SLSKD_REMOTE_CONFIGURATION=true
+    volumes:
+      - ./development/slskd-data:/app
+      - ./music:/music
+    env_file:
+      - .env.docker
+    restart: always

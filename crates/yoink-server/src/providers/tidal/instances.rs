@@ -3,101 +3,73 @@ use std::{
     time::{Duration, Instant},
 };
 
-use chrono::Utc;
-use serde::de::DeserializeOwned;
-use tracing::{debug, info, warn};
+use chrono::{DateTime, Utc};
+use tokio::sync::RwLock;
+use tracing::{debug, info};
 
-use crate::{
-    config::UPTIME_FEEDS,
-    models::{
-        DownInstance, FeedInstance, HifiArtist, HifiResponse, InstancesResponse, RankedInstance,
-        UptimeFeed,
-    },
-    state::AppState,
-};
+use super::models::{DownInstance, FeedInstance, InstancesResponse, RankedInstance, UptimeFeed};
 
-pub(crate) async fn hifi_get_json<T: DeserializeOwned>(
-    state: &AppState,
-    path: &str,
-    query: Vec<(String, String)>,
-) -> Result<T, String> {
-    let candidates = candidate_base_urls(state).await;
-    let mut last_error = None;
+const INSTANCE_CACHE_TTL: Duration = Duration::from_secs(300);
 
-    for base_url in candidates {
-        let response = state
-            .http
-            .get(format!("{base_url}{path}"))
-            .query(&query)
-            .timeout(Duration::from_secs(8))
-            .send()
-            .await;
+pub(crate) const UPTIME_FEEDS: [&str; 2] = [
+    "https://tidal-uptime.jiffy-puffs-1j.workers.dev/",
+    "https://tidal-uptime.props-76styles.workers.dev/",
+];
 
-        match response {
-            Ok(resp) => match resp.error_for_status() {
-                Ok(ok) => match ok.json::<T>().await {
-                    Ok(parsed) => {
-                        set_active_instance(state, &base_url).await;
-                        return Ok(parsed);
-                    }
-                    Err(err) => {
-                        debug!(base_url, error = %err, "Upstream JSON parse failed");
-                        last_error = Some(format!("{base_url}: invalid JSON ({err})"));
-                    }
-                },
-                Err(err) => {
-                    debug!(base_url, error = %err, "Upstream HTTP status failed");
-                    last_error = Some(format!("{base_url}: upstream status error ({err})"));
-                }
-            },
-            Err(err) => {
-                debug!(base_url, error = %err, "Upstream request failed");
-                last_error = Some(format!("{base_url}: request failed ({err})"));
-            }
+// ── Instance cache ──────────────────────────────────────────────────
+
+#[derive(Debug, Clone)]
+pub(crate) struct InstanceCache {
+    pub last_refresh: Option<DateTime<Utc>>,
+    pub last_refresh_instant: Option<Instant>,
+    pub api: Vec<FeedInstance>,
+    pub streaming: Vec<FeedInstance>,
+    pub down: Vec<DownInstance>,
+    pub ranked: Vec<RankedInstance>,
+    pub active_base_url: Option<String>,
+}
+
+impl InstanceCache {
+    pub fn new() -> Self {
+        Self {
+            last_refresh: None,
+            last_refresh_instant: None,
+            api: Vec::new(),
+            streaming: Vec::new(),
+            down: Vec::new(),
+            ranked: Vec::new(),
+            active_base_url: None,
         }
     }
 
-    let error_msg =
-        last_error.unwrap_or_else(|| "No healthy hifi-api instances available".to_string());
-    warn!(error = %error_msg, "All hifi-api candidates failed");
-    Err(error_msg)
+    pub fn is_stale(&self) -> bool {
+        match self.last_refresh_instant {
+            Some(last) => last.elapsed() > INSTANCE_CACHE_TTL,
+            None => true,
+        }
+    }
 }
 
-pub(crate) async fn search_hifi_artists(
-    state: &AppState,
-    query: &str,
-) -> Result<Vec<HifiArtist>, String> {
-    let parsed = hifi_get_json::<HifiResponse>(
-        state,
-        "/search/",
-        vec![("a".to_string(), query.to_string())],
-    )
-    .await?;
+// ── Instance management functions ───────────────────────────────────
 
-    let artists = parsed
-        .data
-        .artists
-        .map(|paged| paged.items)
-        .or(parsed.data.items)
-        .unwrap_or_default();
-
-    Ok(artists)
-}
-
-async fn candidate_base_urls(state: &AppState) -> Vec<String> {
-    ensure_instances_fresh(state).await;
+pub(crate) async fn candidate_base_urls(
+    manual_base_url: Option<&str>,
+    cache: &RwLock<InstanceCache>,
+    http: &reqwest::Client,
+) -> Vec<String> {
+    ensure_instances_fresh(cache, http).await;
 
     let mut candidates = Vec::new();
-    if let Some(manual) = &state.manual_hifi_base_url {
-        candidates.push(manual.clone());
+    if let Some(manual) = manual_base_url {
+        candidates.push(manual.to_string());
     }
 
     {
-        let cache = state.instance_cache.read().await;
-        if let Some(active) = &cache.active_base_url {
+        let c = cache.read().await;
+        if let Some(active) = &c.active_base_url {
             candidates.push(active.clone());
         }
-        candidates.extend(cache.ranked.iter().map(|instance| instance.url.clone()));
+        candidates.extend(c.ranked.iter().map(|instance| instance.url.clone()));
     }
 
     let mut seen = HashSet::new();
@@ -105,26 +77,32 @@ async fn candidate_base_urls(state: &AppState) -> Vec<String> {
     candidates
 }
 
-pub(crate) async fn ensure_instances_fresh(state: &AppState) {
+pub(crate) async fn ensure_instances_fresh(
+    cache: &RwLock<InstanceCache>,
+    http: &reqwest::Client,
+) {
     let should_refresh = {
-        let cache = state.instance_cache.read().await;
-        cache.is_stale()
+        let c = cache.read().await;
+        c.is_stale()
     };
-
     if should_refresh {
-        refresh_instances(state).await;
+        refresh_instances(cache, http).await;
     }
 }
 
-async fn refresh_instances(state: &AppState) {
+pub(crate) async fn set_active_instance(cache: &RwLock<InstanceCache>, base_url: &str) {
+    let mut c = cache.write().await;
+    c.active_base_url = Some(base_url.to_string());
+}
+
+async fn refresh_instances(cache: &RwLock<InstanceCache>, http: &reqwest::Client) {
     debug!("Refreshing hifi instance feed cache");
     let mut merged_api = Vec::new();
     let mut merged_streaming = Vec::new();
     let mut merged_down = Vec::new();
 
     for feed_url in UPTIME_FEEDS {
-        let send_res = state
-            .http
+        let send_res = http
             .get(feed_url)
             .timeout(Duration::from_secs(6))
             .send()
@@ -173,23 +151,44 @@ async fn refresh_instances(state: &AppState) {
         "Refreshed hifi instance cache"
     );
 
-    let mut cache = state.instance_cache.write().await;
-    cache.last_refresh = Some(Utc::now());
-    cache.last_refresh_instant = Some(Instant::now());
-    cache.api = merged_api;
-    cache.streaming = merged_streaming;
-    cache.down = dedup_down(merged_down);
-    cache.ranked = ranked;
+    let mut c = cache.write().await;
+    c.last_refresh = Some(Utc::now());
+    c.last_refresh_instant = Some(Instant::now());
+    c.api = merged_api;
+    c.streaming = merged_streaming;
+    c.down = dedup_down(merged_down);
+    c.ranked = ranked;
 }
 
-async fn set_active_instance(state: &AppState, base_url: &str) {
-    let mut cache = state.instance_cache.write().await;
-    cache.active_base_url = Some(base_url.to_string());
+pub(crate) async fn list_instances_payload(
+    manual_override: Option<&str>,
+    cache: &RwLock<InstanceCache>,
+    http: &reqwest::Client,
+) -> InstancesResponse {
+    ensure_instances_fresh(cache, http).await;
+    let c = cache.read().await;
+    debug!(
+        ranked = c.ranked.len(),
+        api = c.api.len(),
+        streaming = c.streaming.len(),
+        down = c.down.len(),
+        "Returning cached instance list"
+    );
+    InstancesResponse {
+        manual_override: manual_override.map(String::from),
+        active_base_url: c.active_base_url.clone(),
+        last_refresh: c.last_refresh,
+        ranked: c.ranked.clone(),
+        api: c.api.clone(),
+        streaming: c.streaming.clone(),
+        down: c.down.clone(),
+    }
 }
+
+// ── Pure helpers ────────────────────────────────────────────────────
 
 fn dedup_instances(instances: Vec<FeedInstance>) -> Vec<FeedInstance> {
     let mut by_url: HashMap<String, FeedInstance> = HashMap::new();
-
     for instance in instances {
         by_url
             .entry(instance.url.clone())
@@ -200,7 +199,6 @@ fn dedup_instances(instances: Vec<FeedInstance>) -> Vec<FeedInstance> {
             })
             .or_insert(instance);
     }
-
     let mut deduped: Vec<_> = by_url.into_values().collect();
     deduped.sort_by(|a, b| {
         version_key(&b.version)
@@ -215,7 +213,6 @@ fn dedup_down(entries: Vec<DownInstance>) -> Vec<DownInstance> {
     for entry in entries {
         by_url.insert(entry.url.clone(), entry);
     }
-
     let mut deduped: Vec<_> = by_url.into_values().collect();
     deduped.sort_by(|a, b| a.url.cmp(&b.url));
     deduped
@@ -223,7 +220,6 @@ fn dedup_down(entries: Vec<DownInstance>) -> Vec<DownInstance> {
 
 fn rank_instances(streaming: &[FeedInstance], api: &[FeedInstance]) -> Vec<RankedInstance> {
     let mut by_url: HashMap<String, RankedInstance> = HashMap::new();
-
     for item in api {
         by_url.insert(
             item.url.clone(),
@@ -234,7 +230,6 @@ fn rank_instances(streaming: &[FeedInstance], api: &[FeedInstance]) -> Vec<Ranke
             },
         );
     }
-
     for item in streaming {
         by_url
             .entry(item.url.clone())
@@ -250,7 +245,6 @@ fn rank_instances(streaming: &[FeedInstance], api: &[FeedInstance]) -> Vec<Ranke
                 source: "streaming".to_string(),
             });
     }
-
     let mut ranked: Vec<_> = by_url.into_values().collect();
     ranked.sort_by(|a, b| {
         source_priority(&a.source)
@@ -277,26 +271,4 @@ fn version_key(version: &str) -> (u16, u16, u16) {
         parts.next().unwrap_or(0),
         parts.next().unwrap_or(0),
     )
-}
-
-pub(crate) async fn list_instances_payload(state: &AppState) -> InstancesResponse {
-    ensure_instances_fresh(state).await;
-    let cache = state.instance_cache.read().await;
-    debug!(
-        ranked = cache.ranked.len(),
-        api = cache.api.len(),
-        streaming = cache.streaming.len(),
-        down = cache.down.len(),
-        "Returning cached instance list"
-    );
-
-    InstancesResponse {
-        manual_override: state.manual_hifi_base_url.clone(),
-        active_base_url: cache.active_base_url.clone(),
-        last_refresh: cache.last_refresh,
-        ranked: cache.ranked.clone(),
-        api: cache.api.clone(),
-        streaming: cache.streaming.clone(),
-        down: cache.down.clone(),
-    }
 }

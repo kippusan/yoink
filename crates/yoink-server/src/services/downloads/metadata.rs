@@ -1,6 +1,5 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use std::time::Duration;
 
 use lofty::{
     config::WriteOptions,
@@ -12,10 +11,7 @@ use lofty::{
 };
 use serde_json::Value;
 
-use crate::state::AppState;
-
 use super::io::extract_year;
-use crate::services::hifi::hifi_get_json;
 
 /// All the metadata needed to tag a single audio file.
 pub(crate) struct TrackMetadata<'a> {
@@ -304,44 +300,4 @@ fn sanitize_vorbis_key(prefix: &str, key: &str) -> String {
     format!("{}{}", prefix, normalized)
 }
 
-pub(crate) async fn fetch_cover_art_bytes(
-    http: &reqwest::Client,
-    cover_id: Option<&str>,
-) -> Option<Vec<u8>> {
-    let cover_id = cover_id?;
-    let url = format!(
-        "https://resources.tidal.com/images/{}/1080x1080.jpg",
-        cover_id.replace('-', "/")
-    );
-
-    let resp = http
-        .get(url)
-        .timeout(Duration::from_secs(20))
-        .send()
-        .await
-        .ok()?
-        .error_for_status()
-        .ok()?;
-
-    resp.bytes().await.ok().map(|b| b.to_vec())
-}
-
-pub(crate) async fn fetch_track_info_extra(
-    state: &AppState,
-    track_id: i64,
-) -> Option<HashMap<String, Value>> {
-    let response = hifi_get_json::<Value>(
-        state,
-        "/info/",
-        vec![("id".to_string(), track_id.to_string())],
-    )
-    .await
-    .ok()?;
-
-    let data = response.get("data")?.as_object()?;
-    Some(
-        data.iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect::<HashMap<String, Value>>(),
-    )
-}
+// fetch_cover_art_bytes and fetch_track_info_extra moved to providers

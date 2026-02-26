@@ -2,17 +2,16 @@ use leptos::prelude::*;
 use lucide_leptos::{ArrowLeft, ChevronRight};
 
 use yoink_shared::{
-    DownloadJob, DownloadStatus, MonitoredAlbum, MonitoredArtist, ServerAction, TrackInfo,
-    album_cover_url, album_profile_url, album_type_label, build_latest_jobs, status_class,
-    status_label_text,
+    DownloadJob, DownloadStatus, MonitoredAlbum, MonitoredArtist, ProviderLink, ServerAction,
+    TrackInfo, album_cover_url, album_type_label, build_latest_jobs, provider_display_name,
+    status_class, status_label_text,
 };
 
 use crate::components::toast::{dispatch_with_toast, dispatch_with_toast_loading};
 use crate::components::{ConfirmDialog, ErrorPanel, Sidebar};
 use crate::hooks::{set_page_title, use_sse_version};
 use crate::styles::{
-    BTN, BTN_DANGER, BTN_PRIMARY, GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, MUTED, btn_cls,
-    cls, tidal_icon_svg,
+    BTN, BTN_DANGER, BTN_PRIMARY, GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, MUTED, btn_cls, cls,
 };
 
 // ── DTO ─────────────────────────────────────────────────────
@@ -23,12 +22,13 @@ pub struct AlbumDetailData {
     pub artist: Option<MonitoredArtist>,
     pub tracks: Vec<TrackInfo>,
     pub jobs: Vec<DownloadJob>,
+    pub provider_links: Vec<ProviderLink>,
 }
 
 // ── Server function ─────────────────────────────────────────
 
 #[server(GetAlbumDetail, "/leptos")]
-pub async fn get_album_detail(album_id: i64) -> Result<AlbumDetailData, ServerFnError> {
+pub async fn get_album_detail(album_id: String) -> Result<AlbumDetailData, ServerFnError> {
     let ctx = use_context::<yoink_shared::ServerContext>()
         .ok_or_else(|| ServerFnError::new("ServerContext not available"))?;
 
@@ -43,15 +43,22 @@ pub async fn get_album_detail(album_id: i64) -> Result<AlbumDetailData, ServerFn
         None
     };
 
-    let tracks = (ctx.fetch_tracks)(album_id).await.unwrap_or_default();
+    let tracks = (ctx.fetch_tracks)(album_id.clone()).await.unwrap_or_default();
 
     let jobs = ctx.download_jobs.read().await.clone();
+
+    let provider_links = if album.is_some() {
+        (ctx.fetch_album_links)(album_id).await.unwrap_or_default()
+    } else {
+        Vec::new()
+    };
 
     Ok(AlbumDetailData {
         album,
         artist,
         tracks,
         jobs,
+        provider_links,
     })
 }
 
@@ -61,20 +68,8 @@ pub async fn get_album_detail(album_id: i64) -> Result<AlbumDetailData, ServerFn
 pub fn AlbumDetailPage() -> impl IntoView {
     set_page_title("Album");
     let params = leptos_router::hooks::use_params_map();
-    let album_id = move || {
-        params
-            .read()
-            .get("album_id")
-            .and_then(|s| s.parse::<i64>().ok())
-            .unwrap_or(0)
-    };
-    let artist_id = move || {
-        params
-            .read()
-            .get("artist_id")
-            .and_then(|s| s.parse::<i64>().ok())
-            .unwrap_or(0)
-    };
+    let album_id = move || params.read().get("album_id").unwrap_or_default();
+    let artist_id = move || params.read().get("artist_id").unwrap_or_default();
 
     let version = use_sse_version();
     let data = Resource::new(
@@ -159,6 +154,7 @@ pub fn AlbumDetailPage() -> impl IntoView {
                                             artist=data.artist
                                             tracks=data.tracks
                                             jobs=data.jobs
+                                            provider_links=data.provider_links
                                             artist_id_param=aid
                                         />
                                     }.into_any()
@@ -180,11 +176,15 @@ fn AlbumDetailContent(
     artist: Option<MonitoredArtist>,
     tracks: Vec<TrackInfo>,
     jobs: Vec<DownloadJob>,
-    artist_id_param: i64,
+    provider_links: Vec<ProviderLink>,
+    artist_id_param: String,
 ) -> impl IntoView {
     set_page_title(&album.title);
 
-    let album_id = album.id;
+    let album_id_retry = album.id.clone();
+    let album_id_retry2 = album.id.clone();
+    let album_id_monitor = album.id.clone();
+    let album_id_remove_confirm = album.id.clone();
     let album_title = album.title.clone();
     let release_date = album
         .release_date
@@ -197,7 +197,6 @@ fn AlbumDetailContent(
     let is_acquired = album.acquired;
 
     let cover_url = album_cover_url(&album, 640);
-    let profile_url = album_profile_url(&album);
 
     let latest_jobs = build_latest_jobs(jobs);
     let latest_job = latest_jobs.get(&album.id).cloned();
@@ -225,10 +224,6 @@ fn AlbumDetailContent(
         .as_ref()
         .map(|a| a.name.clone())
         .unwrap_or_else(|| "Unknown Artist".to_string());
-    let artist_quality = artist
-        .as_ref()
-        .map(|a| a.quality_profile.clone())
-        .unwrap_or_default();
     let artist_link = format!("/artists/{artist_id_param}");
 
     let fallback_initial = album_title
@@ -327,6 +322,33 @@ fn AlbumDetailContent(
                                 <span>{format!("{track_count} tracks, {duration_display}")}</span>
                             </div>
 
+                            // Provider links
+                            {if !provider_links.is_empty() {
+                                view! {
+                                    <div class="flex flex-wrap items-center gap-1.5 mb-3">
+                                        <span class="text-xs text-zinc-400 dark:text-zinc-500">"Available on"</span>
+                                        {provider_links.iter().map(|link| {
+                                            let display = provider_display_name(&link.provider);
+                                            let external_url = link.external_url.clone();
+                                            match external_url {
+                                                Some(url) => view! {
+                                                    <a href=url class="inline-flex items-center px-2 py-0.5 text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-500/[.08] border border-blue-500/20 rounded-md no-underline hover:bg-blue-500/15" target="_blank" rel="noreferrer">
+                                                        {display}
+                                                    </a>
+                                                }.into_any(),
+                                                None => view! {
+                                                    <span class="inline-flex items-center px-2 py-0.5 text-xs font-medium text-zinc-500 dark:text-zinc-400 bg-zinc-500/[.08] border border-zinc-500/20 rounded-md">
+                                                        {display}
+                                                    </span>
+                                                }.into_any(),
+                                            }
+                                        }).collect_view()}
+                                    </div>
+                                }.into_any()
+                            } else {
+                                view! { <span></span> }.into_any()
+                            }}
+
                             // Status pills
                             <div class="flex flex-wrap items-center gap-2 mb-4">
                                 {if is_wanted && !is_acquired {
@@ -344,13 +366,7 @@ fn AlbumDetailContent(
                                 <span class=status_pill_class>{status_pill_text}</span>
                                 {match &job_quality {
                                     Some(q) => view! { <span class="pill d7-pill-muted">{q.clone()}</span> }.into_any(),
-                                    None => {
-                                        if !artist_quality.is_empty() {
-                                            view! { <span class="pill d7-pill-muted">{artist_quality.clone()}</span> }.into_any()
-                                        } else {
-                                            view! { <span></span> }.into_any()
-                                        }
-                                    }
+                                    None => view! { <span></span> }.into_any(),
                                 }}
                             </div>
 
@@ -367,23 +383,31 @@ fn AlbumDetailContent(
                             // Action buttons
                             <div class="flex flex-wrap gap-1.5">
                                 {if can_retry {
+                                    let aid = album_id_retry.clone();
                                     view! {
                                         <button type="button"
                                             class=move || btn_cls(BTN_PRIMARY, "px-3 py-1.5 text-xs", download_loading.get())
                                             disabled=move || download_loading.get()
-                                            on:click=move |_| {
-                                                dispatch_with_toast_loading(ServerAction::RetryDownload { album_id }, "Download requeued", Some(download_loading));
+                                            on:click={
+                                                let aid = aid.clone();
+                                                move |_| {
+                                                    dispatch_with_toast_loading(ServerAction::RetryDownload { album_id: aid.clone() }, "Download requeued", Some(download_loading));
+                                                }
                                             }>
                                             {move || if download_loading.get() { "Retrying\u{2026}" } else { "Retry Download" }}
                                         </button>
                                     }.into_any()
                                 } else if can_download {
+                                    let aid = album_id_retry2.clone();
                                     view! {
                                         <button type="button"
                                             class=move || btn_cls(BTN_PRIMARY, "px-3 py-1.5 text-xs", download_loading.get())
                                             disabled=move || download_loading.get()
-                                            on:click=move |_| {
-                                                dispatch_with_toast_loading(ServerAction::RetryDownload { album_id }, "Download started", Some(download_loading));
+                                            on:click={
+                                                let aid = aid.clone();
+                                                move |_| {
+                                                    dispatch_with_toast_loading(ServerAction::RetryDownload { album_id: aid.clone() }, "Download started", Some(download_loading));
+                                                }
                                             }>
                                             {move || if download_loading.get() { "Starting\u{2026}" } else { "Download" }}
                                         </button>
@@ -393,10 +417,13 @@ fn AlbumDetailContent(
                                 }}
 
                                 <button type="button" class={cls(BTN, "px-3 py-1.5 text-xs")} title=monitor_title
-                                    on:click=move |_| {
-                                        let next = !is_monitored;
-                                        let msg = if next { "Album monitored" } else { "Album unmonitored" };
-                                        dispatch_with_toast(ServerAction::ToggleAlbumMonitor { album_id, monitored: next }, msg);
+                                    on:click={
+                                        let aid = album_id_monitor.clone();
+                                        move |_| {
+                                            let next = !is_monitored;
+                                            let msg = if next { "Album monitored" } else { "Album unmonitored" };
+                                            dispatch_with_toast(ServerAction::ToggleAlbumMonitor { album_id: aid.clone(), monitored: next }, msg);
+                                        }
                                     }>{monitor_label}</button>
 
                                 {if is_acquired {
@@ -410,16 +437,6 @@ fn AlbumDetailContent(
                                     }.into_any()
                                 } else {
                                     view! { <span></span> }.into_any()
-                                }}
-
-                                {match profile_url {
-                                    Some(url) => view! {
-                                        <a href=url target="_blank" rel="noreferrer" class={cls(BTN, "px-3 py-1.5 text-xs")}>
-                                            <span class="inline-block size-3.5 shrink-0" inner_html=tidal_icon_svg()></span>
-                                            "Tidal"
-                                        </a>
-                                    }.into_any(),
-                                    None => view! { <span></span> }.into_any(),
                                 }}
                             </div>
                         </div>
@@ -477,9 +494,12 @@ fn AlbumDetailContent(
             confirm_label="Remove Files"
             danger=true
             checkbox_label="Also unmonitor this album"
-            on_confirm=move |unmonitor: bool| {
-                let msg = if unmonitor { "Album files removed and unmonitored" } else { "Album files removed" };
-                dispatch_with_toast(ServerAction::RemoveAlbumFiles { album_id, unmonitor }, msg);
+            on_confirm={
+                let aid = album_id_remove_confirm.clone();
+                move |unmonitor: bool| {
+                    let msg = if unmonitor { "Album files removed and unmonitored" } else { "Album files removed" };
+                    dispatch_with_toast(ServerAction::RemoveAlbumFiles { album_id: aid.clone(), unmonitor }, msg);
+                }
             }
         />
     }

@@ -5,7 +5,7 @@ use lucide_leptos::X;
 
 use yoink_shared::{
     DownloadJob, DownloadStatus, MonitoredAlbum, MonitoredArtist, ServerAction, album_cover_url,
-    album_profile_url, build_albums_by_artist, build_artist_names, build_latest_jobs, status_class,
+    build_albums_by_artist, build_artist_names, build_latest_jobs, status_class,
 };
 
 use crate::components::toast::dispatch_with_toast;
@@ -134,7 +134,7 @@ fn WantedContent(data: WantedData) -> impl IntoView {
     let latest_jobs = build_latest_jobs(data.jobs);
 
     // Compute bulk action counts before grouping
-    let queueable_album_ids: Vec<i64> = data
+    let queueable_album_ids: Vec<String> = data
         .wanted
         .iter()
         .filter(|album| {
@@ -145,9 +145,9 @@ fn WantedContent(data: WantedData) -> impl IntoView {
                     Some(DownloadStatus::Failed) | Some(DownloadStatus::Completed)
                 )
         })
-        .map(|a| a.id)
+        .map(|a| a.id.clone())
         .collect();
-    let failed_album_ids: Vec<i64> = data
+    let failed_album_ids: Vec<String> = data
         .wanted
         .iter()
         .filter(|album| {
@@ -156,21 +156,21 @@ fn WantedContent(data: WantedData) -> impl IntoView {
                 Some(DownloadStatus::Failed)
             )
         })
-        .map(|a| a.id)
+        .map(|a| a.id.clone())
         .collect();
     let queueable_count = queueable_album_ids.len();
     let failed_count = failed_album_ids.len();
 
     let albums_by_artist = build_albums_by_artist(data.wanted);
 
-    let mut artist_order: Vec<(i64, String)> = albums_by_artist
+    let mut artist_order: Vec<(String, String)> = albums_by_artist
         .keys()
-        .map(|&aid| {
+        .map(|aid| {
             let name = artist_names
-                .get(&aid)
+                .get(aid)
                 .cloned()
                 .unwrap_or_else(|| format!("Unknown ({aid})"));
-            (aid, name)
+            (aid.clone(), name)
         })
         .collect();
     artist_order.sort_by(|a, b| a.1.to_lowercase().cmp(&b.1.to_lowercase()));
@@ -332,7 +332,7 @@ fn WantedContent(data: WantedData) -> impl IntoView {
 
 /// A single wanted album row.
 #[component]
-fn WantedRow(album: MonitoredAlbum, latest_jobs: HashMap<i64, DownloadJob>) -> impl IntoView {
+fn WantedRow(album: MonitoredAlbum, latest_jobs: HashMap<String, DownloadJob>) -> impl IntoView {
     let album_title = album.title.clone();
     let release_date = album
         .release_date
@@ -341,7 +341,6 @@ fn WantedRow(album: MonitoredAlbum, latest_jobs: HashMap<i64, DownloadJob>) -> i
     let is_explicit = album.explicit;
 
     let cover_url = album_cover_url(&album, 160);
-    let profile_url = album_profile_url(&album);
     let fallback_initial = album_title
         .chars()
         .next()
@@ -376,11 +375,10 @@ fn WantedRow(album: MonitoredAlbum, latest_jobs: HashMap<i64, DownloadJob>) -> i
     let explicit_label = if is_explicit { " [E]" } else { "" };
     let meta_text = format!("{release_date}{explicit_label}");
 
-    let album_id_val = album.id;
-    let album_id_str = album.id.to_string();
+    let album_id_val = album.id.clone();
 
     view! {
-        <div class=WANTED_CARD data-album-id=album_id_str>
+        <div class=WANTED_CARD data-album-id=album_id_val.clone()>
             // Cover thumbnail
             {match cover_url {
                 Some(url) => view! {
@@ -394,14 +392,7 @@ fn WantedRow(album: MonitoredAlbum, latest_jobs: HashMap<i64, DownloadJob>) -> i
             // Album info
             <div class="flex-1 min-w-0">
                 <div class="text-sm font-semibold text-zinc-900 dark:text-zinc-100 whitespace-nowrap overflow-hidden text-ellipsis">
-                    {match profile_url {
-                        Some(url) => view! {
-                            <a href=url target="_blank" rel="noreferrer" class="text-inherit no-underline hover:text-blue-500">{album_title.clone()}</a>
-                        }.into_any(),
-                        None => view! {
-                            <span>{album_title.clone()}</span>
-                        }.into_any(),
-                    }}
+                    {album_title.clone()}
                 </div>
                 <div class="text-xs text-zinc-500 dark:text-zinc-400">{meta_text}</div>
                 <small class=error_class>{error_text}</small>
@@ -413,21 +404,23 @@ fn WantedRow(album: MonitoredAlbum, latest_jobs: HashMap<i64, DownloadJob>) -> i
             // Actions
             <div class="flex gap-1.5 shrink-0 items-center">
                 {if is_failed {
+                    let aid = album_id_val.clone();
                     view! {
                         <button type="button" class={cls(BTN_DANGER, "px-2.5 py-0.5 text-xs")}
                             on:click=move |_| {
                                 dispatch_with_toast(
-                                    ServerAction::RetryDownload { album_id: album_id_val },
+                                    ServerAction::RetryDownload { album_id: aid.clone() },
                                     "Download queued for retry",
                                 );
                             }>"Retry"</button>
                     }.into_any()
                 } else if is_queueable {
+                    let aid = album_id_val.clone();
                     view! {
                         <button type="button" class={cls(BTN, "px-2.5 py-0.5 text-xs")}
                             on:click=move |_| {
                                 dispatch_with_toast(
-                                    ServerAction::RetryDownload { album_id: album_id_val },
+                                    ServerAction::RetryDownload { album_id: aid.clone() },
                                     "Download queued",
                                 );
                             }>"Download"</button>
@@ -435,15 +428,20 @@ fn WantedRow(album: MonitoredAlbum, latest_jobs: HashMap<i64, DownloadJob>) -> i
                 } else {
                     view! { <span></span> }.into_any()
                 }}
-                <button type="button" class=ICON_BTN title="Unmonitor" aria-label="Unmonitor album"
-                    on:click=move |_| {
-                        dispatch_with_toast(
-                            ServerAction::ToggleAlbumMonitor { album_id: album_id_val, monitored: false },
-                            "Album unmonitored",
-                        );
-                    }>
-                    <X size=14 />
-                </button>
+                {
+                    let aid = album_id_val.clone();
+                    view! {
+                        <button type="button" class=ICON_BTN title="Unmonitor" aria-label="Unmonitor album"
+                            on:click=move |_| {
+                                dispatch_with_toast(
+                                    ServerAction::ToggleAlbumMonitor { album_id: aid.clone(), monitored: false },
+                                    "Album unmonitored",
+                                );
+                            }>
+                            <X size=14 />
+                        </button>
+                    }
+                }
             </div>
         </div>
     }

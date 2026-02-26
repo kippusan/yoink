@@ -16,13 +16,6 @@ pub const BTN_DANGER: &str = "inline-flex items-center justify-center gap-1.5 px
 pub const BTN_LOADING: &str = "opacity-60 pointer-events-none cursor-not-allowed";
 pub const SELECT: &str = "py-1 px-2 border border-black/[.06] dark:border-white/[.08] rounded-lg text-xs bg-white/40 dark:bg-zinc-800/40 text-zinc-900 dark:text-zinc-100 outline-none cursor-pointer transition-[border-color,box-shadow] duration-150 focus:border-blue-500 focus:shadow-[0_0_0_2px_rgba(59,130,246,.12)]";
 
-/// The Tidal SVG icon markup with `fill="currentColor"` for use with `inner_html`.
-pub fn tidal_icon_svg() -> String {
-    simpleicons_rs::SITIDAL
-        .svg
-        .replace("<svg ", "<svg fill=\"currentColor\" ")
-}
-
 pub fn cls(a: &str, b: &str) -> String {
     format!("{a} {b}")
 }

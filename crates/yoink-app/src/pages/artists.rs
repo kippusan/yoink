@@ -5,7 +5,7 @@ use lucide_leptos::X;
 
 use yoink_shared::{
     MonitoredAlbum, MonitoredArtist, SearchArtistResult, ServerAction, build_albums_by_artist,
-    monitored_artist_image_url, search_artist_image_url, search_artist_profile_url,
+    provider_display_name,
 };
 
 use leptoaster::{ToastBuilder, ToastLevel, ToastPosition, expect_toaster};
@@ -15,12 +15,10 @@ use crate::components::{ErrorPanel, Sidebar};
 use crate::hooks::{set_page_title, use_sse_version};
 use crate::styles::{
     BTN_PRIMARY, EMPTY, GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, MUTED, SELECT, btn_cls, cls,
-    tidal_icon_svg,
 };
 
 // ── Page-specific Tailwind class constants ──────────────────
 
-const LINK: &str = "text-blue-500 no-underline font-medium hover:text-blue-400 hover:underline";
 const SEARCH_INPUT: &str = "py-2 px-3.5 border border-black/[.08] dark:border-white/10 rounded-lg font-inherit text-sm bg-white/60 dark:bg-zinc-800/60 backdrop-blur-[8px] text-zinc-900 dark:text-zinc-100 outline-none w-full max-w-[360px] transition-[border-color,box-shadow] duration-150 focus:border-blue-500 focus:shadow-[0_0_0_3px_rgba(59,130,246,.15)] dark:focus:shadow-[0_0_0_3px_rgba(59,130,246,.2)] placeholder:text-zinc-400 dark:placeholder:text-zinc-600";
 const SEARCH_RESULT: &str = "flex items-center gap-3.5 px-4 py-3 border-b border-black/[.04] dark:border-white/[.04] transition-[background] duration-[120ms] last:border-b-0 hover:bg-blue-500/[.04] dark:hover:bg-blue-500/[.06]";
 const ARTIST_CARD: &str = "bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[12px] border border-black/[.06] dark:border-white/[.08] rounded-xl p-4 flex items-center gap-3.5 transition-[transform,box-shadow,border-color] duration-200 relative overflow-hidden no-underline cursor-pointer hover:-translate-y-0.5 hover:shadow-[0_8px_32px_rgba(59,130,246,.1)] hover:border-blue-500/20 dark:hover:shadow-[0_8px_32px_rgba(59,130,246,.15)] dark:hover:border-blue-500/30";
@@ -210,7 +208,7 @@ fn ArtistsContent(
     search_result: Resource<Result<SearchResult, ServerFnError>>,
 ) -> impl IntoView {
     let monitored_count = data.monitored.len();
-    let monitored_ids: HashSet<i64> = data.monitored.iter().map(|a| a.id).collect();
+    let monitored_names: HashSet<String> = data.monitored.iter().map(|a| a.name.to_lowercase()).collect();
     let albums_by_artist = build_albums_by_artist(data.albums);
 
     // Client-side filter and sort for the collection grid
@@ -300,7 +298,7 @@ fn ArtistsContent(
 
                                 let has_query = !current_query.trim().is_empty();
                                 let results_view = if !sr.results.is_empty() {
-                                    let ids = monitored_ids.clone();
+                                    let names = monitored_names.clone();
                                     Some(view! {
                                         <div class=GLASS>
                                             <div class=GLASS_HEADER>
@@ -308,7 +306,7 @@ fn ArtistsContent(
                                             </div>
                                             <div>
                                                 {sr.results.into_iter().map(|artist| {
-                                                    let already_monitored = ids.contains(&artist.id);
+                                                    let already_monitored = names.contains(&artist.name.to_lowercase());
                                                     view! { <SearchResultRow artist=artist is_monitored=already_monitored /> }
                                                 }).collect_view()}
                                             </div>
@@ -429,18 +427,21 @@ fn SearchResultRow(
     #[prop(default = false)] is_monitored: bool,
 ) -> impl IntoView {
     let navigate = leptos_router::hooks::use_navigate();
-    let image_url = search_artist_image_url(&artist, 160);
-    let profile_url = search_artist_profile_url(&artist);
+    let image_url = artist.image_url.clone();
+    let profile_url = artist.url.clone().unwrap_or_default();
     let fallback_initial = artist
         .name
         .chars()
         .next()
         .map(|c| c.to_uppercase().to_string())
         .unwrap_or_else(|| "?".to_string());
-    let artist_id = artist.id;
+    let artist_external_id = artist.external_id.clone();
     let artist_name = artist.name.clone();
-    let picture = artist.picture.clone();
-    let tidal_url = artist.url.clone();
+    let artist_image_url = artist.image_url.clone();
+    let artist_url = artist.url.clone();
+    let artist_provider = artist.provider.clone();
+    let provider_display = provider_display_name(&artist.provider);
+    let has_profile = !profile_url.is_empty();
 
     let adding = RwSignal::new(false);
 
@@ -456,10 +457,22 @@ fn SearchResultRow(
             }}
             <div class="flex-1 min-w-0">
                 <div class="text-[15px] font-semibold text-zinc-900 dark:text-zinc-100">{artist.name}</div>
-                <a class={cls(LINK, "text-xs inline-flex items-center gap-1")} href=profile_url target="_blank" rel="noreferrer">
-                    <span class="inline-block size-3 shrink-0" inner_html=tidal_icon_svg()></span>
-                    "Tidal"
-                </a>
+                {if has_profile {
+                    let profile_url_clone = profile_url.clone();
+                    let display = provider_display.clone();
+                    view! {
+                        <a class="inline-flex items-center px-2 py-0.5 text-[11px] font-medium text-blue-600 dark:text-blue-400 bg-blue-500/[.08] border border-blue-500/20 rounded-md no-underline hover:bg-blue-500/15" href=profile_url_clone target="_blank" rel="noreferrer">
+                            {display}
+                        </a>
+                    }.into_any()
+                } else {
+                    let display = provider_display.clone();
+                    view! {
+                        <span class="inline-flex items-center px-2 py-0.5 text-[11px] font-medium text-zinc-500 dark:text-zinc-400 bg-zinc-500/[.08] border border-zinc-500/20 rounded-md">
+                            {display}
+                        </span>
+                    }.into_any()
+                }}
             </div>
             {if is_monitored {
                 view! {
@@ -475,16 +488,19 @@ fn SearchResultRow(
                         on:click=move |_| {
                             adding.set(true);
                             let name = artist_name.clone();
-                            let pic = picture.clone();
-                            let url = tidal_url.clone();
+                            let provider = artist_provider.clone();
+                            let ext_id = artist_external_id.clone();
+                            let img_url = artist_image_url.clone();
+                            let ext_url = artist_url.clone();
                             let navigate = navigate.clone();
                             let toaster = expect_toaster();
                             leptos::task::spawn_local(async move {
                                 match dispatch_action(ServerAction::AddArtist {
-                                    id: artist_id,
-                                    name,
-                                    picture: pic,
-                                    tidal_url: url,
+                                    name: name.clone(),
+                                    provider,
+                                    external_id: ext_id,
+                                    image_url: img_url,
+                                    external_url: ext_url,
                                 }).await {
                                     Ok(()) => {
                                         toaster.toast(
@@ -493,8 +509,8 @@ fn SearchResultRow(
                                                 .with_position(ToastPosition::BottomRight)
                                                 .with_expiry(Some(4_000)),
                                         );
-                                        let path = format!("/artists/{artist_id}");
-                                        navigate(&path, Default::default());
+                                        // Navigate to the artists list since we don't know the new UUID
+                                        navigate("/artists", Default::default());
                                     }
                                     Err(e) => {
                                         toaster.toast(
@@ -530,7 +546,7 @@ fn ArtistCard(artist: MonitoredArtist, albums: Vec<MonitoredAlbum>) -> impl Into
         .next()
         .map(|c| c.to_uppercase().to_string())
         .unwrap_or_else(|| "?".to_string());
-    let artist_img = monitored_artist_image_url(&artist, 160);
+    let artist_img = artist.image_url.clone();
     let detail_href = format!("/artists/{}", artist.id);
 
     view! {

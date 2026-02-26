@@ -14,8 +14,8 @@ use tokio_stream::{StreamExt as _, wrappers::BroadcastStream};
 use tracing::debug;
 
 use crate::{
+    db,
     models::*,
-    services::{list_instances_payload, search_hifi_artists},
     state::AppState,
 };
 
@@ -25,11 +25,15 @@ pub(crate) fn build_router(state: AppState) -> Router {
         .route("/api/library/artists", get(list_monitored_artists))
         .route("/api/library/albums", get(list_monitored_albums))
         .route("/api/downloads", get(list_download_jobs))
-        .route("/api/instances", get(list_instances))
+        .route("/api/tidal/instances", get(list_tidal_instances))
         .route("/api/albums/{album_id}/tracks", get(album_tracks))
         .route("/api/search", get(api_search))
         .route("/api/events", get(sse_events))
         .route("/api/image/{image_id}/{size}", get(proxy_tidal_image))
+        .route(
+            "/api/image/{provider}/{image_id}/{size}",
+            get(proxy_provider_image),
+        )
         .with_state(state)
 }
 
@@ -50,68 +54,86 @@ async fn list_download_jobs(State(state): State<AppState>) -> impl IntoResponse 
     Json(jobs)
 }
 
-async fn list_instances(State(state): State<AppState>) -> impl IntoResponse {
-    let payload = list_instances_payload(&state).await;
-    Json(payload)
+async fn list_tidal_instances(State(state): State<AppState>) -> impl IntoResponse {
+    if let Some(tidal) = state.registry.tidal_provider() {
+        let payload = tidal.list_instances_payload().await;
+        return Json(serde_json::to_value(payload).unwrap_or_default()).into_response();
+    }
+    Json(serde_json::json!({"error": "Tidal provider not available"})).into_response()
 }
 
 async fn album_tracks(
     State(state): State<AppState>,
-    Path(album_id): Path<i64>,
+    Path(album_id): Path<String>,
 ) -> impl IntoResponse {
-    use crate::models::{HifiAlbumItem, HifiAlbumResponse, TrackInfo};
-    use crate::services::hifi::hifi_get_json;
-
-    let result = hifi_get_json::<HifiAlbumResponse>(
-        &state,
-        "/album/",
-        vec![("id".to_string(), album_id.to_string())],
-    )
-    .await;
-
-    match result {
-        Ok(response) => {
-            let tracks: Vec<TrackInfo> = response
-                .data
-                .items
-                .into_iter()
-                .enumerate()
-                .map(|(idx, item)| {
-                    let track = match item {
-                        HifiAlbumItem::Item { item } => item,
-                        HifiAlbumItem::Track(t) => t,
-                    };
-                    let secs = track.duration.unwrap_or(0);
-                    let mins = secs / 60;
-                    let rem = secs % 60;
-                    TrackInfo {
-                        id: track.id,
-                        title: track.title,
-                        version: track.version,
-                        track_number: track.track_number.unwrap_or((idx + 1) as u32),
-                        duration_secs: secs,
-                        duration_display: format!("{}:{:02}", mins, rem),
-                    }
-                })
-                .collect();
-            (StatusCode::OK, Json(tracks)).into_response()
+    // First try loading from local DB
+    match db::load_tracks_for_album(&state.db, &album_id).await {
+        Ok(tracks) if !tracks.is_empty() => {
+            return (StatusCode::OK, Json(tracks)).into_response();
         }
+        _ => {}
+    }
+
+    // Fallback: fetch from any available metadata provider via provider link
+    let links = match db::load_album_provider_links(&state.db, &album_id).await {
+        Ok(links) => links,
         Err(err) => {
-            debug!(album_id, error = %err, "Failed to fetch album tracks");
-            (
-                StatusCode::BAD_GATEWAY,
-                Json(serde_json::json!({"error": err})),
+            debug!(album_id = %album_id, error = %err, "Failed to load album provider links");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": err.to_string()})),
             )
-                .into_response()
+                .into_response();
+        }
+    };
+
+    // Try each provider link until one succeeds
+    for link in &links {
+        let Some(provider) = state.registry.metadata_provider(&link.provider) else {
+            continue;
+        };
+
+        match provider.fetch_tracks(&link.external_id).await {
+            Ok((provider_tracks, _album_extra)) => {
+                let tracks: Vec<TrackInfo> = provider_tracks
+                    .into_iter()
+                    .map(|t| {
+                        let secs = t.duration_secs;
+                        let mins = secs / 60;
+                        let rem = secs % 60;
+                        TrackInfo {
+                            id: db::uuid_to_string(&db::new_uuid()),
+                            title: t.title,
+                            version: t.version,
+                            disc_number: t.disc_number.unwrap_or(1),
+                            track_number: t.track_number,
+                            duration_secs: secs,
+                            duration_display: format!("{}:{:02}", mins, rem),
+                            isrc: t.isrc,
+                        }
+                    })
+                    .collect();
+                return (StatusCode::OK, Json(tracks)).into_response();
+            }
+            Err(err) => {
+                debug!(
+                    album_id = %album_id,
+                    provider = %link.provider,
+                    error = %err.0,
+                    "Failed to fetch tracks from provider"
+                );
+            }
         }
     }
+
+    // No provider could serve the tracks
+    (StatusCode::OK, Json(Vec::<TrackInfo>::new())).into_response()
 }
 
 async fn api_search(
     State(state): State<AppState>,
     Query(query): Query<SearchQuery>,
 ) -> impl IntoResponse {
-    use crate::models::SearchResultArtist;
     use crate::ui::{artist_image_url, artist_profile_url};
 
     let q = match query.q.filter(|v| !v.trim().is_empty()) {
@@ -119,33 +141,32 @@ async fn api_search(
         None => return (StatusCode::OK, Json(Vec::<SearchResultArtist>::new())).into_response(),
     };
 
+    // Check which names are already monitored
     let monitored = state.monitored_artists.read().await;
-    let monitored_ids: std::collections::HashSet<i64> = monitored.iter().map(|a| a.id).collect();
+    let monitored_names: std::collections::HashSet<String> = monitored
+        .iter()
+        .map(|a| a.name.to_ascii_lowercase())
+        .collect();
     drop(monitored);
 
-    match search_hifi_artists(&state, &q).await {
-        Ok(artists) => {
-            let results: Vec<SearchResultArtist> = artists
-                .iter()
-                .map(|a| SearchResultArtist {
-                    id: a.id,
-                    name: a.name.clone(),
-                    picture_url: artist_image_url(a, 160),
-                    tidal_url: artist_profile_url(a),
-                    already_monitored: monitored_ids.contains(&a.id),
-                })
-                .collect();
-            (StatusCode::OK, Json(results)).into_response()
-        }
-        Err(err) => {
-            debug!(error = %err, "API search failed");
-            (
-                StatusCode::BAD_GATEWAY,
-                Json(serde_json::json!({"error": err})),
-            )
-                .into_response()
+    // Fan-out search to all providers
+    let all_results = state.registry.search_artists_all(&q).await;
+    let mut results = Vec::new();
+
+    for (provider_id, artists) in all_results {
+        for a in &artists {
+            results.push(SearchResultArtist {
+                provider: provider_id.clone(),
+                external_id: a.external_id.clone(),
+                name: a.name.clone(),
+                image_url: artist_image_url(&provider_id, a, 160),
+                url: artist_profile_url(a),
+                already_monitored: monitored_names.contains(&a.name.to_ascii_lowercase()),
+            });
         }
     }
+
+    (StatusCode::OK, Json(results)).into_response()
 }
 
 async fn sse_events(
@@ -161,22 +182,45 @@ async fn sse_events(
 
 // ── Image proxy ─────────────────────────────────────────────────────
 
+/// Legacy image proxy route: /api/image/{image_id}/{size}
+/// Assumes Tidal image format for backwards compatibility.
 async fn proxy_tidal_image(
     State(state): State<AppState>,
     Path((image_id, size)): Path<(String, u16)>,
 ) -> impl IntoResponse {
-    // Validate inputs to prevent path traversal / abuse
-    if !image_id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') || image_id.len() > 60 {
-        return (StatusCode::BAD_REQUEST, "invalid image id").into_response();
-    }
+    proxy_image_impl(&state, "tidal", &image_id, size).await
+}
+
+/// Provider-aware image proxy: /api/image/{provider}/{image_id}/{size}
+async fn proxy_provider_image(
+    State(state): State<AppState>,
+    Path((provider, image_id, size)): Path<(String, String, u16)>,
+) -> impl IntoResponse {
+    proxy_image_impl(&state, &provider, &image_id, size).await
+}
+
+async fn proxy_image_impl(
+    state: &AppState,
+    provider: &str,
+    image_id: &str,
+    size: u16,
+) -> axum::response::Response {
+    // Validate size
     if ![160, 320, 640, 750, 1080].contains(&size) {
         return (StatusCode::BAD_REQUEST, "invalid size").into_response();
     }
 
-    let upstream_url = format!(
-        "https://resources.tidal.com/images/{}/{size}x{size}.jpg",
-        image_id.replace('-', "/")
-    );
+    // Resolve upstream URL via the provider
+    let Some(metadata_provider) = state.registry.metadata_provider(provider) else {
+        return (StatusCode::BAD_REQUEST, "unknown provider").into_response();
+    };
+
+    // Provider-specific image ID validation
+    if !metadata_provider.validate_image_id(image_id) {
+        return (StatusCode::BAD_REQUEST, "invalid image id").into_response();
+    }
+
+    let upstream_url = metadata_provider.image_url(image_id, size);
 
     let resp = state
         .http

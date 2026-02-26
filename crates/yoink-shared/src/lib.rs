@@ -34,12 +34,13 @@ impl DownloadStatus {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DownloadJob {
-    pub id: u64,
-    pub album_id: i64,
-    pub artist_id: i64,
+    pub id: String,       // UUID v7
+    pub album_id: String, // UUID v7
+    pub source: String,   // download source: "tidal", "soulseek"
     pub album_title: String,
+    pub artist_name: String, // denormalized for display
     pub status: DownloadStatus,
-    pub quality: String,
+    pub quality: String, // "lossless", "hires", "lossy"
     pub total_tracks: usize,
     pub completed_tracks: usize,
     pub error: Option<String>,
@@ -49,23 +50,20 @@ pub struct DownloadJob {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MonitoredArtist {
-    pub id: i64,
+    pub id: String, // UUID v7
     pub name: String,
-    pub picture: Option<String>,
-    pub tidal_url: Option<String>,
-    pub quality_profile: String,
+    pub image_url: Option<String>, // resolved URL
     pub added_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MonitoredAlbum {
-    pub id: i64,
-    pub artist_id: i64,
+    pub id: String,        // UUID v7
+    pub artist_id: String, // UUID v7
     pub title: String,
     pub album_type: Option<String>,
     pub release_date: Option<String>,
-    pub cover: Option<String>,
-    pub tidal_url: Option<String>,
+    pub cover_url: Option<String>, // resolved URL
     pub explicit: bool,
     pub monitored: bool,
     pub acquired: bool,
@@ -75,21 +73,32 @@ pub struct MonitoredAlbum {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrackInfo {
-    pub id: i64,
+    pub id: String, // UUID v7
     pub title: String,
     pub version: Option<String>,
+    pub disc_number: u32,
     pub track_number: u32,
     pub duration_secs: u32,
     pub duration_display: String,
+    pub isrc: Option<String>,
+}
+
+/// Provider link info for the UI
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProviderLink {
+    pub provider: String, // "tidal", "musicbrainz", "deezer"
+    pub external_id: String,
+    pub external_url: Option<String>,
+    pub external_name: Option<String>,
 }
 
 // ── Data helpers (pure transforms) ──────────────────────────
 
 /// Group albums by artist_id, sorted newest-first within each group.
-pub fn build_albums_by_artist(albums: Vec<MonitoredAlbum>) -> HashMap<i64, Vec<MonitoredAlbum>> {
-    let mut map: HashMap<i64, Vec<MonitoredAlbum>> = HashMap::new();
+pub fn build_albums_by_artist(albums: Vec<MonitoredAlbum>) -> HashMap<String, Vec<MonitoredAlbum>> {
+    let mut map: HashMap<String, Vec<MonitoredAlbum>> = HashMap::new();
     for album in albums {
-        map.entry(album.artist_id).or_default().push(album);
+        map.entry(album.artist_id.clone()).or_default().push(album);
     }
     for albums in map.values_mut() {
         albums.sort_by(|a, b| {
@@ -102,10 +111,10 @@ pub fn build_albums_by_artist(albums: Vec<MonitoredAlbum>) -> HashMap<i64, Vec<M
 }
 
 /// For each album_id, keep only the most recently updated job.
-pub fn build_latest_jobs(jobs: Vec<DownloadJob>) -> HashMap<i64, DownloadJob> {
-    let mut map: HashMap<i64, DownloadJob> = HashMap::new();
+pub fn build_latest_jobs(jobs: Vec<DownloadJob>) -> HashMap<String, DownloadJob> {
+    let mut map: HashMap<String, DownloadJob> = HashMap::new();
     for job in jobs {
-        map.entry(job.album_id)
+        map.entry(job.album_id.clone())
             .and_modify(|existing| {
                 if job.updated_at > existing.updated_at {
                     *existing = job.clone();
@@ -117,8 +126,11 @@ pub fn build_latest_jobs(jobs: Vec<DownloadJob>) -> HashMap<i64, DownloadJob> {
 }
 
 /// Map artist id -> name for display.
-pub fn build_artist_names(artists: &[MonitoredArtist]) -> HashMap<i64, String> {
-    artists.iter().map(|a| (a.id, a.name.clone())).collect()
+pub fn build_artist_names(artists: &[MonitoredArtist]) -> HashMap<String, String> {
+    artists
+        .iter()
+        .map(|a| (a.id.clone(), a.name.clone()))
+        .collect()
 }
 
 // ── Display helpers ─────────────────────────────────────────
@@ -141,58 +153,26 @@ pub fn status_label_text(status: &DownloadStatus, completed: usize, total: usize
 
 // ── Search result DTO (used by Artists page) ───────────────
 
-/// A search result from the HiFi API, serializable for client use.
+/// A search result from a metadata provider, serializable for client use.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchArtistResult {
-    pub id: i64,
+    pub provider: String,    // which provider returned this
+    pub external_id: String, // provider's ID as string
     pub name: String,
-    pub picture: Option<String>,
+    pub image_url: Option<String>, // resolved image URL
     pub url: Option<String>,
 }
 
 // ── Asset/URL helpers ───────────────────────────────────────
 
-pub fn tidal_image_url(image_id: &str, size: u16) -> String {
-    format!("/api/image/{image_id}/{size}")
+/// Build an image proxy URL for a given provider and image reference.
+pub fn provider_image_url(provider: &str, image_ref: &str, size: u16) -> String {
+    format!("/api/image/{provider}/{image_ref}/{size}")
 }
 
-pub fn album_cover_url(album: &MonitoredAlbum, size: u16) -> Option<String> {
-    album.cover.as_deref().map(|id| tidal_image_url(id, size))
-}
-
-pub fn album_profile_url(album: &MonitoredAlbum) -> Option<String> {
-    album
-        .tidal_url
-        .as_deref()
-        .map(|url| url.replace("http://", "https://"))
-}
-
-pub fn monitored_artist_image_url(artist: &MonitoredArtist, size: u16) -> Option<String> {
-    artist
-        .picture
-        .as_deref()
-        .map(|id| tidal_image_url(id, size))
-}
-
-pub fn search_artist_image_url(artist: &SearchArtistResult, size: u16) -> Option<String> {
-    artist
-        .picture
-        .as_deref()
-        .map(|id| tidal_image_url(id, size))
-}
-
-pub fn search_artist_profile_url(artist: &SearchArtistResult) -> String {
-    artist
-        .url
-        .clone()
-        .unwrap_or_else(|| format!("https://tidal.com/artist/{}", artist.id))
-}
-
-pub fn monitored_artist_profile_url(artist: &MonitoredArtist) -> String {
-    artist
-        .tidal_url
-        .clone()
-        .unwrap_or_else(|| format!("https://tidal.com/artist/{}", artist.id))
+/// Get the cover URL for an album (already a full URL or None).
+pub fn album_cover_url(album: &MonitoredAlbum, _size: u16) -> Option<String> {
+    album.cover_url.clone()
 }
 
 pub fn album_type_label(album_type: Option<&str>, title: &str) -> &'static str {
@@ -227,6 +207,23 @@ pub fn album_type_rank(album_type: Option<&str>, title: &str) -> u8 {
     }
 }
 
+/// Human-readable display name for a provider ID (e.g. "tidal" -> "Tidal").
+pub fn provider_display_name(provider: &str) -> String {
+    match provider {
+        "tidal" => "Tidal".to_string(),
+        "musicbrainz" => "MusicBrainz".to_string(),
+        "deezer" => "Deezer".to_string(),
+        "soulseek" => "SoulSeek".to_string(),
+        other => {
+            let mut c = other.chars();
+            match c.next() {
+                None => String::new(),
+                Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+            }
+        }
+    }
+}
+
 pub fn status_class(status: &DownloadStatus) -> &'static str {
     match status {
         DownloadStatus::Queued => "pill status-queued",
@@ -246,35 +243,49 @@ pub fn status_class(status: &DownloadStatus) -> &'static str {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ServerAction {
     ToggleAlbumMonitor {
-        album_id: i64,
+        album_id: String,
         monitored: bool,
     },
     BulkMonitor {
-        artist_id: i64,
+        artist_id: String,
         monitored: bool,
     },
     SyncArtistAlbums {
-        artist_id: i64,
+        artist_id: String,
     },
     RemoveArtist {
-        artist_id: i64,
+        artist_id: String,
         remove_files: bool,
     },
     AddArtist {
-        id: i64,
         name: String,
-        picture: Option<String>,
-        tidal_url: Option<String>,
+        provider: String,    // which provider this came from
+        external_id: String, // provider's ID
+        image_url: Option<String>,
+        external_url: Option<String>,
+    },
+    LinkArtistProvider {
+        artist_id: String,
+        provider: String,
+        external_id: String,
+        external_url: Option<String>,
+        external_name: Option<String>,
+        image_ref: Option<String>,
+    },
+    UnlinkArtistProvider {
+        artist_id: String,
+        provider: String,
+        external_id: String,
     },
     CancelDownload {
-        job_id: u64,
+        job_id: String,
     },
     ClearCompleted,
     RetryDownload {
-        album_id: i64,
+        album_id: String,
     },
     RemoveAlbumFiles {
-        album_id: i64,
+        album_id: String,
         unmonitor: bool,
     },
     RetagLibrary,
@@ -297,7 +308,16 @@ pub type SearchArtistsFn =
     std::sync::Arc<dyn Fn(String) -> AsyncFnResult<Vec<SearchArtistResult>> + Send + Sync>;
 
 #[cfg(feature = "ssr")]
-pub type FetchTracksFn = std::sync::Arc<dyn Fn(i64) -> AsyncFnResult<Vec<TrackInfo>> + Send + Sync>;
+pub type FetchTracksFn =
+    std::sync::Arc<dyn Fn(String) -> AsyncFnResult<Vec<TrackInfo>> + Send + Sync>;
+
+#[cfg(feature = "ssr")]
+pub type FetchArtistLinksFn =
+    std::sync::Arc<dyn Fn(String) -> AsyncFnResult<Vec<ProviderLink>> + Send + Sync>;
+
+#[cfg(feature = "ssr")]
+pub type FetchAlbumLinksFn =
+    std::sync::Arc<dyn Fn(String) -> AsyncFnResult<Vec<ProviderLink>> + Send + Sync>;
 
 #[cfg(feature = "ssr")]
 pub type DispatchActionFn = std::sync::Arc<dyn Fn(ServerAction) -> AsyncFnResult<()> + Send + Sync>;
@@ -310,5 +330,7 @@ pub struct ServerContext {
     pub download_jobs: std::sync::Arc<tokio::sync::RwLock<Vec<DownloadJob>>>,
     pub search_artists: SearchArtistsFn,
     pub fetch_tracks: FetchTracksFn,
+    pub fetch_artist_links: FetchArtistLinksFn,
+    pub fetch_album_links: FetchAlbumLinksFn,
     pub dispatch_action: DispatchActionFn,
 }

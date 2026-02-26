@@ -2,16 +2,12 @@ use base64::Engine;
 use roxmltree::{Document, Node};
 use tracing::warn;
 
-use crate::models::{BtsManifest, HifiPlaybackData};
-
-pub(crate) enum DownloadPayload {
-    DirectUrl(String),
-    DashSegmentUrls(Vec<String>),
-}
+use super::models::{BtsManifest, HifiPlaybackData};
+use crate::providers::PlaybackInfo;
 
 pub(crate) fn extract_download_payload(
     playback: &HifiPlaybackData,
-) -> Result<DownloadPayload, String> {
+) -> Result<PlaybackInfo, String> {
     let decoded = base64::engine::general_purpose::STANDARD
         .decode(playback.manifest.as_bytes())
         .map_err(|err| format!("failed to decode manifest: {err}"))?;
@@ -24,7 +20,7 @@ pub(crate) fn extract_download_payload(
                 .urls
                 .first()
                 .cloned()
-                .map(DownloadPayload::DirectUrl)
+                .map(PlaybackInfo::DirectUrl)
                 .ok_or_else(|| "no track URL in BTS manifest".to_string())
         }
         "application/dash+xml" => {
@@ -33,9 +29,9 @@ pub(crate) fn extract_download_payload(
             if let Ok(urls) = extract_dash_segment_urls(&xml)
                 && !urls.is_empty()
             {
-                return Ok(DownloadPayload::DashSegmentUrls(urls));
+                return Ok(PlaybackInfo::SegmentUrls(urls));
             }
-            extract_dash_base_url(&xml).map(DownloadPayload::DirectUrl)
+            extract_dash_base_url(&xml).map(PlaybackInfo::DirectUrl)
         }
         other => {
             warn!(manifest_mime_type = %other, "Unknown manifest type, attempting BTS parse as fallback");
@@ -45,7 +41,7 @@ pub(crate) fn extract_download_payload(
                 .urls
                 .first()
                 .cloned()
-                .map(DownloadPayload::DirectUrl)
+                .map(PlaybackInfo::DirectUrl)
                 .ok_or_else(|| format!("no track URL in manifest (type: {})", other))
         }
     }
@@ -261,8 +257,6 @@ fn join_dash_url(base: &str, part: &str) -> String {
     }
 }
 
-/// Extract the download URL from a DASH MPD XML manifest.
-/// TIDAL DASH manifests contain `<BaseURL>` elements with the direct stream URL.
 fn extract_dash_base_url(xml: &str) -> Result<String, String> {
     let mut scan_from = 0usize;
     while let Some(tag_start_rel) = xml[scan_from..].find("<BaseURL") {
@@ -291,7 +285,6 @@ fn extract_dash_base_url(xml: &str) -> Result<String, String> {
         scan_from = content_start + close_rel + "</BaseURL>".len();
     }
 
-    // Last resort: pick first absolute URL anywhere in the XML payload.
     if let Some(start) = xml.find("https://").or_else(|| xml.find("http://")) {
         let tail = &xml[start..];
         let end = tail

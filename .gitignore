@@ -1,6 +1,9 @@
 /target
 /dist
 /music
+/development
 /yoink.db
 /yoink.db-shm
 /yoink.db-wal
+.env*
+!.env.example

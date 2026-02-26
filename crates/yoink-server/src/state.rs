@@ -1,21 +1,18 @@
-use std::{path::PathBuf, sync::Arc, time::Instant};
+use std::{path::PathBuf, sync::Arc};
 
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use sqlx::SqlitePool;
 use tokio::sync::{Notify, RwLock, broadcast};
 use tracing::info;
 
 use crate::{
-    config::INSTANCE_CACHE_TTL,
     db,
-    models::{
-        DownInstance, DownloadJob, FeedInstance, MonitoredAlbum, MonitoredArtist, RankedInstance,
-    },
+    models::{DownloadJob, MonitoredAlbum, MonitoredArtist},
+    providers::registry::ProviderRegistry,
 };
 
 #[derive(Clone)]
 pub(crate) struct AppState {
-    pub(crate) manual_hifi_base_url: Option<String>,
     pub(crate) http: reqwest::Client,
     pub(crate) db: SqlitePool,
     pub(crate) monitored_artists: Arc<RwLock<Vec<MonitoredArtist>>>,
@@ -26,48 +23,16 @@ pub(crate) struct AppState {
     pub(crate) music_root: PathBuf,
     pub(crate) default_quality: String,
     pub(crate) download_lyrics: bool,
-    pub(crate) instance_cache: Arc<RwLock<InstanceCache>>,
-}
-
-#[derive(Debug, Clone)]
-pub(crate) struct InstanceCache {
-    pub(crate) last_refresh: Option<DateTime<Utc>>,
-    pub(crate) last_refresh_instant: Option<Instant>,
-    pub(crate) api: Vec<FeedInstance>,
-    pub(crate) streaming: Vec<FeedInstance>,
-    pub(crate) down: Vec<DownInstance>,
-    pub(crate) ranked: Vec<RankedInstance>,
-    pub(crate) active_base_url: Option<String>,
-}
-
-impl InstanceCache {
-    pub(crate) fn new() -> Self {
-        Self {
-            last_refresh: None,
-            last_refresh_instant: None,
-            api: Vec::new(),
-            streaming: Vec::new(),
-            down: Vec::new(),
-            ranked: Vec::new(),
-            active_base_url: None,
-        }
-    }
-
-    pub(crate) fn is_stale(&self) -> bool {
-        match self.last_refresh_instant {
-            Some(last) => last.elapsed() > INSTANCE_CACHE_TTL,
-            None => true,
-        }
-    }
+    pub(crate) registry: Arc<ProviderRegistry>,
 }
 
 impl AppState {
     pub(crate) async fn new(
-        manual_hifi_base_url: Option<String>,
         music_root: PathBuf,
         default_quality: String,
         download_lyrics: bool,
         db_url: &str,
+        registry: ProviderRegistry,
     ) -> Self {
         let pool = db::open(db_url).await.expect("failed to open database");
 
@@ -107,7 +72,6 @@ impl AppState {
         let (sse_tx, _) = broadcast::channel(64);
 
         Self {
-            manual_hifi_base_url,
             http: reqwest::Client::new(),
             db: pool,
             monitored_artists: Arc::new(RwLock::new(artists)),
@@ -118,7 +82,7 @@ impl AppState {
             music_root,
             default_quality,
             download_lyrics,
-            instance_cache: Arc::new(RwLock::new(InstanceCache::new())),
+            registry: Arc::new(registry),
         }
     }
 

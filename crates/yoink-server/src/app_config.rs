@@ -4,7 +4,7 @@ use envconfig::Envconfig;
 
 use crate::config::DEFAULT_QUALITY;
 
-const DEFAULT_HIFI_API_BASE_URL: &str = "http://127.0.0.1:8000";
+const DEFAULT_TIDAL_API_BASE_URL: &str = "http://127.0.0.1:8000";
 const DEFAULT_MUSIC_ROOT: &str = "./music";
 const DEFAULT_DATABASE_URL: &str = "sqlite:./yoink.db?mode=rwc";
 const DEFAULT_SITE_ROOT: &str = "target/site";
@@ -12,8 +12,18 @@ const DEFAULT_LOG_FORMAT: &str = "pretty";
 
 #[derive(Debug, Clone, Envconfig)]
 pub(crate) struct AppConfig {
+    /// Base URL for the Tidal hifi-api proxy.
+    /// Legacy env var HIFI_API_BASE_URL is still supported.
+    #[envconfig(from = "TIDAL_API_BASE_URL", default = "")]
+    pub(crate) tidal_api_base_url: String,
+
+    /// Legacy alias for TIDAL_API_BASE_URL.
     #[envconfig(from = "HIFI_API_BASE_URL", default = "http://127.0.0.1:8000")]
     pub(crate) hifi_api_base_url: String,
+
+    /// Whether the Tidal provider is enabled. Defaults to true.
+    #[envconfig(from = "TIDAL_ENABLED", default = "true")]
+    pub(crate) tidal_enabled: bool,
 
     #[envconfig(from = "MUSIC_ROOT", default = "./music")]
     pub(crate) music_root: String,
@@ -45,9 +55,21 @@ impl AppConfig {
         PathBuf::from(&self.music_root)
     }
 
+    /// Resolved Tidal API base URL: prefers TIDAL_API_BASE_URL, falls back to HIFI_API_BASE_URL.
+    pub(crate) fn resolved_tidal_base_url(&self) -> String {
+        if !self.tidal_api_base_url.is_empty() {
+            self.tidal_api_base_url.clone()
+        } else {
+            self.hifi_api_base_url.clone()
+        }
+    }
+
     fn normalize(&mut self) {
+        self.tidal_api_base_url = normalize_string_opt(&self.tidal_api_base_url)
+            .map(|s| s.trim_end_matches('/').to_string())
+            .unwrap_or_default();
         self.hifi_api_base_url =
-            normalize_string(&self.hifi_api_base_url, DEFAULT_HIFI_API_BASE_URL)
+            normalize_string(&self.hifi_api_base_url, DEFAULT_TIDAL_API_BASE_URL)
                 .trim_end_matches('/')
                 .to_string();
         self.music_root = normalize_string(&self.music_root, DEFAULT_MUSIC_ROOT);
@@ -68,6 +90,15 @@ fn normalize_string(value: &str, fallback: &str) -> String {
     }
 }
 
+fn normalize_string_opt(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -83,7 +114,7 @@ mod tests {
         let mut cfg = AppConfig::init_from_hashmap(&env).expect("config parse");
         cfg.normalize();
 
-        assert_eq!(cfg.hifi_api_base_url, DEFAULT_HIFI_API_BASE_URL);
+        assert_eq!(cfg.hifi_api_base_url, DEFAULT_TIDAL_API_BASE_URL);
         assert_eq!(cfg.music_root, DEFAULT_MUSIC_ROOT);
         assert_eq!(cfg.default_quality, DEFAULT_QUALITY);
     }

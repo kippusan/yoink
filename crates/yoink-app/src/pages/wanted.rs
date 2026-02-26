@@ -11,7 +11,9 @@ use yoink_shared::{
 use crate::components::toast::dispatch_with_toast;
 use crate::components::{ErrorPanel, Sidebar};
 use crate::hooks::{set_page_title, use_sse_version};
-use crate::styles::{BTN, BTN_DANGER, BTN_PRIMARY, EMPTY, GLASS, GLASS_HEADER, GLASS_TITLE, MUTED, btn_cls, cls};
+use crate::styles::{
+    BTN, BTN_DANGER, BTN_PRIMARY, EMPTY, GLASS, GLASS_HEADER, GLASS_TITLE, MUTED, btn_cls, cls,
+};
 
 #[cfg(feature = "hydrate")]
 use leptoaster::{ToastBuilder, ToastLevel, ToastPosition, expect_toaster};
@@ -132,13 +134,30 @@ fn WantedContent(data: WantedData) -> impl IntoView {
     let latest_jobs = build_latest_jobs(data.jobs);
 
     // Compute bulk action counts before grouping
-    let queueable_album_ids: Vec<i64> = data.wanted.iter().filter(|album| {
-        let job_status = latest_jobs.get(&album.id).map(|j| j.status.clone());
-        job_status.is_none() || matches!(job_status, Some(DownloadStatus::Failed) | Some(DownloadStatus::Completed))
-    }).map(|a| a.id).collect();
-    let failed_album_ids: Vec<i64> = data.wanted.iter().filter(|album| {
-        matches!(latest_jobs.get(&album.id).map(|j| j.status.clone()), Some(DownloadStatus::Failed))
-    }).map(|a| a.id).collect();
+    let queueable_album_ids: Vec<i64> = data
+        .wanted
+        .iter()
+        .filter(|album| {
+            let job_status = latest_jobs.get(&album.id).map(|j| j.status.clone());
+            job_status.is_none()
+                || matches!(
+                    job_status,
+                    Some(DownloadStatus::Failed) | Some(DownloadStatus::Completed)
+                )
+        })
+        .map(|a| a.id)
+        .collect();
+    let failed_album_ids: Vec<i64> = data
+        .wanted
+        .iter()
+        .filter(|album| {
+            matches!(
+                latest_jobs.get(&album.id).map(|j| j.status.clone()),
+                Some(DownloadStatus::Failed)
+            )
+        })
+        .map(|a| a.id)
+        .collect();
     let queueable_count = queueable_album_ids.len();
     let failed_count = failed_album_ids.len();
 
@@ -200,14 +219,14 @@ fn WantedContent(data: WantedData) -> impl IntoView {
                                                 let toaster = expect_toaster();
                                                 if failed == 0 {
                                                     toaster.toast(
-                                                        ToastBuilder::new(&format!("Queued {total} albums"))
+                                                        ToastBuilder::new(format!("Queued {total} albums"))
                                                             .with_level(ToastLevel::Success)
                                                             .with_position(ToastPosition::BottomRight)
                                                             .with_expiry(Some(4_000)),
                                                     );
                                                 } else {
                                                     toaster.toast(
-                                                        ToastBuilder::new(&format!("Queued {}/{total} albums, {failed} failed", total - failed))
+                                                        ToastBuilder::new(format!("Queued {}/{total} albums, {failed} failed", total - failed))
                                                             .with_level(ToastLevel::Error)
                                                             .with_position(ToastPosition::BottomRight)
                                                             .with_expiry(Some(8_000)),
@@ -252,14 +271,14 @@ fn WantedContent(data: WantedData) -> impl IntoView {
                                                 let toaster = expect_toaster();
                                                 if failed == 0 {
                                                     toaster.toast(
-                                                        ToastBuilder::new(&format!("Retried {total} albums"))
+                                                        ToastBuilder::new(format!("Retried {total} albums"))
                                                             .with_level(ToastLevel::Success)
                                                             .with_position(ToastPosition::BottomRight)
                                                             .with_expiry(Some(4_000)),
                                                     );
                                                 } else {
                                                     toaster.toast(
-                                                        ToastBuilder::new(&format!("Retried {}/{total} albums, {failed} failed", total - failed))
+                                                        ToastBuilder::new(format!("Retried {}/{total} albums, {failed} failed", total - failed))
                                                             .with_level(ToastLevel::Error)
                                                             .with_position(ToastPosition::BottomRight)
                                                             .with_expiry(Some(8_000)),
@@ -334,7 +353,10 @@ fn WantedRow(album: MonitoredAlbum, latest_jobs: HashMap<i64, DownloadJob>) -> i
     let job_error = latest_job.as_ref().and_then(|j| j.error.clone());
     let is_failed = matches!(job_status, Some(DownloadStatus::Failed));
     let is_queueable = job_status.is_none()
-        || matches!(job_status, Some(DownloadStatus::Failed) | Some(DownloadStatus::Completed));
+        || matches!(
+            job_status,
+            Some(DownloadStatus::Failed) | Some(DownloadStatus::Completed)
+        );
 
     let sc = match &job_status {
         Some(s) => status_class(s).to_string(),

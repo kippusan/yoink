@@ -43,9 +43,7 @@ pub async fn get_album_detail(album_id: i64) -> Result<AlbumDetailData, ServerFn
         None
     };
 
-    let tracks = (ctx.fetch_tracks)(album_id)
-        .await
-        .unwrap_or_default();
+    let tracks = (ctx.fetch_tracks)(album_id).await.unwrap_or_default();
 
     let jobs = ctx.download_jobs.read().await.clone();
 
@@ -266,11 +264,7 @@ fn AlbumDetailContent(
     } else {
         "Monitor album"
     };
-    let monitor_label = if is_monitored {
-        "Unmonitor"
-    } else {
-        "Monitor"
-    };
+    let monitor_label = if is_monitored { "Unmonitor" } else { "Monitor" };
 
     view! {
         // ── Sticky header with breadcrumb ───────────────────

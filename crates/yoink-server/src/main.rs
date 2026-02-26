@@ -325,9 +325,7 @@ async fn dispatch_action_impl(
                         .collect()
                 };
                 for album in &acquired {
-                    if let Err(e) =
-                        services::remove_downloaded_album_files(&state, album).await
-                    {
+                    if let Err(e) = services::remove_downloaded_album_files(&state, album).await {
                         warn!(
                             album_id = album.id,
                             error = %e,
@@ -491,7 +489,10 @@ async fn dispatch_action_impl(
                 services::enqueue_album_download(&state, &album).await;
             }
 
-            info!(album_id, removed, unmonitor, "Removed downloaded album files");
+            info!(
+                album_id,
+                removed, unmonitor, "Removed downloaded album files"
+            );
             state.notify_sse();
         }
 

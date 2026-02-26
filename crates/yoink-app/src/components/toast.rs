@@ -1,5 +1,5 @@
-use leptos::prelude::*;
 use leptoaster::{ToastBuilder, ToastLevel, ToastPosition, expect_toaster};
+use leptos::prelude::*;
 
 use crate::actions::dispatch_action;
 use yoink_shared::ServerAction;
@@ -36,7 +36,7 @@ pub fn dispatch_with_toast_loading(
                     .with_expiry(Some(4_000)),
             ),
             Err(e) => toaster.toast(
-                ToastBuilder::new(&format!("Error: {e}"))
+                ToastBuilder::new(format!("Error: {e}"))
                     .with_level(ToastLevel::Error)
                     .with_position(ToastPosition::BottomRight)
                     .with_expiry(Some(8_000)),

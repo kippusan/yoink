@@ -7,8 +7,8 @@ use yoink_shared::{
     status_class, status_label_text,
 };
 
-use crate::components::{ConfirmDialog, ErrorPanel, Sidebar};
 use crate::components::toast::{dispatch_with_toast, dispatch_with_toast_loading};
+use crate::components::{ConfirmDialog, ErrorPanel, Sidebar};
 use crate::hooks::{set_page_title, use_sse_version};
 use crate::styles::{
     BTN, BTN_DANGER, BTN_PRIMARY, EMPTY, GLASS, GLASS_HEADER, GLASS_TITLE, MUTED, btn_cls, cls,

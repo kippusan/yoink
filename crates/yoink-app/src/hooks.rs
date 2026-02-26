@@ -12,10 +12,10 @@ pub fn set_page_title(title: &str) {
         } else {
             format!("{title} \u{2014} yoink")
         };
-        if let Ok(doc) = leptos::prelude::document().query_selector("title") { 
-            if let Some(el) = doc {
-                el.set_text_content(Some(&full));
-            }
+        if let Ok(doc) = leptos::prelude::document().query_selector("title")
+            && let Some(el) = doc
+        {
+            el.set_text_content(Some(&full));
         }
     }
     #[cfg(not(feature = "hydrate"))]

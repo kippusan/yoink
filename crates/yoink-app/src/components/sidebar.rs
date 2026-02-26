@@ -59,8 +59,8 @@ fn SidebarNav(
             }
         });
     };
-    let nav_click2 = nav_click.clone();
-    let nav_click3 = nav_click.clone();
+    // let nav_click2 = nav_click.clone();
+    // let nav_click3 = nav_click.clone();
 
     view! {
         <div class="px-4 pt-5 pb-3 flex items-center gap-2.5 border-b border-white/[.06]">
@@ -74,11 +74,11 @@ fn SidebarNav(
                 <House />
                 "Dashboard"
             </a>
-            <a href="/artists" class=artists_class on:click=nav_click2>
+            <a href="/artists" class=artists_class on:click=nav_click>
                 <MicVocal />
                 "Artists"
             </a>
-            <a href="/wanted" class=wanted_class on:click=nav_click3>
+            <a href="/wanted" class=wanted_class on:click=nav_click>
                 <Heart />
                 "Wanted"
             </a>
@@ -137,8 +137,8 @@ pub fn Sidebar(#[prop(into)] active: String) -> impl IntoView {
         // OS theme sync: listen to prefers-color-scheme changes.
         // Only apply when the user hasn't explicitly set a theme in localStorage.
         {
-            use wasm_bindgen::prelude::*;
             use wasm_bindgen::JsCast;
+            use wasm_bindgen::prelude::*;
 
             let win = leptos::prelude::window();
             if let Ok(Some(mql)) = win.match_media("(prefers-color-scheme: dark)") {
@@ -207,8 +207,6 @@ pub fn Sidebar(#[prop(into)] active: String) -> impl IntoView {
         let _ = is_open; // suppress unused warning on SSR
     });
 
-    let on_toggle_clone = on_toggle.clone();
-
     view! {
         // ── Desktop sidebar (hidden on mobile) ──────────────
         <aside class="fixed inset-y-0 left-0 w-[220px] bg-[rgba(10,10,15,.92)] backdrop-blur-[20px] border-r border-white/[.06] flex flex-col z-50 overflow-y-auto max-md:hidden" aria-label="Sidebar">
@@ -256,7 +254,7 @@ pub fn Sidebar(#[prop(into)] active: String) -> impl IntoView {
                     artists_class=artists_class
                     wanted_class=wanted_class
                     theme_label=theme_label
-                    on_toggle=on_toggle_clone
+                    on_toggle=on_toggle
                     on_nav_click=Box::new(close_drawer)
                 />
             </aside>

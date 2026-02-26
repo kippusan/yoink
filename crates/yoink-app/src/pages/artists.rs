@@ -104,8 +104,7 @@ pub fn ArtistsPage() -> impl IntoView {
                 let val = query.get();
                 // Clear previous timer
                 if let Some(id) = timer_id.get() {
-                    leptos::prelude::window()
-                        .clear_timeout_with_handle(id);
+                    leptos::prelude::window().clear_timeout_with_handle(id);
                 }
                 // Set new timer
                 let set_dq = set_debounced_query;
@@ -425,7 +424,10 @@ fn ArtistsContent(
 
 /// A single search result row with an "Add" button.
 #[component]
-fn SearchResultRow(artist: SearchArtistResult, #[prop(default = false)] is_monitored: bool) -> impl IntoView {
+fn SearchResultRow(
+    artist: SearchArtistResult,
+    #[prop(default = false)] is_monitored: bool,
+) -> impl IntoView {
     let navigate = leptos_router::hooks::use_navigate();
     let image_url = search_artist_image_url(&artist, 160);
     let profile_url = search_artist_profile_url(&artist);
@@ -496,7 +498,7 @@ fn SearchResultRow(artist: SearchArtistResult, #[prop(default = false)] is_monit
                                     }
                                     Err(e) => {
                                         toaster.toast(
-                                            ToastBuilder::new(&format!("Error: {e}"))
+                                            ToastBuilder::new(format!("Error: {e}"))
                                                 .with_level(ToastLevel::Error)
                                                 .with_position(ToastPosition::BottomRight)
                                                 .with_expiry(Some(8_000)),

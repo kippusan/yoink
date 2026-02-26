@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 use lucide_leptos::{ChevronDown, ChevronUp, RefreshCw, TriangleAlert};
 
-use crate::styles::{cls, BTN};
+use crate::styles::{BTN, cls};
 
 /// A user-friendly error panel with optional details toggle and retry.
 ///

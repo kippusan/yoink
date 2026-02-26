@@ -93,10 +93,10 @@ pub fn ConfirmDialog(
                 let focus_cb = wasm_bindgen::closure::Closure::once_into_js(move || {
                     if let Some(dialog_el) = card_ref.get() {
                         let el: &web_sys::Element = &dialog_el;
-                        if let Ok(Some(cancel_btn)) = el.query_selector("button") {
-                            if let Some(html_el) = cancel_btn.dyn_ref::<web_sys::HtmlElement>() {
-                                let _ = html_el.focus();
-                            }
+                        if let Ok(Some(cancel_btn)) = el.query_selector("button")
+                            && let Some(html_el) = cancel_btn.dyn_ref::<web_sys::HtmlElement>()
+                        {
+                            let _ = html_el.focus();
                         }
                     }
                 });
@@ -119,46 +119,46 @@ pub fn ConfirmDialog(
         }
         #[cfg(feature = "hydrate")]
         {
-            if ev.key() == "Tab" {
-                if let Some(dialog_el) = card_ref.get() {
-                    use wasm_bindgen::JsCast;
-                    let el: &web_sys::Element = &dialog_el;
-                    if let Ok(nodes) = el.query_selector_all(
-                        "button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])",
-                    ) {
-                        let len = nodes.length();
-                        if len == 0 {
-                            return;
-                        }
-                        let first = nodes
-                            .item(0)
-                            .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok());
-                        let last = nodes
-                            .item(len - 1)
-                            .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok());
-                        if let (Some(first), Some(last)) = (first, last) {
-                            let doc = leptos::prelude::document();
-                            let active = doc.active_element();
-                            if ev.shift_key() {
-                                // Shift+Tab on first focusable → wrap to last
-                                if active
-                                    .as_ref()
-                                    .map(|a| *a == *first.as_ref())
-                                    .unwrap_or(false)
-                                {
-                                    ev.prevent_default();
-                                    let _ = last.focus();
-                                }
-                            } else {
-                                // Tab on last focusable → wrap to first
-                                if active
-                                    .as_ref()
-                                    .map(|a| *a == *last.as_ref())
-                                    .unwrap_or(false)
-                                {
-                                    ev.prevent_default();
-                                    let _ = first.focus();
-                                }
+            if ev.key() == "Tab"
+                && let Some(dialog_el) = card_ref.get()
+            {
+                use wasm_bindgen::JsCast;
+                let el: &web_sys::Element = &dialog_el;
+                if let Ok(nodes) = el.query_selector_all(
+                    "button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])",
+                ) {
+                    let len = nodes.length();
+                    if len == 0 {
+                        return;
+                    }
+                    let first = nodes
+                        .item(0)
+                        .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok());
+                    let last = nodes
+                        .item(len - 1)
+                        .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok());
+                    if let (Some(first), Some(last)) = (first, last) {
+                        let doc = leptos::prelude::document();
+                        let active = doc.active_element();
+                        if ev.shift_key() {
+                            // Shift+Tab on first focusable → wrap to last
+                            if active
+                                .as_ref()
+                                .map(|a| *a == *first.as_ref())
+                                .unwrap_or(false)
+                            {
+                                ev.prevent_default();
+                                let _ = last.focus();
+                            }
+                        } else {
+                            // Tab on last focusable → wrap to first
+                            if active
+                                .as_ref()
+                                .map(|a| *a == *last.as_ref())
+                                .unwrap_or(false)
+                            {
+                                ev.prevent_default();
+                                let _ = first.focus();
                             }
                         }
                     }
@@ -254,10 +254,10 @@ pub(crate) mod scroll_lock {
     #[cfg(feature = "hydrate")]
     pub fn acquire() {
         let prev = LOCK_COUNT.fetch_add(1, Ordering::Relaxed);
-        if prev == 0 {
-            if let Some(body) = leptos::prelude::document().body() {
-                let _ = body.style().set_property("overflow", "hidden");
-            }
+        if prev == 0
+            && let Some(body) = leptos::prelude::document().body()
+        {
+            let _ = body.style().set_property("overflow", "hidden");
         }
     }
 
@@ -270,10 +270,10 @@ pub(crate) mod scroll_lock {
             return;
         }
         let prev = LOCK_COUNT.fetch_sub(1, Ordering::Relaxed);
-        if prev == 1 {
-            if let Some(body) = leptos::prelude::document().body() {
-                let _ = body.style().remove_property("overflow");
-            }
+        if prev == 1
+            && let Some(body) = leptos::prelude::document().body()
+        {
+            let _ = body.style().remove_property("overflow");
         }
     }
 }

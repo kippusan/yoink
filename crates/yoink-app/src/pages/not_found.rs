@@ -3,7 +3,7 @@ use lucide_leptos::{House, SearchX};
 
 use crate::components::Sidebar;
 use crate::hooks::set_page_title;
-use crate::styles::{cls, BTN_PRIMARY, MUTED};
+use crate::styles::{BTN_PRIMARY, MUTED, cls};
 
 #[component]
 pub fn NotFoundPage() -> impl IntoView {

@@ -4,16 +4,16 @@ use leptos::prelude::*;
 use lucide_leptos::ArrowLeft;
 
 use yoink_shared::{
-    DownloadJob, MonitoredAlbum, MonitoredArtist, ServerAction, album_cover_url,
-    album_profile_url, album_type_label, album_type_rank, build_latest_jobs,
-    monitored_artist_image_url, monitored_artist_profile_url, status_class, status_label_text,
+    DownloadJob, MonitoredAlbum, MonitoredArtist, ServerAction, album_cover_url, album_profile_url,
+    album_type_label, album_type_rank, build_latest_jobs, monitored_artist_image_url,
+    monitored_artist_profile_url, status_class, status_label_text,
 };
 
 use leptoaster::{ToastBuilder, ToastLevel, ToastPosition, expect_toaster};
 
 use crate::actions::dispatch_action;
-use crate::components::{ConfirmDialog, ErrorPanel, Sidebar};
 use crate::components::toast::{dispatch_with_toast, dispatch_with_toast_loading};
+use crate::components::{ConfirmDialog, ErrorPanel, Sidebar};
 use crate::hooks::{set_page_title, use_sse_version};
 use crate::styles::{
     BTN, BTN_DANGER, BTN_PRIMARY, EMPTY, GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, MUTED,
@@ -290,7 +290,7 @@ fn ArtistDetailContent(
                             }
                             Err(e) => {
                                 toaster.toast(
-                                    ToastBuilder::new(&format!("Error: {e}"))
+                                    ToastBuilder::new(format!("Error: {e}"))
                                         .with_level(ToastLevel::Error)
                                         .with_position(ToastPosition::BottomRight)
                                         .with_expiry(Some(8_000)),

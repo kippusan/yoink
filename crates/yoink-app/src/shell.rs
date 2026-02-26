@@ -124,7 +124,7 @@ pub fn shell() -> impl IntoView {
                 <meta charset="utf-8" />
                 <meta name="viewport" content="width=device-width, initial-scale=1" />
                 <title>"yoink"</title>
-                <link rel="i con" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%233b82f6'/%3E%3Ctext x='50%25' y='52%25' font-size='20' text-anchor='middle' dominant-baseline='central' fill='white' font-family='system-ui' font-weight='700'%3Ey%3C/text%3E%3C/svg%3E" />
+                <link rel="icon" type="image/svg+xml" href="/yoink.svg" />
                 <script>{THEME_BOOTSTRAP}</script>
                 <link rel="stylesheet" href="/pkg/yoink.css" />
                 <script type="module">{HYDRATE_SCRIPT}</script>

@@ -1,5 +1,5 @@
 use leptos::prelude::*;
-use lucide_leptos::{Heart, House, Menu, MicVocal, Music2, SunMoon, X};
+use lucide_leptos::{Heart, House, Menu, MicVocal, SunMoon, X};
 
 // ── Tailwind class constants ────────────────────────────────
 
@@ -64,9 +64,7 @@ fn SidebarNav(
 
     view! {
         <div class="px-4 pt-5 pb-3 flex items-center gap-2.5 border-b border-white/[.06]">
-            <div class="size-8 rounded-lg bg-linear-to-br from-blue-500 to-blue-400 flex items-center justify-center shrink-0 shadow-[0_0_16px_rgba(59,130,246,.3)] [&_svg]:size-[18px]">
-                <Music2 color="white" />
-            </div>
+            <img src="/yoink.svg" alt="yoink" class="size-8 shrink-0" />
             <span class="text-lg font-bold text-zinc-100 tracking-wide">"yoink"</span>
         </div>
         <nav class="flex-1 py-2" aria-label="Main navigation">
@@ -137,8 +135,8 @@ pub fn Sidebar(#[prop(into)] active: String) -> impl IntoView {
         // OS theme sync: listen to prefers-color-scheme changes.
         // Only apply when the user hasn't explicitly set a theme in localStorage.
         {
-            use wasm_bindgen::JsCast;
             use wasm_bindgen::prelude::*;
+            use wasm_bindgen::JsCast;
 
             let win = leptos::prelude::window();
             if let Ok(Some(mql)) = win.match_media("(prefers-color-scheme: dark)") {

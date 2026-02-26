@@ -162,6 +162,11 @@ async fn api_search(
                 image_url: artist_image_url(&provider_id, a, 160),
                 url: artist_profile_url(a),
                 already_monitored: monitored_names.contains(&a.name.to_ascii_lowercase()),
+                disambiguation: a.disambiguation.clone(),
+                artist_type: a.artist_type.clone(),
+                country: a.country.clone(),
+                tags: a.tags.clone(),
+                popularity: a.popularity,
             });
         }
     }

@@ -330,6 +330,29 @@ fn LinkResultRow(
 
     let linking = RwSignal::new(false);
 
+    let disambiguation = result.disambiguation.clone();
+    let artist_type = result.artist_type.clone();
+    let country = result.country.clone();
+    let tags = result.tags.clone();
+    let popularity = result.popularity;
+
+    let type_country: Option<String> = match (&artist_type, &country) {
+        (Some(t), Some(c)) => Some(format!("{t} from {c}")),
+        (Some(t), None) => Some(t.clone()),
+        (None, Some(c)) => Some(format!("from {c}")),
+        (None, None) => None,
+    };
+
+    let subtitle: Option<String> = {
+        let base = disambiguation.or(type_country);
+        match (base, popularity) {
+            (Some(b), Some(p)) => Some(format!("{b} \u{00b7} {p}% popularity")),
+            (Some(b), None) => Some(b),
+            (None, Some(p)) => Some(format!("{p}% popularity")),
+            (None, None) => None,
+        }
+    };
+
     let provider = result.provider.clone();
     let external_id = result.external_id.clone();
     let external_url = result.url.clone();
@@ -348,10 +371,24 @@ fn LinkResultRow(
             }}
             <div class="flex-1 min-w-0">
                 <div class="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate">{result.name.clone()}</div>
+                // Subtitle: disambiguation/type/country + popularity
+                {subtitle.map(|s| view! {
+                    <div class="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5 leading-snug truncate">{s}</div>
+                })}
+                // Tags as small inline pills
+                {(!tags.is_empty()).then(|| view! {
+                    <div class="flex flex-wrap gap-1 mt-0.5">
+                        {tags.into_iter().take(3).map(|tag| view! {
+                            <span class="inline-flex items-center px-1.5 py-px text-[10px] font-medium text-zinc-500 dark:text-zinc-400 bg-zinc-500/[.06] border border-zinc-500/10 rounded">
+                                {tag}
+                            </span>
+                        }).collect_view()}
+                    </div>
+                })}
                 {result.url.as_ref().map(|url| {
                     let u = url.clone();
                     view! {
-                        <a class="text-[11px] text-blue-500 hover:text-blue-400 no-underline truncate block" href=u target="_blank" rel="noreferrer">
+                        <a class="text-[11px] text-blue-500 hover:text-blue-400 no-underline truncate block mt-0.5" href=u target="_blank" rel="noreferrer">
                             "View profile"
                         </a>
                     }

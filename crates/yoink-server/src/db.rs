@@ -562,6 +562,7 @@ pub(crate) async fn upsert_album_provider_link(
         "INSERT INTO album_provider_links (id, album_id, provider, external_id, external_url, external_title, cover_ref)
          VALUES ($1, $2, $3, $4, $5, $6, $7)
          ON CONFLICT(provider, external_id) DO UPDATE SET
+           album_id = excluded.album_id,
            external_url = excluded.external_url,
            external_title = excluded.external_title,
            cover_ref = excluded.cover_ref",

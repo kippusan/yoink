@@ -92,11 +92,30 @@ impl MetadataProvider for TidalProvider {
 
         Ok(artists
             .into_iter()
-            .map(|a| ProviderArtist {
-                external_id: a.id.to_string(),
-                name: a.name,
-                image_ref: a.picture.or(a.selected_album_cover_fallback),
-                url: a.url,
+            .map(|a| {
+                // Extract unique role categories as tags.
+                let mut tags: Vec<String> = a
+                    .artist_roles
+                    .iter()
+                    .filter_map(|r| r.category.clone())
+                    .collect();
+                tags.dedup();
+                tags.truncate(5);
+
+                // Use first artistTypes entry as artist_type.
+                let artist_type = a.artist_types.first().cloned();
+
+                ProviderArtist {
+                    external_id: a.id.to_string(),
+                    name: a.name,
+                    image_ref: a.picture.or(a.selected_album_cover_fallback),
+                    url: a.url,
+                    disambiguation: None,
+                    artist_type,
+                    country: None,
+                    tags,
+                    popularity: a.popularity,
+                }
             })
             .collect())
     }

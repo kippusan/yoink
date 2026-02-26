@@ -1,3 +1,4 @@
+pub(crate) mod musicbrainz;
 pub(crate) mod registry;
 pub(crate) mod tidal;
 
@@ -38,6 +39,16 @@ pub(crate) struct ProviderArtist {
     pub name: String,
     pub image_ref: Option<String>,
     pub url: Option<String>,
+    /// Short disambiguation comment (e.g. "British electronic duo").
+    pub disambiguation: Option<String>,
+    /// Artist type: "Person", "Group", "Orchestra", etc.
+    pub artist_type: Option<String>,
+    /// Country or area name.
+    pub country: Option<String>,
+    /// Genre/tag names, most relevant first (top 3–5).
+    pub tags: Vec<String>,
+    /// Popularity percentage (0–100), if available.
+    pub popularity: Option<u8>,
 }
 
 /// An album returned by a metadata provider.

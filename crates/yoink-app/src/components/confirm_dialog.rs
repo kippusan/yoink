@@ -91,7 +91,7 @@ pub fn ConfirmDialog(
                 scroll_lock::acquire();
                 // Auto-focus the Cancel button after a micro-tick so the DOM has rendered.
                 let focus_cb = wasm_bindgen::closure::Closure::once_into_js(move || {
-                    if let Some(dialog_el) = card_ref.get() {
+                    if let Some(dialog_el) = card_ref.get_untracked() {
                         let el: &web_sys::Element = &dialog_el;
                         if let Ok(Some(cancel_btn)) = el.query_selector("button")
                             && let Some(html_el) = cancel_btn.dyn_ref::<web_sys::HtmlElement>()
@@ -120,7 +120,7 @@ pub fn ConfirmDialog(
         #[cfg(feature = "hydrate")]
         {
             if ev.key() == "Tab"
-                && let Some(dialog_el) = card_ref.get()
+                && let Some(dialog_el) = card_ref.get_untracked()
             {
                 use wasm_bindgen::JsCast;
                 let el: &web_sys::Element = &dialog_el;

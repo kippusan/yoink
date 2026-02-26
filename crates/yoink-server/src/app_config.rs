@@ -25,6 +25,10 @@ pub(crate) struct AppConfig {
     #[envconfig(from = "TIDAL_ENABLED", default = "true")]
     pub(crate) tidal_enabled: bool,
 
+    /// Whether the MusicBrainz metadata provider is enabled. Defaults to true.
+    #[envconfig(from = "MUSICBRAINZ_ENABLED", default = "true")]
+    pub(crate) musicbrainz_enabled: bool,
+
     #[envconfig(from = "MUSIC_ROOT", default = "./music")]
     pub(crate) music_root: String,
 

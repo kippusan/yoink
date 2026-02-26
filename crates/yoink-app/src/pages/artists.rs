@@ -307,7 +307,7 @@ fn ArtistsContent(
                                             <div>
                                                 {sr.results.into_iter().map(|artist| {
                                                     let already_monitored = names.contains(&artist.name.to_lowercase());
-                                                    view! { <SearchResultRow artist=artist is_monitored=already_monitored /> }
+                                                    view! { <SearchResultRow artist=artist is_monitored=already_monitored set_query=set_query /> }
                                                 }).collect_view()}
                                             </div>
                                         </div>
@@ -425,6 +425,7 @@ fn ArtistsContent(
 fn SearchResultRow(
     artist: SearchArtistResult,
     #[prop(default = false)] is_monitored: bool,
+    set_query: WriteSignal<String>,
 ) -> impl IntoView {
     let navigate = leptos_router::hooks::use_navigate();
     let image_url = artist.image_url.clone();
@@ -443,6 +444,32 @@ fn SearchResultRow(
     let provider_display = provider_display_name(&artist.provider);
     let has_profile = !profile_url.is_empty();
 
+    // Build the metadata subtitle fragments.
+    let disambiguation = artist.disambiguation.clone();
+    let artist_type = artist.artist_type.clone();
+    let country = artist.country.clone();
+    let tags = artist.tags.clone();
+    let popularity = artist.popularity;
+
+    // "Group from United Kingdom" or "Person" or "Group" etc.
+    let type_country: Option<String> = match (&artist_type, &country) {
+        (Some(t), Some(c)) => Some(format!("{t} from {c}")),
+        (Some(t), None) => Some(t.clone()),
+        (None, Some(c)) => Some(format!("from {c}")),
+        (None, None) => None,
+    };
+
+    // Build subtitle: disambiguation or type/country, with popularity appended if available.
+    let subtitle: Option<String> = {
+        let base = disambiguation.or(type_country);
+        match (base, popularity) {
+            (Some(b), Some(p)) => Some(format!("{b} \u{00b7} {p}% popularity")),
+            (Some(b), None) => Some(b),
+            (None, Some(p)) => Some(format!("{p}% popularity")),
+            (None, None) => None,
+        }
+    };
+
     let adding = RwSignal::new(false);
 
     view! {
@@ -456,23 +483,39 @@ fn SearchResultRow(
                 }.into_any(),
             }}
             <div class="flex-1 min-w-0">
-                <div class="text-[15px] font-semibold text-zinc-900 dark:text-zinc-100">{artist.name}</div>
-                {if has_profile {
-                    let profile_url_clone = profile_url.clone();
-                    let display = provider_display.clone();
-                    view! {
-                        <a class="inline-flex items-center px-2 py-0.5 text-[11px] font-medium text-blue-600 dark:text-blue-400 bg-blue-500/[.08] border border-blue-500/20 rounded-md no-underline hover:bg-blue-500/15" href=profile_url_clone target="_blank" rel="noreferrer">
-                            {display}
-                        </a>
-                    }.into_any()
-                } else {
-                    let display = provider_display.clone();
-                    view! {
-                        <span class="inline-flex items-center px-2 py-0.5 text-[11px] font-medium text-zinc-500 dark:text-zinc-400 bg-zinc-500/[.08] border border-zinc-500/20 rounded-md">
-                            {display}
-                        </span>
-                    }.into_any()
-                }}
+                <div class="flex items-center gap-2 flex-wrap">
+                    <span class="text-[15px] font-semibold text-zinc-900 dark:text-zinc-100">{artist.name}</span>
+                    {if has_profile {
+                        let profile_url_clone = profile_url.clone();
+                        let display = provider_display.clone();
+                        view! {
+                            <a class="inline-flex items-center px-2 py-0.5 text-[11px] font-medium text-blue-600 dark:text-blue-400 bg-blue-500/[.08] border border-blue-500/20 rounded-md no-underline hover:bg-blue-500/15" href=profile_url_clone target="_blank" rel="noreferrer">
+                                {display}
+                            </a>
+                        }.into_any()
+                    } else {
+                        let display = provider_display.clone();
+                        view! {
+                            <span class="inline-flex items-center px-2 py-0.5 text-[11px] font-medium text-zinc-500 dark:text-zinc-400 bg-zinc-500/[.08] border border-zinc-500/20 rounded-md">
+                                {display}
+                            </span>
+                        }.into_any()
+                    }}
+                </div>
+                // Subtitle: disambiguation/type/country + popularity
+                {subtitle.map(|s| view! {
+                    <div class="text-[12px] text-zinc-500 dark:text-zinc-400 mt-0.5 leading-snug">{s}</div>
+                })}
+                // Tags as small inline pills
+                {(!tags.is_empty()).then(|| view! {
+                    <div class="flex flex-wrap gap-1 mt-1">
+                        {tags.into_iter().map(|tag| view! {
+                            <span class="inline-flex items-center px-1.5 py-px text-[10px] font-medium text-zinc-500 dark:text-zinc-400 bg-zinc-500/[.06] border border-zinc-500/10 rounded">
+                                {tag}
+                            </span>
+                        }).collect_view()}
+                    </div>
+                })}
             </div>
             {if is_monitored {
                 view! {
@@ -509,7 +552,9 @@ fn SearchResultRow(
                                                 .with_position(ToastPosition::BottomRight)
                                                 .with_expiry(Some(4_000)),
                                         );
-                                        // Navigate to the artists list since we don't know the new UUID
+                                        // Clear search so stale results disappear and the
+                                        // updated collection is immediately visible.
+                                        set_query.set(String::new());
                                         navigate("/artists", Default::default());
                                     }
                                     Err(e) => {

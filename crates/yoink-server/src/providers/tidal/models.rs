@@ -72,6 +72,16 @@ pub(crate) struct HifiArtist {
     #[serde(rename = "selectedAlbumCoverFallback")]
     pub selected_album_cover_fallback: Option<String>,
     pub url: Option<String>,
+    pub popularity: Option<u8>,
+    #[serde(rename = "artistRoles", default)]
+    pub artist_roles: Vec<HifiArtistRole>,
+    #[serde(rename = "artistTypes", default)]
+    pub artist_types: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct HifiArtistRole {
+    pub category: Option<String>,
 }
 
 // ── Search wrappers ─────────────────────────────────────────────────

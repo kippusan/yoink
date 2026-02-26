@@ -22,4 +22,14 @@ pub(crate) struct SearchResultArtist {
     pub(crate) image_url: Option<String>,
     pub(crate) url: Option<String>,
     pub(crate) already_monitored: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) disambiguation: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) artist_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) country: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) tags: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) popularity: Option<u8>,
 }

@@ -20,11 +20,13 @@ leptos_axum = { workspace = true }
 leptos_router = { workspace = true, features = ["ssr"] }
 lrclib-api-rs = { workspace = true }
 lofty = { workspace = true }
+musicbrainz_rs = { workspace = true }
 reqwest = { workspace = true }
 roxmltree = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sqlx = { workspace = true }
+strsim = { workspace = true }
 uuid = { workspace = true }
 tokio = { workspace = true }
 tokio-stream = { workspace = true }

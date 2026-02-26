@@ -22,13 +22,42 @@ use crate::{
     app_config::AppConfig,
     config::QUALITY_WARNING,
     logging::init_logging,
-    providers::{registry::ProviderRegistry, tidal::TidalProvider},
+    providers::{
+        musicbrainz::MusicBrainzProvider, registry::ProviderRegistry, tidal::TidalProvider,
+    },
     routes::build_router,
     services::{download_worker_loop, reconcile_library_files},
     state::AppState,
 };
 
 use yoink_app::{App, shell::shell};
+
+/// Compute a relevance score (0.0–1.0) for a search result name against the query.
+///
+/// Uses a combination of:
+/// - Jaro-Winkler similarity (good for short strings, prefix-biased)
+/// - Exact / prefix / contains bonuses
+///
+/// Both `query` and `name` should be pre-lowercased.
+fn search_relevance_score(query: &str, name: &str) -> f64 {
+    if query == name {
+        return 1.0;
+    }
+
+    let jw = strsim::jaro_winkler(query, name);
+
+    // Bonus for exact prefix match (e.g. query "ivy" matches "ivy lab")
+    let prefix_bonus = if name.starts_with(query) { 0.15 } else { 0.0 };
+
+    // Bonus for containing the query as a substring
+    let contains_bonus = if !name.starts_with(query) && name.contains(query) {
+        0.05
+    } else {
+        0.0
+    };
+
+    (jw + prefix_bonus + contains_bonus).min(1.0)
+}
 
 #[tokio::main]
 async fn main() {
@@ -70,6 +99,12 @@ async fn main() {
         info!("Tidal provider enabled");
     }
 
+    if app_config.musicbrainz_enabled {
+        let mb = Arc::new(MusicBrainzProvider::new());
+        registry.register_metadata(Arc::clone(&mb) as Arc<dyn providers::MetadataProvider>);
+        info!("MusicBrainz metadata provider enabled");
+    }
+
     let state = AppState::new(
         music_root,
         default_quality,
@@ -108,22 +143,39 @@ async fn main() {
         let s = search_state.clone();
         Box::pin(async move {
             let all_results = s.registry.search_artists_all(&query).await;
-            let mut results = Vec::new();
+            let query_lower = query.to_lowercase();
+
+            // Collect results with a fuzzy relevance score.
+            let mut scored: Vec<(f64, yoink_shared::SearchArtistResult)> = Vec::new();
             for (provider_id, artists) in all_results {
                 for a in artists {
                     let image_url = a
                         .image_ref
                         .as_deref()
                         .map(|r| yoink_shared::provider_image_url(&provider_id, r, 160));
-                    results.push(yoink_shared::SearchArtistResult {
-                        provider: provider_id.clone(),
-                        external_id: a.external_id,
-                        name: a.name,
-                        image_url,
-                        url: a.url,
-                    });
+                    let name_lower = a.name.to_lowercase();
+                    let score = search_relevance_score(&query_lower, &name_lower);
+                    scored.push((
+                        score,
+                        yoink_shared::SearchArtistResult {
+                            provider: provider_id.clone(),
+                            external_id: a.external_id,
+                            name: a.name,
+                            image_url,
+                            url: a.url,
+                            disambiguation: a.disambiguation,
+                            artist_type: a.artist_type,
+                            country: a.country,
+                            tags: a.tags,
+                            popularity: a.popularity,
+                        },
+                    ));
                 }
             }
+
+            // Sort by descending relevance score.
+            scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+            let results = scored.into_iter().map(|(_, r)| r).collect();
             Ok(results)
         })
     });
@@ -151,6 +203,11 @@ async fn main() {
                             name: a.name,
                             image_url,
                             url: a.url,
+                            disambiguation: a.disambiguation,
+                            artist_type: a.artist_type,
+                            country: a.country,
+                            tags: a.tags,
+                            popularity: a.popularity,
                         }
                     })
                     .collect();

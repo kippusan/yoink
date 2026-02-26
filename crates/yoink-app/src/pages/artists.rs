@@ -148,7 +148,7 @@ pub fn ArtistsPage() -> impl IntoView {
         <div class="flex min-h-screen">
             <Sidebar active="artists" />
             <div class="ml-[220px] max-md:ml-0 flex-1 min-h-screen">
-                <Suspense fallback=move || view! {
+                <Transition fallback=move || view! {
                     <div>
                         <div class="bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[16px] border-b border-black/[.06] dark:border-white/[.06] px-6 max-md:pl-14 py-3.5 flex items-center justify-between sticky top-0 z-40">
                             <h1 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 m-0">"Artists"</h1>
@@ -194,7 +194,7 @@ pub fn ArtistsPage() -> impl IntoView {
                             }
                         })
                     }}
-                </Suspense>
+                </Transition>
             </div>
         </div>
     }

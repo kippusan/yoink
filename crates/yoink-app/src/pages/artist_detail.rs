@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use leptos::prelude::*;
 use lucide_leptos::ArrowLeft;
 
@@ -85,17 +83,48 @@ pub fn ArtistDetailPage() -> impl IntoView {
         |(id, _)| get_artist_detail(id),
     );
 
+    // Stable signals — created once, updated by an Effect when the Resource
+    // refetches. This lets ArtistDetailContent be mounted once and patched
+    // in place via reactive reads instead of being recreated on every SSE update.
+    let artist_sig: RwSignal<Option<MonitoredArtist>> = RwSignal::new(None);
+    let albums_sig: RwSignal<Vec<MonitoredAlbum>> = RwSignal::new(Vec::new());
+    let jobs_sig: RwSignal<Vec<DownloadJob>> = RwSignal::new(Vec::new());
+    let links_sig: RwSignal<Vec<ProviderLink>> = RwSignal::new(Vec::new());
+    let load_error: RwSignal<Option<String>> = RwSignal::new(None);
+    let has_loaded = RwSignal::new(false);
+
+    // Push data into signals whenever the resource produces a new value.
+    // No Transition/Suspense needed — the Effect subscribes to the resource
+    // and the UI reads from the stable signals, so the DOM is patched in place.
+    Effect::new(move || {
+        if let Some(result) = data.get() {
+            match result {
+                Err(e) => {
+                    load_error.set(Some(e.to_string()));
+                }
+                Ok(d) => {
+                    load_error.set(None);
+                    artist_sig.set(d.artist);
+                    albums_sig.set(d.albums);
+                    jobs_sig.set(d.jobs);
+                    links_sig.set(d.provider_links);
+                }
+            }
+            has_loaded.set(true);
+        }
+    });
+
     view! {
         <div class="flex min-h-screen">
             <Sidebar active="artists" />
             <div class="ml-[220px] max-md:ml-0 flex-1 min-h-screen">
-                <Transition fallback=move || view! {
+                // Skeleton — shown only until first data arrives
+                <Show when=move || !has_loaded.get()>
                     <div>
                         <div class="bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[16px] border-b border-black/[.06] dark:border-white/[.06] px-6 max-md:pl-14 py-3.5 flex items-center justify-between sticky top-0 z-40">
                             <div class="h-5 w-36 bg-zinc-200 dark:bg-zinc-700 rounded animate-pulse"></div>
                         </div>
                         <div class="p-6 max-md:p-4">
-                            // Skeleton artist header card
                             <div class="mb-5 bg-white/70 dark:bg-zinc-800/60 rounded-xl border border-black/[.06] dark:border-white/[.08] p-5">
                                 <div class="flex flex-wrap items-center gap-5 animate-pulse">
                                     <div class="size-20 rounded-full bg-zinc-200 dark:bg-zinc-700 shrink-0"></div>
@@ -110,7 +139,6 @@ pub fn ArtistDetailPage() -> impl IntoView {
                                     </div>
                                 </div>
                             </div>
-                            // Skeleton album grid
                             <div class="bg-white/70 dark:bg-zinc-800/60 rounded-xl border border-black/[.06] dark:border-white/[.08] overflow-hidden">
                                 <div class="px-5 py-3 border-b border-black/[.06] dark:border-white/[.06]">
                                     <div class="h-4 w-24 bg-zinc-200 dark:bg-zinc-700 rounded animate-pulse"></div>
@@ -132,34 +160,40 @@ pub fn ArtistDetailPage() -> impl IntoView {
                             </div>
                         </div>
                     </div>
-                }>
+                </Show>
+                // Error state
+                <Show when=move || has_loaded.get() && load_error.get().is_some()>
                     {move || {
-                        data.get().map(|result| match result {
-                            Err(e) => view! {
-                                <div class="p-6">
-                                    <ErrorPanel
-                                        message="Failed to load artist details."
-                                        details=e.to_string()
-                                    />
-                                </div>
-                            }.into_any(),
-                            Ok(data) => match data.artist {
-                                None => view! {
-                                    <div class="p-6">
-                                        <div class="text-zinc-500">"Artist not found."</div>
-                                        <a href="/artists" class={cls(BTN, "mt-4 inline-flex items-center gap-1.5")}>
-                                            <ArrowLeft size=14 />
-                                            "All Artists"
-                                        </a>
-                                    </div>
-                                }.into_any(),
-                Some(artist) => {
-                    view! { <ArtistDetailContent artist=artist albums=data.albums jobs=data.jobs provider_links=data.provider_links /> }.into_any()
-                }
-                            }
-                        })
+                        let e = load_error.get().unwrap_or_default();
+                        view! {
+                            <div class="p-6">
+                                <ErrorPanel
+                                    message="Failed to load artist details."
+                                    details=e
+                                />
+                            </div>
+                        }
                     }}
-                </Transition>
+                </Show>
+                // Artist not found
+                <Show when=move || has_loaded.get() && artist_sig.get().is_none() && load_error.get().is_none()>
+                    <div class="p-6">
+                        <div class="text-zinc-500">"Artist not found."</div>
+                        <a href="/artists" class={cls(BTN, "mt-4 inline-flex items-center gap-1.5")}>
+                            <ArrowLeft size=14 />
+                            "All Artists"
+                        </a>
+                    </div>
+                </Show>
+                // Main content — mounted once, patched in place via signals
+                <Show when=move || artist_sig.get().is_some()>
+                    <ArtistDetailContent
+                        artist=artist_sig
+                        albums=albums_sig
+                        jobs=jobs_sig
+                        provider_links=links_sig
+                    />
+                </Show>
             </div>
         </div>
     }
@@ -167,119 +201,120 @@ pub fn ArtistDetailPage() -> impl IntoView {
 
 #[component]
 fn ArtistDetailContent(
-    artist: MonitoredArtist,
-    albums: Vec<MonitoredAlbum>,
-    jobs: Vec<DownloadJob>,
-    provider_links: Vec<ProviderLink>,
+    artist: RwSignal<Option<MonitoredArtist>>,
+    albums: RwSignal<Vec<MonitoredAlbum>>,
+    jobs: RwSignal<Vec<DownloadJob>>,
+    provider_links: RwSignal<Vec<ProviderLink>>,
 ) -> impl IntoView {
-    set_page_title(&artist.name);
-    let artist_img = artist.image_url.clone();
-    let fallback_initial = artist
-        .name
-        .chars()
-        .next()
-        .map(|c| c.to_uppercase().to_string())
-        .unwrap_or_else(|| "?".to_string());
-
-    let album_count = albums.len();
-    let monitored_count = albums.iter().filter(|a| a.monitored).count();
-    let acquired_count = albums.iter().filter(|a| a.acquired).count();
-    let wanted_count = albums.iter().filter(|a| a.wanted).count();
-
-    let albums_stored = StoredValue::new(albums);
-    let (album_sort, set_album_sort) = signal("type".to_string());
-
-    let latest_jobs = build_latest_jobs(jobs);
-    let artist_id_val = artist.id.clone();
-    let artist_id_sync = artist.id.clone();
-    let artist_id_monitor = artist.id.clone();
-    let artist_id_unmonitor = artist.id.clone();
-    let artist_id_remove = artist.id.clone();
+    // Helper: unwrap the Option — safe because this component is only
+    // rendered inside <Show when=move || artist_sig.get().is_some()>.
+    let a = move || artist.get().expect("ArtistDetailContent rendered without artist");
 
     // Confirmation dialog signals
     let show_unmonitor_all = RwSignal::new(false);
     let show_remove_artist = RwSignal::new(false);
     let show_link_provider = RwSignal::new(false);
 
-    // Data for the link provider dialog
-    let link_dialog_artist_id = artist.id.clone();
-    let link_dialog_artist_name = artist.name.clone();
-    let already_linked_providers: Vec<(String, String)> = provider_links
-        .iter()
-        .map(|l| (l.provider.clone(), l.external_id.clone()))
-        .collect();
-
     // Loading state signals for async buttons
     let sync_loading = RwSignal::new(false);
     let monitor_all_loading = RwSignal::new(false);
     let removing_artist = RwSignal::new(false);
 
+    let (album_sort, set_album_sort) = signal("type".to_string());
+
     view! {
-        // Header
-        <div class="bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[16px] border-b border-black/[.06] dark:border-white/[.06] px-6 max-md:pl-14 py-3.5 flex items-center justify-between sticky top-0 z-40">
-            <h1 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 m-0">{artist.name.clone()}</h1>
-            <a href="/artists" class={cls(BTN, "px-2.5 py-0.5 text-xs no-underline inline-flex items-center gap-1.5")}>
-                <ArrowLeft size=14 />
-                "All Artists"
-            </a>
-        </div>
+        // Header — reads artist signal reactively
+        {move || {
+            let a = a();
+            set_page_title(&a.name);
+            view! {
+                <div class="bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[16px] border-b border-black/[.06] dark:border-white/[.06] px-6 max-md:pl-14 py-3.5 flex items-center justify-between sticky top-0 z-40">
+                    <h1 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 m-0">{a.name}</h1>
+                    <a href="/artists" class={cls(BTN, "px-2.5 py-0.5 text-xs no-underline inline-flex items-center gap-1.5")}>
+                        <ArrowLeft size=14 />
+                        "All Artists"
+                    </a>
+                </div>
+            }
+        }}
 
         <div class="p-6 max-md:p-4">
-            // Artist header card
-            <div class={cls(GLASS, "mb-5")}>
-                <div class={cls(GLASS_BODY, "flex flex-wrap items-center gap-5")}>
-                    {match artist_img {
-                        Some(url) => view! {
-                            <img class="size-20 rounded-full object-cover border-2 border-blue-500/20 dark:border-blue-500/30 shrink-0 bg-zinc-200 dark:bg-zinc-800" src=url alt="" />
-                        }.into_any(),
-                        None => view! {
-                            <div class="size-20 rounded-full inline-flex items-center justify-center bg-zinc-200 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 font-bold text-[32px] border-2 border-blue-500/20 dark:border-blue-500/30 shrink-0">{fallback_initial}</div>
-                        }.into_any(),
-                    }}
-                    <div class="flex-1 min-w-0">
-                        <div class="text-[22px] font-bold mb-1">{artist.name.clone()}</div>
-                        <div class={cls(MUTED, "text-[13px] mb-2 flex flex-wrap items-center gap-2")}>
-                            <span>{format!("{album_count} albums \u{00b7} {monitored_count} monitored \u{00b7} {acquired_count} acquired \u{00b7} {wanted_count} wanted")}</span>
-                        </div>
-                        <div class="flex flex-wrap gap-1.5">
-                            <button type="button"
-                                class=move || btn_cls(BTN, "px-2.5 py-0.5 text-xs", sync_loading.get())
-                                disabled=move || sync_loading.get()
-                                on:click={
-                                    let aid = artist_id_sync.clone();
-                                    move |_| {
-                                        dispatch_with_toast_loading(ServerAction::SyncArtistAlbums { artist_id: aid.clone() }, "Album sync started", Some(sync_loading));
-                                    }
-                                }>
-                                {move || if sync_loading.get() { "Syncing\u{2026}" } else { "Sync Albums" }}
-                            </button>
-                            <button type="button"
-                                class=move || btn_cls(BTN_PRIMARY, "px-2.5 py-0.5 text-xs", monitor_all_loading.get())
-                                disabled=move || monitor_all_loading.get()
-                                on:click={
-                                    let aid = artist_id_monitor.clone();
-                                    move |_| {
-                                        dispatch_with_toast_loading(ServerAction::BulkMonitor { artist_id: aid.clone(), monitored: true }, "All albums monitored", Some(monitor_all_loading));
-                                    }
-                                }>
-                                {move || if monitor_all_loading.get() { "Monitoring\u{2026}" } else { "Monitor All" }}
-                            </button>
-                            <button type="button" class={cls(BTN, "px-2.5 py-0.5 text-xs")}
-                                on:click=move |_| {
-                                    show_unmonitor_all.set(true);
-                                }>"Unmonitor All"</button>
-                            <button type="button" class={cls(BTN_DANGER, "px-2.5 py-0.5 text-xs")}
-                                on:click=move |_| {
-                                    show_remove_artist.set(true);
-                                }>"Remove Artist"</button>
+            // Artist header card — reactive
+            {move || {
+                let a = a();
+                let all_albums = albums.get();
+                let album_count = all_albums.len();
+                let monitored_count = all_albums.iter().filter(|a| a.monitored).count();
+                let acquired_count = all_albums.iter().filter(|a| a.acquired).count();
+                let wanted_count = all_albums.iter().filter(|a| a.wanted).count();
+
+                let fallback_initial = a.name.chars().next()
+                    .map(|c| c.to_uppercase().to_string())
+                    .unwrap_or_else(|| "?".to_string());
+
+                let artist_id_sync = a.id.clone();
+                let artist_id_monitor = a.id.clone();
+
+                view! {
+                    <div class={cls(GLASS, "mb-5")}>
+                        <div class={cls(GLASS_BODY, "flex flex-wrap items-center gap-5")}>
+                            {match a.image_url.clone() {
+                                Some(url) => view! {
+                                    <img class="size-20 rounded-full object-cover border-2 border-blue-500/20 dark:border-blue-500/30 shrink-0 bg-zinc-200 dark:bg-zinc-800" src=url alt="" />
+                                }.into_any(),
+                                None => view! {
+                                    <div class="size-20 rounded-full inline-flex items-center justify-center bg-zinc-200 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 font-bold text-[32px] border-2 border-blue-500/20 dark:border-blue-500/30 shrink-0">{fallback_initial}</div>
+                                }.into_any(),
+                            }}
+                            <div class="flex-1 min-w-0">
+                                <div class="text-[22px] font-bold mb-1">{a.name.clone()}</div>
+                                <div class={cls(MUTED, "text-[13px] mb-2 flex flex-wrap items-center gap-2")}>
+                                    <span>{format!("{album_count} albums \u{00b7} {monitored_count} monitored \u{00b7} {acquired_count} acquired \u{00b7} {wanted_count} wanted")}</span>
+                                </div>
+                                <div class="flex flex-wrap gap-1.5">
+                                    <button type="button"
+                                        class=move || btn_cls(BTN, "px-2.5 py-0.5 text-xs", sync_loading.get())
+                                        disabled=move || sync_loading.get()
+                                        on:click={
+                                            let aid = artist_id_sync.clone();
+                                            move |_| {
+                                                dispatch_with_toast_loading(ServerAction::SyncArtistAlbums { artist_id: aid.clone() }, "Album sync started", Some(sync_loading));
+                                            }
+                                        }>
+                                        {move || if sync_loading.get() { "Syncing\u{2026}" } else { "Sync Albums" }}
+                                    </button>
+                                    <button type="button"
+                                        class=move || btn_cls(BTN_PRIMARY, "px-2.5 py-0.5 text-xs", monitor_all_loading.get())
+                                        disabled=move || monitor_all_loading.get()
+                                        on:click={
+                                            let aid = artist_id_monitor.clone();
+                                            move |_| {
+                                                dispatch_with_toast_loading(ServerAction::BulkMonitor { artist_id: aid.clone(), monitored: true }, "All albums monitored", Some(monitor_all_loading));
+                                            }
+                                        }>
+                                        {move || if monitor_all_loading.get() { "Monitoring\u{2026}" } else { "Monitor All" }}
+                                    </button>
+                                    <button type="button" class={cls(BTN, "px-2.5 py-0.5 text-xs")}
+                                        on:click=move |_| {
+                                            show_unmonitor_all.set(true);
+                                        }>"Unmonitor All"</button>
+                                    <button type="button" class={cls(BTN_DANGER, "px-2.5 py-0.5 text-xs")}
+                                        on:click=move |_| {
+                                            show_remove_artist.set(true);
+                                        }>"Remove Artist"</button>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                </div>
-            </div>
+                }
+            }}
 
-            // Linked providers section
-            {
-                let artist_id_for_links = artist.id.clone();
+            // Linked providers section — reactive
+            {move || {
+                let a = a();
+                let links = provider_links.get();
+                let artist_id_for_links = a.id.clone();
+
                 view! {
                     <div class={cls(GLASS, "mb-5")}>
                         <div class=GLASS_HEADER>
@@ -293,14 +328,14 @@ fn ArtistDetailContent(
                             </button>
                         </div>
                         <div class=GLASS_BODY>
-                            {if provider_links.is_empty() {
+                            {if links.is_empty() {
                                 view! {
                                     <div class="text-sm text-zinc-400 dark:text-zinc-600">"No additional providers linked."</div>
                                 }.into_any()
                             } else {
                                 view! {
                                     <div class="flex flex-wrap gap-2">
-                                        {provider_links.iter().map(|link| {
+                                        {links.iter().map(|link| {
                                             let provider = link.provider.clone();
                                             let display = provider_display_name(&link.provider);
                                             let external_id = link.external_id.clone();
@@ -347,15 +382,25 @@ fn ArtistDetailContent(
                         </div>
                     </div>
                 }
-            }
+            }}
 
             // Link provider dialog
-            <LinkProviderDialog
-                open=show_link_provider
-                artist_id=link_dialog_artist_id
-                artist_name=link_dialog_artist_name
-                already_linked=already_linked_providers
-            />
+            {move || {
+                let a = a();
+                let links = provider_links.get();
+                let already_linked: Vec<(String, String)> = links
+                    .iter()
+                    .map(|l| (l.provider.clone(), l.external_id.clone()))
+                    .collect();
+                view! {
+                    <LinkProviderDialog
+                        open=show_link_provider
+                        artist_id=a.id.clone()
+                        artist_name=a.name.clone()
+                        already_linked=already_linked
+                    />
+                }
+            }}
 
             // Confirmation dialogs
             <ConfirmDialog
@@ -364,9 +409,10 @@ fn ArtistDetailContent(
                 message="This will unmonitor all albums for this artist."
                 confirm_label="Unmonitor All"
                 on_confirm={
-                    let aid = artist_id_unmonitor.clone();
+                    let artist_sig = artist;
                     move |_: bool| {
-                        dispatch_with_toast(ServerAction::BulkMonitor { artist_id: aid.clone(), monitored: false }, "All albums unmonitored");
+                        let aid = artist_sig.get_untracked().map(|a| a.id).unwrap_or_default();
+                        dispatch_with_toast(ServerAction::BulkMonitor { artist_id: aid, monitored: false }, "All albums unmonitored");
                     }
                 }
             />
@@ -378,12 +424,12 @@ fn ArtistDetailContent(
                 danger=true
                 checkbox_label="Also remove downloaded files from disk"
                 on_confirm={
-                    let aid = artist_id_remove.clone();
+                    let artist_sig = artist;
                     move |remove_files: bool| {
                         removing_artist.set(true);
                         let navigate = leptos_router::hooks::use_navigate();
                         let toaster = expect_toaster();
-                        let aid = aid.clone();
+                        let aid = artist_sig.get_untracked().map(|a| a.id).unwrap_or_default();
                         leptos::task::spawn_local(async move {
                             match dispatch_action(ServerAction::RemoveArtist { artist_id: aid, remove_files }).await {
                                 Ok(()) => {
@@ -410,41 +456,40 @@ fn ArtistDetailContent(
                 }
             />
 
-            // Albums grid with sort (#9)
+            // Albums grid with sort — reactive
             <div class=GLASS>
                 <div class=GLASS_HEADER>
                     <h2 class=GLASS_TITLE>"Discography"</h2>
                     <div class="flex items-center gap-2">
-                        {if album_count > 0 {
-                            view! {
-                                <select
-                                    class=SELECT
-                                    aria-label="Sort albums"
-                                    on:change=move |ev| {
-                                        set_album_sort.set(event_target_value(&ev));
-                                    }
-                                >
-                                    <option value="type" selected=true>"By Type"</option>
-                                    <option value="az">"A \u{2013} Z"</option>
-                                    <option value="newest">"Newest First"</option>
-                                    <option value="oldest">"Oldest First"</option>
-                                </select>
-                            }.into_any()
-                        } else {
-                            view! { <span></span> }.into_any()
+                        {move || {
+                            let album_count = albums.get().len();
+                            if album_count > 0 {
+                                view! {
+                                    <select
+                                        class=SELECT
+                                        aria-label="Sort albums"
+                                        on:change=move |ev| {
+                                            set_album_sort.set(event_target_value(&ev));
+                                        }
+                                    >
+                                        <option value="type" selected=true>"By Type"</option>
+                                        <option value="az">"A \u{2013} Z"</option>
+                                        <option value="newest">"Newest First"</option>
+                                        <option value="oldest">"Oldest First"</option>
+                                    </select>
+                                }.into_any()
+                            } else {
+                                view! { <span></span> }.into_any()
+                            }
                         }}
-                        <span class={cls(MUTED, "text-xs")}>{format!("{album_count} albums")}</span>
+                        <span class={cls(MUTED, "text-xs")}>{move || format!("{} albums", albums.get().len())}</span>
                     </div>
                 </div>
-                {move || {
-                    let artist_id_inner = artist_id_val.clone();
-                    albums_stored.with_value(|all| {
-                        if all.is_empty() {
-                            return view! { <div class=EMPTY>"No albums synced. Hit Sync Albums to fetch from provider."</div> }.into_any();
-                        }
-
+                // Derive a sorted album list that only recomputes when albums or sort order change.
+                {
+                    let sorted_albums = Memo::new(move |_| {
+                        let mut sorted = albums.get();
                         let sort_key = album_sort.get();
-                        let mut sorted = all.clone();
                         match sort_key.as_str() {
                             "az" => sorted.sort_by(|a, b| a.title.to_lowercase().cmp(&b.title.to_lowercase())),
                             "newest" => sorted.sort_by(|a, b| b.release_date.cmp(&a.release_date).then_with(|| a.title.cmp(&b.title))),
@@ -456,20 +501,28 @@ fn ArtistDetailContent(
                                     .then_with(|| a.title.cmp(&b.title))
                             }),
                         }
+                        sorted
+                    });
 
-                        let jobs = latest_jobs.clone();
-
-                        view! {
+                    view! {
+                        <Show when=move || sorted_albums.get().is_empty()>
+                            <div class=EMPTY>"No albums synced. Hit Sync Albums to fetch from provider."</div>
+                        </Show>
+                        <Show when=move || !sorted_albums.get().is_empty()>
                             <div class={cls(GLASS_BODY, "p-4")}>
                                 <div class="d7-album-grid">
-                                    {sorted.into_iter().map(|album| {
-                                        view! { <AlbumSleeve album=album latest_jobs=jobs.clone() artist_id=artist_id_inner.clone() /> }
-                                    }).collect_view()}
+                                    <For
+                                        each=move || sorted_albums.get()
+                                        key=|album| album.id.clone()
+                                        let:album
+                                    >
+                                        <AlbumSleeve album=album jobs=jobs artist_id=artist.clone() />
+                                    </For>
                                 </div>
                             </div>
-                        }.into_any()
-                    })
-                }}
+                        </Show>
+                    }
+                }
             </div>
         </div>
     }
@@ -478,16 +531,19 @@ fn ArtistDetailContent(
 /// Album sleeve card in the discography grid.
 ///
 /// The title links to the album detail page.
+/// Accepts `jobs` as a signal so download status updates reactively
+/// without recreating the component.
 #[component]
 fn AlbumSleeve(
     album: MonitoredAlbum,
-    latest_jobs: HashMap<String, DownloadJob>,
-    artist_id: String,
+    jobs: RwSignal<Vec<DownloadJob>>,
+    artist_id: RwSignal<Option<MonitoredArtist>>,
 ) -> impl IntoView {
     let album_id = album.id.clone();
     let album_id_monitor = album.id.clone();
     let album_id_remove = album.id.clone();
     let album_id_str = album.id.clone();
+    let album_id_for_url = album.id.clone();
     let album_title = album.title.clone();
     let release_date = album
         .release_date
@@ -502,28 +558,17 @@ fn AlbumSleeve(
     let show_remove_files = RwSignal::new(false);
 
     let cover_url = album_cover_url(&album, 640);
-    let detail_url = format!("/artists/{artist_id}/albums/{album_id}");
+    let detail_url = format!("/artists/{}/albums/{}", artist_id.get_untracked().map(|a| a.id).unwrap_or_default(), album_id_for_url);
 
-    let latest_job = latest_jobs.get(&album.id).cloned();
-    let job_status = latest_job.as_ref().map(|j| j.status.clone());
-    let job_progress = latest_job
-        .as_ref()
-        .map(|j| (j.completed_tracks, j.total_tracks));
+    // Reactively derive job status from the jobs signal
+    let album_id_for_job = album.id.clone();
+    let job_info = move || {
+        let all_jobs = jobs.get();
+        let latest = build_latest_jobs(all_jobs);
+        latest.get(&album_id_for_job).cloned()
+    };
 
     let wanted_pill_text = if is_wanted { "Wanted" } else { "Not Wanted" };
-
-    let status_pill_class = match &job_status {
-        Some(s) => status_class(s).to_string(),
-        None => "pill".to_string(),
-    };
-    let status_pill_text = match &job_status {
-        Some(s) => status_label_text(
-            s,
-            job_progress.map(|(c, _)| c).unwrap_or(0),
-            job_progress.map(|(_, t)| t).unwrap_or(0),
-        ),
-        None => "\u{2014}".to_string(),
-    };
 
     let fallback_initial = album_title
         .chars()
@@ -573,7 +618,18 @@ fn AlbumSleeve(
                 <div class="d7-sleeve-sub">{format!("{release_date} \u{00b7} {at}")}</div>
 
                 <div class="d7-sleeve-status">
-                    <span class=status_pill_class data-job-status>{status_pill_text}</span>
+                    {move || {
+                        let ji = job_info();
+                        let status_pill_class = match ji.as_ref().map(|j| &j.status) {
+                            Some(s) => status_class(s).to_string(),
+                            None => "pill".to_string(),
+                        };
+                        let status_pill_text = match ji.as_ref() {
+                            Some(j) => status_label_text(&j.status, j.completed_tracks, j.total_tracks),
+                            None => "\u{2014}".to_string(),
+                        };
+                        view! { <span class=status_pill_class data-job-status>{status_pill_text}</span> }
+                    }}
                     <span class={cls(MUTED, "text-[10px]")} data-wanted-pill>{wanted_pill_text}</span>
                 </div>
 

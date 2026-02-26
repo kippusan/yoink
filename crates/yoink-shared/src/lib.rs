@@ -56,7 +56,7 @@ pub struct MonitoredArtist {
     pub added_at: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MonitoredAlbum {
     pub id: String,        // UUID v7
     pub artist_id: String, // UUID v7

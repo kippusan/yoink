@@ -99,10 +99,37 @@ fn setup_event_source(set_version: WriteSignal<u64>, set_status: WriteSignal<Sse
             cb.forget();
         }
 
-        // on "update" event -> bump version
+        // on "update" event -> debounce then bump version
+        //
+        // During downloads the server fires SSE events per-track, which can
+        // mean dozens of events per second. Without debouncing, every event
+        // triggers a full resource refetch on every mounted page, causing
+        // visible flashing. We coalesce rapid-fire events into a single
+        // version bump after a 300ms quiet period.
         {
+            use std::cell::Cell;
+            use std::rc::Rc;
+
+            let pending_timer: Rc<Cell<Option<i32>>> = Rc::new(Cell::new(None));
             let cb = Closure::<dyn Fn(web_sys::Event)>::new(move |_: web_sys::Event| {
-                set_version.update(|v| *v += 1);
+                // Cancel any pending debounce timer
+                if let Some(id) = pending_timer.get() {
+                    leptos::prelude::window().clear_timeout_with_handle(id);
+                }
+                // Schedule a new version bump after 300ms of quiet
+                let pt = pending_timer.clone();
+                let flush = Closure::once_into_js(move || {
+                    pt.set(None);
+                    set_version.update(|v| *v += 1);
+                });
+                if let Ok(id) = leptos::prelude::window()
+                    .set_timeout_with_callback_and_timeout_and_arguments_0(
+                        flush.as_ref().unchecked_ref(),
+                        300,
+                    )
+                {
+                    pending_timer.set(Some(id));
+                }
             });
             es.add_event_listener_with_callback("update", cb.as_ref().unchecked_ref())
                 .expect("addEventListener failed");

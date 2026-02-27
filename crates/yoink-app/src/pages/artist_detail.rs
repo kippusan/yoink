@@ -2,9 +2,9 @@ use leptos::prelude::*;
 use lucide_leptos::ArrowLeft;
 
 use yoink_shared::{
-    DownloadJob, MonitoredAlbum, MonitoredArtist, ProviderLink, ServerAction, album_cover_url,
-    album_type_label, album_type_rank, build_latest_jobs, provider_display_name, status_class,
-    status_label_text,
+    DownloadJob, MatchSuggestion, MonitoredAlbum, MonitoredArtist, ProviderLink, ServerAction,
+    album_cover_url, album_type_label, album_type_rank, build_latest_jobs, provider_display_name,
+    status_class, status_label_text,
 };
 
 use leptoaster::{ToastBuilder, ToastLevel, ToastPosition, expect_toaster};
@@ -26,6 +26,7 @@ pub struct ArtistDetailData {
     pub albums: Vec<MonitoredAlbum>,
     pub jobs: Vec<DownloadJob>,
     pub provider_links: Vec<ProviderLink>,
+    pub match_suggestions: Vec<MatchSuggestion>,
 }
 
 // ── Server function ─────────────────────────────────────────
@@ -51,7 +52,15 @@ pub async fn get_artist_detail(artist_id: String) -> Result<ArtistDetailData, Se
     let jobs = ctx.download_jobs.read().await.clone();
 
     let provider_links = if artist.is_some() {
-        (ctx.fetch_artist_links)(artist_id)
+        (ctx.fetch_artist_links)(artist_id.clone())
+            .await
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
+    let match_suggestions = if artist.is_some() {
+        (ctx.fetch_artist_match_suggestions)(artist_id)
             .await
             .unwrap_or_default()
     } else {
@@ -63,6 +72,7 @@ pub async fn get_artist_detail(artist_id: String) -> Result<ArtistDetailData, Se
         albums,
         jobs,
         provider_links,
+        match_suggestions,
     })
 }
 
@@ -87,6 +97,7 @@ pub fn ArtistDetailPage() -> impl IntoView {
     let albums_sig: RwSignal<Vec<MonitoredAlbum>> = RwSignal::new(Vec::new());
     let jobs_sig: RwSignal<Vec<DownloadJob>> = RwSignal::new(Vec::new());
     let links_sig: RwSignal<Vec<ProviderLink>> = RwSignal::new(Vec::new());
+    let match_suggestions_sig: RwSignal<Vec<MatchSuggestion>> = RwSignal::new(Vec::new());
     let load_error: RwSignal<Option<String>> = RwSignal::new(None);
     let has_loaded = RwSignal::new(false);
 
@@ -105,6 +116,7 @@ pub fn ArtistDetailPage() -> impl IntoView {
                     albums_sig.set(d.albums);
                     jobs_sig.set(d.jobs);
                     links_sig.set(d.provider_links);
+                    match_suggestions_sig.set(d.match_suggestions);
                 }
             }
             has_loaded.set(true);
@@ -189,6 +201,7 @@ pub fn ArtistDetailPage() -> impl IntoView {
                         albums=albums_sig
                         jobs=jobs_sig
                         provider_links=links_sig
+                        match_suggestions=match_suggestions_sig
                     />
                 </Show>
             </div>
@@ -202,6 +215,7 @@ fn ArtistDetailContent(
     albums: RwSignal<Vec<MonitoredAlbum>>,
     jobs: RwSignal<Vec<DownloadJob>>,
     provider_links: RwSignal<Vec<ProviderLink>>,
+    match_suggestions: RwSignal<Vec<MatchSuggestion>>,
 ) -> impl IntoView {
     // Helper: unwrap the Option — safe because this component is only
     // rendered inside <Show when=move || artist_sig.get().is_some()>.
@@ -284,6 +298,15 @@ fn ArtistDetailContent(
                                         }>
                                         {move || if sync_loading.get() { "Syncing\u{2026}" } else { "Sync Albums" }}
                                     </button>
+                                    <a
+                                        href={
+                                            let aid = artist_id_sync.clone();
+                                            format!("/artists/{}/merge-albums", aid)
+                                        }
+                                        class={cls(BTN, "px-2.5 py-0.5 text-xs no-underline inline-flex items-center")}
+                                    >
+                                        "Merge Albums"
+                                    </a>
                                     <button type="button"
                                         class=move || btn_cls(BTN_PRIMARY, "px-2.5 py-0.5 text-xs", monitor_all_loading.get())
                                         disabled=move || monitor_all_loading.get()
@@ -307,6 +330,155 @@ fn ArtistDetailContent(
                             </div>
                         </div>
                     </div>
+                }
+            }}
+
+            // Match suggestions
+            {move || {
+                let pending = match_suggestions
+                    .get()
+                    .into_iter()
+                    .filter(|m| m.status == "pending")
+                    .collect::<Vec<_>>();
+                let a = a();
+
+                if pending.is_empty() {
+                    view! { <span></span> }.into_any()
+                } else {
+                    view! {
+                        <div class={cls(GLASS, "mb-5")}>
+                            <div class=GLASS_HEADER>
+                                <h2 class=GLASS_TITLE>{format!("Potential Matches ({})", pending.len())}</h2>
+                                <button
+                                    type="button"
+                                    class={cls(BTN, "px-2.5 py-0.5 text-xs")}
+                                    on:click={
+                                        let aid = a.id.clone();
+                                        move |_| {
+                                            dispatch_with_toast(
+                                                ServerAction::RefreshMatchSuggestions { artist_id: aid.clone() },
+                                                "Match suggestions refreshed",
+                                            );
+                                        }
+                                    }
+                                >
+                                    "Refresh"
+                                </button>
+                            </div>
+                            <div class=GLASS_BODY>
+                                <div class="flex flex-col gap-2">
+                                    {pending.into_iter().map(|m| {
+                                        let accept_id = m.id.clone();
+                                        let dismiss_id = m.id.clone();
+                                        let right = provider_display_name(&m.right_provider);
+                                        let kind = if m.match_kind == "isrc_exact" { "ISRC" } else { "Fuzzy" };
+                                        let name = m
+                                            .external_name
+                                            .clone()
+                                            .unwrap_or_else(|| "Unknown artist match".to_string());
+                                        let image_url = m.image_url.clone();
+                                        let fallback_initial = name
+                                            .chars()
+                                            .next()
+                                            .map(|c| c.to_uppercase().to_string())
+                                            .unwrap_or_else(|| "?".to_string());
+                                        let type_country: Option<String> = match (&m.artist_type, &m.country) {
+                                            (Some(t), Some(c)) => Some(format!("{t} from {c}")),
+                                            (Some(t), None) => Some(t.clone()),
+                                            (None, Some(c)) => Some(format!("from {c}")),
+                                            (None, None) => None,
+                                        };
+                                        let subtitle: Option<String> = {
+                                            let base = m.disambiguation.clone().or(type_country);
+                                            match (base, m.popularity) {
+                                                (Some(b), Some(p)) => Some(format!("{b} · {p}% popularity")),
+                                                (Some(b), None) => Some(b),
+                                                (None, Some(p)) => Some(format!("{p}% popularity")),
+                                                (None, None) => None,
+                                            }
+                                        };
+                                        view! {
+                                            <div class="flex items-start gap-3 p-2 rounded-lg border border-black/[.06] dark:border-white/[.08] bg-white/60 dark:bg-zinc-800/60">
+                                                {match image_url {
+                                                    Some(url) => view! {
+                                                        <img class="size-9 rounded-full object-cover border border-blue-500/20 dark:border-blue-500/30 shrink-0 bg-zinc-200 dark:bg-zinc-800" src=url alt="" />
+                                                    }.into_any(),
+                                                    None => view! {
+                                                        <div class="size-9 rounded-full inline-flex items-center justify-center bg-zinc-200 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 font-bold text-sm border border-blue-500/20 dark:border-blue-500/30 shrink-0">{fallback_initial}</div>
+                                                    }.into_any(),
+                                                }}
+
+                                                <div class="flex-1 min-w-0">
+                                                    <div class="flex items-center gap-2 flex-wrap">
+                                                        <span class="text-[15px] font-semibold text-zinc-900 dark:text-zinc-100">{name}</span>
+                                                        {if let Some(url) = m.external_url.clone() {
+                                                            view! {
+                                                                <a class="inline-flex items-center px-2 py-0.5 text-[11px] font-medium text-blue-600 dark:text-blue-400 bg-blue-500/[.08] border border-blue-500/20 rounded-md no-underline hover:bg-blue-500/15" href=url target="_blank" rel="noreferrer">
+                                                                    {right.clone()}
+                                                                </a>
+                                                            }.into_any()
+                                                        } else {
+                                                            view! {
+                                                                <span class="inline-flex items-center px-2 py-0.5 text-[11px] font-medium text-zinc-500 dark:text-zinc-400 bg-zinc-500/[.08] border border-zinc-500/20 rounded-md">
+                                                                    {right.clone()}
+                                                                </span>
+                                                            }.into_any()
+                                                        }}
+                                                        <span class="pill d7-pill-muted">{kind}</span>
+                                                        <span class="pill">{format!("{}%", m.confidence)}</span>
+                                                    </div>
+
+                                                    {subtitle.map(|s| view! {
+                                                        <div class="text-[12px] text-zinc-500 dark:text-zinc-400 mt-0.5 leading-snug">{s}</div>
+                                                    })}
+
+                                                    {(!m.tags.is_empty()).then(|| view! {
+                                                        <div class="flex flex-wrap gap-1 mt-1">
+                                                            {m.tags.into_iter().map(|tag| view! {
+                                                                <span class="inline-flex items-center px-1.5 py-px text-[10px] font-medium text-zinc-500 dark:text-zinc-400 bg-zinc-500/[.06] border border-zinc-500/10 rounded">{tag}</span>
+                                                            }).collect_view()}
+                                                        </div>
+                                                    })}
+
+                                                    <div class="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1">{m.explanation.clone().unwrap_or_default()}</div>
+                                                    <div class="text-[10px] text-zinc-400 dark:text-zinc-500 mt-0.5">
+                                                        {format!("ID: {}", m.right_external_id)}
+                                                    </div>
+                                                </div>
+
+                                                <div class="flex items-center gap-1.5 shrink-0">
+                                                    <button
+                                                        type="button"
+                                                        class={cls(BTN_PRIMARY, "px-2 py-0.5 text-xs")}
+                                                        on:click=move |_| {
+                                                            dispatch_with_toast(
+                                                                ServerAction::AcceptMatchSuggestion { suggestion_id: accept_id.clone() },
+                                                                "Match accepted",
+                                                            );
+                                                        }
+                                                    >
+                                                        "Accept"
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        class={cls(BTN, "px-2 py-0.5 text-xs")}
+                                                        on:click=move |_| {
+                                                            dispatch_with_toast(
+                                                                ServerAction::DismissMatchSuggestion { suggestion_id: dismiss_id.clone() },
+                                                                "Match dismissed",
+                                                            );
+                                                        }
+                                                    >
+                                                        "Dismiss"
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        }
+                                    }).collect_view()}
+                                </div>
+                            </div>
+                        </div>
+                    }.into_any()
                 }
             }}
 

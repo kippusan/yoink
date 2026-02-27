@@ -92,6 +92,30 @@ pub struct ProviderLink {
     pub external_name: Option<String>,
 }
 
+/// Potential cross-provider match suggestion.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MatchSuggestion {
+    pub id: String,
+    pub scope_type: String,
+    pub scope_id: String,
+    pub left_provider: String,
+    pub left_external_id: String,
+    pub right_provider: String,
+    pub right_external_id: String,
+    pub match_kind: String,
+    pub confidence: u8,
+    pub explanation: Option<String>,
+    pub external_name: Option<String>,
+    pub external_url: Option<String>,
+    pub image_url: Option<String>,
+    pub disambiguation: Option<String>,
+    pub artist_type: Option<String>,
+    pub country: Option<String>,
+    pub tags: Vec<String>,
+    pub popularity: Option<u8>,
+    pub status: String,
+}
+
 // ── Data helpers (pure transforms) ──────────────────────────
 
 /// Group albums by artist_id, sorted newest-first within each group.
@@ -298,6 +322,19 @@ pub enum ServerAction {
         album_id: String,
         unmonitor: bool,
     },
+    AcceptMatchSuggestion {
+        suggestion_id: String,
+    },
+    DismissMatchSuggestion {
+        suggestion_id: String,
+    },
+    RefreshMatchSuggestions {
+        artist_id: String,
+    },
+    MergeAlbums {
+        target_album_id: String,
+        source_album_id: String,
+    },
     RetagLibrary,
     ScanImportLibrary,
 }
@@ -337,6 +374,14 @@ pub type FetchAlbumLinksFn =
     std::sync::Arc<dyn Fn(String) -> AsyncFnResult<Vec<ProviderLink>> + Send + Sync>;
 
 #[cfg(feature = "ssr")]
+pub type FetchArtistMatchSuggestionsFn =
+    std::sync::Arc<dyn Fn(String) -> AsyncFnResult<Vec<MatchSuggestion>> + Send + Sync>;
+
+#[cfg(feature = "ssr")]
+pub type FetchAlbumMatchSuggestionsFn =
+    std::sync::Arc<dyn Fn(String) -> AsyncFnResult<Vec<MatchSuggestion>> + Send + Sync>;
+
+#[cfg(feature = "ssr")]
 pub type DispatchActionFn = std::sync::Arc<dyn Fn(ServerAction) -> AsyncFnResult<()> + Send + Sync>;
 
 #[cfg(feature = "ssr")]
@@ -351,5 +396,7 @@ pub struct ServerContext {
     pub fetch_tracks: FetchTracksFn,
     pub fetch_artist_links: FetchArtistLinksFn,
     pub fetch_album_links: FetchAlbumLinksFn,
+    pub fetch_artist_match_suggestions: FetchArtistMatchSuggestionsFn,
+    pub fetch_album_match_suggestions: FetchAlbumMatchSuggestionsFn,
     pub dispatch_action: DispatchActionFn,
 }

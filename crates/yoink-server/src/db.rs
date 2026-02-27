@@ -1,4 +1,5 @@
 use chrono::{DateTime, Utc};
+use serde_json::json;
 use sqlx::{Row, SqlitePool, sqlite::SqlitePoolOptions};
 use tracing::info;
 use uuid::Uuid;
@@ -34,166 +35,9 @@ pub(crate) async fn open(url: &str) -> Result<SqlitePool, sqlx::Error> {
         .execute(&pool)
         .await?;
 
-    migrate(&pool).await?;
+    sqlx::migrate!("./migrations").run(&pool).await?;
     info!(url, "Database opened");
     Ok(pool)
-}
-
-async fn migrate(pool: &SqlitePool) -> Result<(), sqlx::Error> {
-    // ── Core entities (provider-agnostic) ─────────────────────
-
-    sqlx::query(
-        "CREATE TABLE IF NOT EXISTS artists (
-            id          BLOB PRIMARY KEY,
-            name        TEXT NOT NULL,
-            image_url   TEXT,
-            added_at    TEXT NOT NULL
-        )",
-    )
-    .execute(pool)
-    .await?;
-
-    sqlx::query(
-        "CREATE TABLE IF NOT EXISTS albums (
-            id              BLOB PRIMARY KEY,
-            artist_id       BLOB NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
-            title           TEXT NOT NULL,
-            album_type      TEXT,
-            release_date    TEXT,
-            cover_url       TEXT,
-            explicit        INTEGER NOT NULL DEFAULT 0,
-            monitored       INTEGER NOT NULL DEFAULT 0,
-            acquired        INTEGER NOT NULL DEFAULT 0,
-            wanted          INTEGER NOT NULL DEFAULT 0,
-            added_at        TEXT NOT NULL
-        )",
-    )
-    .execute(pool)
-    .await?;
-
-    sqlx::query(
-        "CREATE TABLE IF NOT EXISTS tracks (
-            id              BLOB PRIMARY KEY,
-            album_id        BLOB NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
-            title           TEXT NOT NULL,
-            disc_number     INTEGER NOT NULL DEFAULT 1,
-            track_number    INTEGER NOT NULL,
-            duration_secs   INTEGER,
-            explicit        INTEGER NOT NULL DEFAULT 0,
-            isrc            TEXT
-        )",
-    )
-    .execute(pool)
-    .await?;
-
-    // ── Provider links (many-to-many) ────────────────────────
-
-    sqlx::query(
-        "CREATE TABLE IF NOT EXISTS artist_provider_links (
-            id              BLOB PRIMARY KEY,
-            artist_id       BLOB NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
-            provider        TEXT NOT NULL,
-            external_id     TEXT NOT NULL,
-            external_url    TEXT,
-            external_name   TEXT,
-            image_ref       TEXT,
-            UNIQUE(provider, external_id)
-        )",
-    )
-    .execute(pool)
-    .await?;
-
-    sqlx::query(
-        "CREATE TABLE IF NOT EXISTS album_provider_links (
-            id              BLOB PRIMARY KEY,
-            album_id        BLOB NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
-            provider        TEXT NOT NULL,
-            external_id     TEXT NOT NULL,
-            external_url    TEXT,
-            external_title  TEXT,
-            cover_ref       TEXT,
-            UNIQUE(provider, external_id)
-        )",
-    )
-    .execute(pool)
-    .await?;
-
-    sqlx::query(
-        "CREATE TABLE IF NOT EXISTS track_provider_links (
-            id              BLOB PRIMARY KEY,
-            track_id        BLOB NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
-            provider        TEXT NOT NULL,
-            external_id     TEXT NOT NULL,
-            UNIQUE(provider, external_id)
-        )",
-    )
-    .execute(pool)
-    .await?;
-
-    // ── Download jobs ────────────────────────────────────────
-
-    sqlx::query(
-        "CREATE TABLE IF NOT EXISTS download_jobs (
-            id               BLOB PRIMARY KEY,
-            album_id         BLOB NOT NULL REFERENCES albums(id),
-            source           TEXT NOT NULL,
-            album_title      TEXT NOT NULL,
-            artist_name      TEXT NOT NULL,
-            status           TEXT NOT NULL DEFAULT 'queued',
-            quality          TEXT NOT NULL DEFAULT 'lossless',
-            total_tracks     INTEGER NOT NULL DEFAULT 0,
-            completed_tracks INTEGER NOT NULL DEFAULT 0,
-            error            TEXT,
-            created_at       TEXT NOT NULL,
-            updated_at       TEXT NOT NULL
-        )",
-    )
-    .execute(pool)
-    .await?;
-
-    // ── Indexes ──────────────────────────────────────────────
-
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_albums_artist ON albums(artist_id)")
-        .execute(pool)
-        .await?;
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_tracks_album ON tracks(album_id)")
-        .execute(pool)
-        .await?;
-    sqlx::query(
-        "CREATE INDEX IF NOT EXISTS idx_artist_links_artist ON artist_provider_links(artist_id)",
-    )
-    .execute(pool)
-    .await?;
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_artist_links_provider ON artist_provider_links(provider, external_id)")
-        .execute(pool)
-        .await?;
-    sqlx::query(
-        "CREATE INDEX IF NOT EXISTS idx_album_links_album ON album_provider_links(album_id)",
-    )
-    .execute(pool)
-    .await?;
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_album_links_provider ON album_provider_links(provider, external_id)")
-        .execute(pool)
-        .await?;
-    sqlx::query(
-        "CREATE INDEX IF NOT EXISTS idx_track_links_track ON track_provider_links(track_id)",
-    )
-    .execute(pool)
-    .await?;
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_track_links_provider ON track_provider_links(provider, external_id)")
-        .execute(pool)
-        .await?;
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_jobs_album ON download_jobs(album_id)")
-        .execute(pool)
-        .await?;
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_jobs_status ON download_jobs(status)")
-        .execute(pool)
-        .await?;
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_tracks_isrc ON tracks(isrc)")
-        .execute(pool)
-        .await?;
-
-    Ok(())
 }
 
 // ── Artists ─────────────────────────────────────────────────────────
@@ -358,6 +202,36 @@ pub(crate) async fn update_album_flags(
     Ok(())
 }
 
+pub(crate) async fn reassign_tracks_to_album(
+    pool: &SqlitePool,
+    from_album_id: &str,
+    to_album_id: &str,
+) -> Result<u64, sqlx::Error> {
+    let from_uuid = parse_uuid(from_album_id).unwrap_or_default();
+    let to_uuid = parse_uuid(to_album_id).unwrap_or_default();
+    let result = sqlx::query("UPDATE tracks SET album_id = $1 WHERE album_id = $2")
+        .bind(to_uuid.as_bytes().as_slice())
+        .bind(from_uuid.as_bytes().as_slice())
+        .execute(pool)
+        .await?;
+    Ok(result.rows_affected())
+}
+
+pub(crate) async fn reassign_jobs_to_album(
+    pool: &SqlitePool,
+    from_album_id: &str,
+    to_album_id: &str,
+) -> Result<u64, sqlx::Error> {
+    let from_uuid = parse_uuid(from_album_id).unwrap_or_default();
+    let to_uuid = parse_uuid(to_album_id).unwrap_or_default();
+    let result = sqlx::query("UPDATE download_jobs SET album_id = $1 WHERE album_id = $2")
+        .bind(to_uuid.as_bytes().as_slice())
+        .bind(from_uuid.as_bytes().as_slice())
+        .execute(pool)
+        .await?;
+    Ok(result.rows_affected())
+}
+
 // ── Tracks ──────────────────────────────────────────────────────────
 
 pub(crate) async fn load_tracks_for_album(
@@ -427,6 +301,70 @@ pub(crate) async fn upsert_track(
     .execute(pool)
     .await?;
     Ok(())
+}
+
+pub(crate) async fn find_track_by_provider_link(
+    pool: &SqlitePool,
+    provider: &str,
+    external_id: &str,
+) -> Result<Option<String>, sqlx::Error> {
+    let row = sqlx::query(
+        "SELECT track_id FROM track_provider_links WHERE provider = $1 AND external_id = $2",
+    )
+    .bind(provider)
+    .bind(external_id)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(row.map(|r| {
+        let id: Vec<u8> = r.get("track_id");
+        Uuid::from_slice(&id).unwrap_or_default().to_string()
+    }))
+}
+
+pub(crate) async fn find_track_by_album_isrc(
+    pool: &SqlitePool,
+    album_id: &str,
+    isrc: &str,
+) -> Result<Option<String>, sqlx::Error> {
+    let album_uuid = parse_uuid(album_id).unwrap_or_default();
+    let row = sqlx::query(
+        "SELECT id FROM tracks WHERE album_id = $1 AND UPPER(isrc) = UPPER($2) LIMIT 1",
+    )
+    .bind(album_uuid.as_bytes().as_slice())
+    .bind(isrc)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(row.map(|r| {
+        let id: Vec<u8> = r.get("id");
+        Uuid::from_slice(&id).unwrap_or_default().to_string()
+    }))
+}
+
+pub(crate) async fn find_track_by_album_position(
+    pool: &SqlitePool,
+    album_id: &str,
+    disc_number: u32,
+    track_number: u32,
+) -> Result<Option<String>, sqlx::Error> {
+    let album_uuid = parse_uuid(album_id).unwrap_or_default();
+    let row = sqlx::query(
+        "SELECT id
+         FROM tracks
+         WHERE album_id = $1 AND disc_number = $2 AND track_number = $3
+         LIMIT 1",
+    )
+    .bind(album_uuid.as_bytes().as_slice())
+    .bind(disc_number as i32)
+    .bind(track_number as i32)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(row.map(|r| {
+        let id: Vec<u8> = r.get("id");
+        Uuid::from_slice(&id).unwrap_or_default().to_string()
+    }))
 }
 
 // ── Provider links ──────────────────────────────────────────────────
@@ -645,6 +583,252 @@ pub(crate) async fn upsert_track_provider_link(
     .bind(track_uuid.as_bytes().as_slice())
     .bind(provider)
     .bind(external_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+// ── Match suggestions ────────────────────────────────────────────────
+
+#[derive(Debug, Clone)]
+pub(crate) struct MatchSuggestion {
+    pub(crate) id: String,
+    pub(crate) scope_type: String,
+    pub(crate) scope_id: String,
+    pub(crate) left_provider: String,
+    pub(crate) left_external_id: String,
+    pub(crate) right_provider: String,
+    pub(crate) right_external_id: String,
+    pub(crate) match_kind: String,
+    pub(crate) confidence: u8,
+    pub(crate) explanation: Option<String>,
+    pub(crate) external_name: Option<String>,
+    pub(crate) external_url: Option<String>,
+    pub(crate) image_ref: Option<String>,
+    pub(crate) disambiguation: Option<String>,
+    pub(crate) artist_type: Option<String>,
+    pub(crate) country: Option<String>,
+    pub(crate) tags: Vec<String>,
+    pub(crate) popularity: Option<u8>,
+    pub(crate) status: String,
+    pub(crate) created_at: DateTime<Utc>,
+    pub(crate) updated_at: DateTime<Utc>,
+}
+
+pub(crate) async fn upsert_match_suggestion(
+    pool: &SqlitePool,
+    suggestion: &MatchSuggestion,
+) -> Result<(), sqlx::Error> {
+    let id_uuid = parse_uuid(&suggestion.id).unwrap_or_else(|_| new_uuid());
+    let scope_uuid = parse_uuid(&suggestion.scope_id).unwrap_or_default();
+    sqlx::query(
+        "INSERT INTO match_suggestions (
+            id, scope_type, scope_id,
+            left_provider, left_external_id,
+            right_provider, right_external_id,
+            match_kind, confidence, explanation,
+            external_name, external_url, image_ref,
+            disambiguation, artist_type, country, tags_json, popularity,
+            status, created_at, updated_at
+         ) VALUES (
+            $1, $2, $3,
+            $4, $5,
+            $6, $7,
+            $8, $9, $10,
+            $11, $12, $13,
+            $14, $15, $16, $17, $18,
+            $19, $20, $21
+         )
+         ON CONFLICT(
+            scope_type, scope_id,
+            left_provider, left_external_id,
+            right_provider, right_external_id,
+            match_kind
+         ) DO UPDATE SET
+            confidence = excluded.confidence,
+            explanation = excluded.explanation,
+            external_name = excluded.external_name,
+            external_url = excluded.external_url,
+            image_ref = excluded.image_ref,
+            disambiguation = excluded.disambiguation,
+            artist_type = excluded.artist_type,
+            country = excluded.country,
+            tags_json = excluded.tags_json,
+            popularity = excluded.popularity,
+            status = excluded.status,
+            updated_at = excluded.updated_at",
+    )
+    .bind(id_uuid.as_bytes().as_slice())
+    .bind(&suggestion.scope_type)
+    .bind(scope_uuid.as_bytes().as_slice())
+    .bind(&suggestion.left_provider)
+    .bind(&suggestion.left_external_id)
+    .bind(&suggestion.right_provider)
+    .bind(&suggestion.right_external_id)
+    .bind(&suggestion.match_kind)
+    .bind(i32::from(suggestion.confidence))
+    .bind(&suggestion.explanation)
+    .bind(&suggestion.external_name)
+    .bind(&suggestion.external_url)
+    .bind(&suggestion.image_ref)
+    .bind(&suggestion.disambiguation)
+    .bind(&suggestion.artist_type)
+    .bind(&suggestion.country)
+    .bind(json!(suggestion.tags).to_string())
+    .bind(suggestion.popularity.map(i32::from))
+    .bind(&suggestion.status)
+    .bind(suggestion.created_at.to_rfc3339())
+    .bind(suggestion.updated_at.to_rfc3339())
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+pub(crate) async fn clear_pending_match_suggestions(
+    pool: &SqlitePool,
+    scope_type: &str,
+    scope_id: &str,
+) -> Result<u64, sqlx::Error> {
+    let scope_uuid = parse_uuid(scope_id).unwrap_or_default();
+    let result = sqlx::query(
+        "DELETE FROM match_suggestions
+         WHERE scope_type = $1 AND scope_id = $2 AND status = 'pending'",
+    )
+    .bind(scope_type)
+    .bind(scope_uuid.as_bytes().as_slice())
+    .execute(pool)
+    .await?;
+    Ok(result.rows_affected())
+}
+
+pub(crate) async fn load_match_suggestions_for_scope(
+    pool: &SqlitePool,
+    scope_type: &str,
+    scope_id: &str,
+) -> Result<Vec<MatchSuggestion>, sqlx::Error> {
+    let scope_uuid = parse_uuid(scope_id).unwrap_or_default();
+    let rows = sqlx::query(
+        "SELECT
+            id, scope_type, scope_id,
+            left_provider, left_external_id,
+            right_provider, right_external_id,
+            match_kind, confidence, explanation,
+            external_name, external_url, image_ref,
+            disambiguation, artist_type, country, tags_json, popularity,
+            status,
+            created_at, updated_at
+         FROM match_suggestions
+         WHERE scope_type = $1 AND scope_id = $2
+         ORDER BY status ASC, confidence DESC, created_at DESC",
+    )
+    .bind(scope_type)
+    .bind(scope_uuid.as_bytes().as_slice())
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|r| {
+            let id: Vec<u8> = r.get("id");
+            let scope_id: Vec<u8> = r.get("scope_id");
+            MatchSuggestion {
+                id: Uuid::from_slice(&id).unwrap_or_default().to_string(),
+                scope_type: r.get("scope_type"),
+                scope_id: Uuid::from_slice(&scope_id).unwrap_or_default().to_string(),
+                left_provider: r.get("left_provider"),
+                left_external_id: r.get("left_external_id"),
+                right_provider: r.get("right_provider"),
+                right_external_id: r.get("right_external_id"),
+                match_kind: r.get("match_kind"),
+                confidence: r.get::<i32, _>("confidence") as u8,
+                explanation: r.get("explanation"),
+                external_name: r.get("external_name"),
+                external_url: r.get("external_url"),
+                image_ref: r.get("image_ref"),
+                disambiguation: r.get("disambiguation"),
+                artist_type: r.get("artist_type"),
+                country: r.get("country"),
+                tags: r
+                    .get::<Option<String>, _>("tags_json")
+                    .and_then(|v| serde_json::from_str::<Vec<String>>(&v).ok())
+                    .unwrap_or_default(),
+                popularity: r.get::<Option<i32>, _>("popularity").map(|v| v as u8),
+                status: r.get("status"),
+                created_at: parse_dt(r.get::<String, _>("created_at")),
+                updated_at: parse_dt(r.get::<String, _>("updated_at")),
+            }
+        })
+        .collect())
+}
+
+pub(crate) async fn load_match_suggestion_by_id(
+    pool: &SqlitePool,
+    suggestion_id: &str,
+) -> Result<Option<MatchSuggestion>, sqlx::Error> {
+    let suggestion_uuid = parse_uuid(suggestion_id).unwrap_or_default();
+    let row = sqlx::query(
+        "SELECT
+            id, scope_type, scope_id,
+            left_provider, left_external_id,
+            right_provider, right_external_id,
+            match_kind, confidence, explanation,
+            external_name, external_url, image_ref,
+            disambiguation, artist_type, country, tags_json, popularity,
+            status,
+            created_at, updated_at
+         FROM match_suggestions
+         WHERE id = $1",
+    )
+    .bind(suggestion_uuid.as_bytes().as_slice())
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(row.map(|r| {
+        let id: Vec<u8> = r.get("id");
+        let scope_id: Vec<u8> = r.get("scope_id");
+        MatchSuggestion {
+            id: Uuid::from_slice(&id).unwrap_or_default().to_string(),
+            scope_type: r.get("scope_type"),
+            scope_id: Uuid::from_slice(&scope_id).unwrap_or_default().to_string(),
+            left_provider: r.get("left_provider"),
+            left_external_id: r.get("left_external_id"),
+            right_provider: r.get("right_provider"),
+            right_external_id: r.get("right_external_id"),
+            match_kind: r.get("match_kind"),
+            confidence: r.get::<i32, _>("confidence") as u8,
+            explanation: r.get("explanation"),
+            external_name: r.get("external_name"),
+            external_url: r.get("external_url"),
+            image_ref: r.get("image_ref"),
+            disambiguation: r.get("disambiguation"),
+            artist_type: r.get("artist_type"),
+            country: r.get("country"),
+            tags: r
+                .get::<Option<String>, _>("tags_json")
+                .and_then(|v| serde_json::from_str::<Vec<String>>(&v).ok())
+                .unwrap_or_default(),
+            popularity: r.get::<Option<i32>, _>("popularity").map(|v| v as u8),
+            status: r.get("status"),
+            created_at: parse_dt(r.get::<String, _>("created_at")),
+            updated_at: parse_dt(r.get::<String, _>("updated_at")),
+        }
+    }))
+}
+
+pub(crate) async fn set_match_suggestion_status(
+    pool: &SqlitePool,
+    suggestion_id: &str,
+    status: &str,
+) -> Result<(), sqlx::Error> {
+    let suggestion_uuid = parse_uuid(suggestion_id).unwrap_or_default();
+    sqlx::query(
+        "UPDATE match_suggestions
+         SET status = $1, updated_at = $2
+         WHERE id = $3",
+    )
+    .bind(status)
+    .bind(Utc::now().to_rfc3339())
+    .bind(suggestion_uuid.as_bytes().as_slice())
     .execute(pool)
     .await?;
     Ok(())

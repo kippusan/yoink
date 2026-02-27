@@ -2,9 +2,9 @@ use leptos::prelude::*;
 use lucide_leptos::{ArrowLeft, ChevronRight};
 
 use yoink_shared::{
-    DownloadJob, DownloadStatus, MonitoredAlbum, MonitoredArtist, ProviderLink, ServerAction,
-    TrackInfo, album_cover_url, album_type_label, build_latest_jobs, provider_display_name,
-    status_class, status_label_text,
+    DownloadJob, DownloadStatus, MatchSuggestion, MonitoredAlbum, MonitoredArtist, ProviderLink,
+    ServerAction, TrackInfo, album_cover_url, album_type_label, build_latest_jobs,
+    provider_display_name, status_class, status_label_text,
 };
 
 use crate::components::toast::{dispatch_with_toast, dispatch_with_toast_loading};
@@ -23,6 +23,7 @@ pub struct AlbumDetailData {
     pub tracks: Vec<TrackInfo>,
     pub jobs: Vec<DownloadJob>,
     pub provider_links: Vec<ProviderLink>,
+    pub match_suggestions: Vec<MatchSuggestion>,
 }
 
 // ── Server function ─────────────────────────────────────────
@@ -50,7 +51,17 @@ pub async fn get_album_detail(album_id: String) -> Result<AlbumDetailData, Serve
     let jobs = ctx.download_jobs.read().await.clone();
 
     let provider_links = if album.is_some() {
-        (ctx.fetch_album_links)(album_id).await.unwrap_or_default()
+        (ctx.fetch_album_links)(album_id.clone())
+            .await
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
+    let match_suggestions = if album.is_some() {
+        (ctx.fetch_album_match_suggestions)(album_id)
+            .await
+            .unwrap_or_default()
     } else {
         Vec::new()
     };
@@ -61,6 +72,7 @@ pub async fn get_album_detail(album_id: String) -> Result<AlbumDetailData, Serve
         tracks,
         jobs,
         provider_links,
+        match_suggestions,
     })
 }
 
@@ -157,6 +169,7 @@ pub fn AlbumDetailPage() -> impl IntoView {
                                             tracks=data.tracks
                                             jobs=data.jobs
                                             provider_links=data.provider_links
+                                            match_suggestions=data.match_suggestions
                                             artist_id_param=aid
                                         />
                                     }.into_any()
@@ -179,6 +192,7 @@ fn AlbumDetailContent(
     tracks: Vec<TrackInfo>,
     jobs: Vec<DownloadJob>,
     provider_links: Vec<ProviderLink>,
+    match_suggestions: Vec<MatchSuggestion>,
     artist_id_param: String,
 ) -> impl IntoView {
     set_page_title(&album.title);
@@ -345,6 +359,64 @@ fn AlbumDetailContent(
                                                 }.into_any(),
                                             }
                                         }).collect_view()}
+                                    </div>
+                                }.into_any()
+                            } else {
+                                view! { <span></span> }.into_any()
+                            }}
+
+                            {if !match_suggestions.is_empty() {
+                                view! {
+                                    <div class="mb-4 rounded-lg border border-amber-500/20 bg-amber-500/[.06] px-3 py-2.5">
+                                        <div class="text-[11px] uppercase tracking-wider text-amber-700 dark:text-amber-300 mb-2 font-semibold">
+                                            "Potential Matches"
+                                        </div>
+                                        <div class="flex flex-col gap-2">
+                                            {match_suggestions.iter().filter(|m| m.status == "pending").map(|m| {
+                                                let accept_id = m.id.clone();
+                                                let dismiss_id = m.id.clone();
+                                                let display_provider = provider_display_name(&m.right_provider);
+                                                let kind = if m.match_kind == "isrc_exact" { "ISRC" } else { "Fuzzy" };
+                                                let display_name = m
+                                                    .external_name
+                                                    .clone()
+                                                    .unwrap_or_else(|| "Unknown album match".to_string());
+                                                let explanation = m.explanation.clone().unwrap_or_default();
+                                                view! {
+                                                    <div class="flex flex-wrap items-center gap-2 text-xs text-zinc-700 dark:text-zinc-300">
+                                                        <span class="inline-flex items-center px-1.5 py-0.5 rounded-md bg-white/70 dark:bg-zinc-800/70 border border-black/[.06] dark:border-white/[.08]">
+                                                            {format!("{} {}%", kind, m.confidence)}
+                                                        </span>
+                                                        <span>{format!("{}: {}", display_provider, display_name)}</span>
+                                                        <span class="text-zinc-500 dark:text-zinc-400">{explanation}</span>
+                                                        <button
+                                                            type="button"
+                                                            class={cls(BTN_PRIMARY, "px-2 py-0.5 text-[11px]")}
+                                                            on:click=move |_| {
+                                                                dispatch_with_toast(
+                                                                    ServerAction::AcceptMatchSuggestion { suggestion_id: accept_id.clone() },
+                                                                    "Match accepted",
+                                                                );
+                                                            }
+                                                        >
+                                                            "Accept"
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            class={cls(BTN, "px-2 py-0.5 text-[11px]")}
+                                                            on:click=move |_| {
+                                                                dispatch_with_toast(
+                                                                    ServerAction::DismissMatchSuggestion { suggestion_id: dismiss_id.clone() },
+                                                                    "Match dismissed",
+                                                                );
+                                                            }
+                                                        >
+                                                            "Dismiss"
+                                                        </button>
+                                                    </div>
+                                                }
+                                            }).collect_view()}
+                                        </div>
                                     </div>
                                 }.into_any()
                             } else {

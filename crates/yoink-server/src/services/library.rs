@@ -265,6 +265,83 @@ pub(crate) async fn reconcile_library_files(state: &AppState) -> Result<usize, S
     Ok(changed)
 }
 
+pub(crate) async fn merge_albums(
+    state: &AppState,
+    target_album_id: &str,
+    source_album_id: &str,
+) -> Result<(), String> {
+    if target_album_id == source_album_id {
+        return Err("target and source albums must be different".to_string());
+    }
+
+    let (target_artist_id, source_artist_id, source_flags) = {
+        let albums = state.monitored_albums.read().await;
+        let Some(target) = albums.iter().find(|a| a.id == target_album_id) else {
+            return Err("target album not found".to_string());
+        };
+        let Some(source) = albums.iter().find(|a| a.id == source_album_id) else {
+            return Err("source album not found".to_string());
+        };
+        (
+            target.artist_id.clone(),
+            source.artist_id.clone(),
+            (source.monitored, source.acquired, source.wanted),
+        )
+    };
+
+    if target_artist_id != source_artist_id {
+        return Err("can only merge albums from same artist".to_string());
+    }
+
+    let source_links = db::load_album_provider_links(&state.db, source_album_id)
+        .await
+        .map_err(|e| format!("failed loading source provider links: {e}"))?;
+
+    for link in source_links {
+        let moved = db::AlbumProviderLink {
+            id: db::uuid_to_string(&db::new_uuid()),
+            album_id: target_album_id.to_string(),
+            provider: link.provider,
+            external_id: link.external_id,
+            external_url: link.external_url,
+            external_title: link.external_title,
+            cover_ref: link.cover_ref,
+        };
+        let _ = db::upsert_album_provider_link(&state.db, &moved).await;
+    }
+
+    let _ = db::reassign_tracks_to_album(&state.db, source_album_id, target_album_id)
+        .await
+        .map_err(|e| format!("failed reassigning tracks: {e}"))?;
+    let _ = db::reassign_jobs_to_album(&state.db, source_album_id, target_album_id)
+        .await
+        .map_err(|e| format!("failed reassigning jobs: {e}"))?;
+
+    {
+        let mut albums = state.monitored_albums.write().await;
+        if let Some(target) = albums.iter_mut().find(|a| a.id == target_album_id) {
+            target.monitored = target.monitored || source_flags.0;
+            target.acquired = target.acquired || source_flags.1;
+            update_wanted(target);
+            let _ = db::update_album_flags(
+                &state.db,
+                &target.id,
+                target.monitored,
+                target.acquired,
+                target.wanted,
+            )
+            .await;
+        }
+        albums.retain(|a| a.id != source_album_id);
+    }
+
+    db::delete_album(&state.db, source_album_id)
+        .await
+        .map_err(|e| format!("failed deleting source album: {e}"))?;
+
+    Ok(())
+}
+
 pub(crate) async fn scan_and_import_library(state: &AppState) -> Result<ScanImportSummary, String> {
     let discovered = discover_local_albums(state).await?;
     if discovered.is_empty() {

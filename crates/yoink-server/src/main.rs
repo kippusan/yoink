@@ -27,7 +27,7 @@ use crate::{
         soulseek::SoulSeekSource, tidal::TidalProvider,
     },
     routes::build_router,
-    services::{download_worker_loop, reconcile_library_files},
+    services::{download_worker_loop, reconcile_library_files, recompute_artist_match_suggestions},
     state::AppState,
 };
 
@@ -279,24 +279,67 @@ async fn main() {
 
                     match provider.fetch_tracks(&link.external_id).await {
                         Ok((provider_tracks, _album_extra)) => {
-                            return Ok(provider_tracks
-                                .into_iter()
-                                .map(|t| {
-                                    let secs = t.duration_secs;
-                                    let mins = secs / 60;
-                                    let rem = secs % 60;
-                                    yoink_shared::TrackInfo {
-                                        id: db::uuid_to_string(&db::new_uuid()),
-                                        title: t.title,
-                                        version: t.version,
-                                        disc_number: t.disc_number.unwrap_or(1),
-                                        track_number: t.track_number,
-                                        duration_secs: secs,
-                                        duration_display: format!("{mins}:{rem:02}"),
-                                        isrc: t.isrc,
+                            for t in provider_tracks {
+                                let local_track_id = if let Ok(Some(track_id)) =
+                                    db::find_track_by_provider_link(&s.db, &link.provider, &t.external_id)
+                                        .await
+                                {
+                                    track_id
+                                } else if let Some(ref isrc) = t.isrc {
+                                    if let Ok(Some(track_id)) =
+                                        db::find_track_by_album_isrc(&s.db, &album_id, isrc).await
+                                    {
+                                        track_id
+                                    } else {
+                                        db::uuid_to_string(&db::new_uuid())
                                     }
-                                })
-                                .collect());
+                                } else {
+                                    db::find_track_by_album_position(
+                                        &s.db,
+                                        &album_id,
+                                        t.disc_number.unwrap_or(1),
+                                        t.track_number,
+                                    )
+                                    .await
+                                    .ok()
+                                    .flatten()
+                                    .unwrap_or_else(|| db::uuid_to_string(&db::new_uuid()))
+                                };
+
+                                let explicit = t
+                                    .extra
+                                    .get("explicit")
+                                    .and_then(|v| v.as_bool())
+                                    .unwrap_or(false);
+
+                                let secs = t.duration_secs;
+                                let mins = secs / 60;
+                                let rem = secs % 60;
+                                let track_info = yoink_shared::TrackInfo {
+                                    id: local_track_id.clone(),
+                                    title: t.title,
+                                    version: t.version,
+                                    disc_number: t.disc_number.unwrap_or(1),
+                                    track_number: t.track_number,
+                                    duration_secs: secs,
+                                    duration_display: format!("{mins}:{rem:02}"),
+                                    isrc: t.isrc,
+                                };
+
+                                let _ = db::upsert_track(&s.db, &track_info, &album_id, explicit).await;
+                                let _ = db::upsert_track_provider_link(
+                                    &s.db,
+                                    &local_track_id,
+                                    &link.provider,
+                                    &t.external_id,
+                                )
+                                .await;
+                            }
+
+                            let persisted = db::load_tracks_for_album(&s.db, &album_id)
+                                .await
+                                .unwrap_or_default();
+                            return Ok(persisted);
                         }
                         Err(_) => continue,
                     }
@@ -346,6 +389,202 @@ async fn main() {
             })
         });
 
+    let artist_suggestions_state = state.clone();
+    let fetch_artist_match_suggestions_fn: yoink_shared::FetchArtistMatchSuggestionsFn =
+        std::sync::Arc::new(move |artist_id: String| {
+            let s = artist_suggestions_state.clone();
+            Box::pin(async move {
+                let artist_links = db::load_artist_provider_links(&s.db, &artist_id)
+                    .await
+                    .map_err(|e| format!("Failed to load artist provider links: {e}"))?;
+                let linked_pairs: std::collections::HashSet<(String, String)> = artist_links
+                    .iter()
+                    .map(|l| (l.provider.clone(), l.external_id.clone()))
+                    .collect();
+                let link_lookup: std::collections::HashMap<(String, String), db::ArtistProviderLink> =
+                    artist_links
+                        .into_iter()
+                        .map(|l| ((l.provider.clone(), l.external_id.clone()), l))
+                        .collect();
+
+                let suggestions = db::load_match_suggestions_for_scope(&s.db, "artist", &artist_id)
+                    .await
+                    .map_err(|e| format!("Failed to load artist match suggestions: {e}"))?;
+                Ok(suggestions
+                    .into_iter()
+                    .map(|m| {
+                        let left_linked =
+                            linked_pairs.contains(&(m.left_provider.clone(), m.left_external_id.clone()));
+                        let right_linked = linked_pairs
+                            .contains(&(m.right_provider.clone(), m.right_external_id.clone()));
+
+                        let use_right = if left_linked
+                            && !right_linked
+                        {
+                            true
+                        } else if right_linked
+                            && !left_linked
+                        {
+                            false
+                        } else {
+                            true
+                        };
+
+                        let (provider, external_id, external_name, external_url, image_ref) = if use_right {
+                            (
+                                m.right_provider.clone(),
+                                m.right_external_id.clone(),
+                                m.external_name.clone(),
+                                m.external_url.clone(),
+                                m.image_ref.clone(),
+                            )
+                        } else if let Some(link) = link_lookup
+                            .get(&(m.left_provider.clone(), m.left_external_id.clone()))
+                        {
+                            (
+                                m.left_provider.clone(),
+                                m.left_external_id.clone(),
+                                link.external_name.clone(),
+                                link.external_url.clone(),
+                                link.image_ref.clone(),
+                            )
+                        } else {
+                            (
+                                m.left_provider.clone(),
+                                m.left_external_id.clone(),
+                                None,
+                                None,
+                                None,
+                            )
+                        };
+
+                        let image_url = image_ref
+                            .as_deref()
+                            .map(|r| yoink_shared::provider_image_url(&provider, r, 160));
+                        yoink_shared::MatchSuggestion {
+                            id: m.id,
+                            scope_type: m.scope_type,
+                            scope_id: m.scope_id,
+                            left_provider: m.left_provider,
+                            left_external_id: m.left_external_id,
+                            right_provider: provider,
+                            right_external_id: external_id,
+                            match_kind: m.match_kind,
+                            confidence: m.confidence,
+                            explanation: m.explanation,
+                            external_name,
+                            external_url,
+                            image_url,
+                            disambiguation: if use_right { m.disambiguation } else { None },
+                            artist_type: if use_right { m.artist_type } else { None },
+                            country: if use_right { m.country } else { None },
+                            tags: if use_right { m.tags } else { Vec::new() },
+                            popularity: if use_right { m.popularity } else { None },
+                            status: m.status,
+                        }
+                    })
+                    .collect())
+            })
+        });
+
+    let album_suggestions_state = state.clone();
+    let fetch_album_match_suggestions_fn: yoink_shared::FetchAlbumMatchSuggestionsFn =
+        std::sync::Arc::new(move |album_id: String| {
+            let s = album_suggestions_state.clone();
+            Box::pin(async move {
+                let album_links = db::load_album_provider_links(&s.db, &album_id)
+                    .await
+                    .map_err(|e| format!("Failed to load album provider links: {e}"))?;
+                let linked_pairs: std::collections::HashSet<(String, String)> = album_links
+                    .iter()
+                    .map(|l| (l.provider.clone(), l.external_id.clone()))
+                    .collect();
+                let link_lookup: std::collections::HashMap<(String, String), db::AlbumProviderLink> =
+                    album_links
+                        .into_iter()
+                        .map(|l| ((l.provider.clone(), l.external_id.clone()), l))
+                        .collect();
+
+                let suggestions = db::load_match_suggestions_for_scope(&s.db, "album", &album_id)
+                    .await
+                    .map_err(|e| format!("Failed to load album match suggestions: {e}"))?;
+                Ok(suggestions
+                    .into_iter()
+                    .map(|m| {
+                        let left_linked =
+                            linked_pairs.contains(&(m.left_provider.clone(), m.left_external_id.clone()));
+                        let right_linked = linked_pairs
+                            .contains(&(m.right_provider.clone(), m.right_external_id.clone()));
+
+                        let use_right = if left_linked
+                            && !right_linked
+                        {
+                            true
+                        } else if right_linked
+                            && !left_linked
+                        {
+                            false
+                        } else {
+                            true
+                        };
+
+                        let (provider, external_id, external_name, external_url, image_ref) = if use_right {
+                            (
+                                m.right_provider.clone(),
+                                m.right_external_id.clone(),
+                                m.external_name.clone(),
+                                m.external_url.clone(),
+                                m.image_ref.clone(),
+                            )
+                        } else if let Some(link) = link_lookup
+                            .get(&(m.left_provider.clone(), m.left_external_id.clone()))
+                        {
+                            (
+                                m.left_provider.clone(),
+                                m.left_external_id.clone(),
+                                link.external_title.clone(),
+                                link.external_url.clone(),
+                                link.cover_ref.clone(),
+                            )
+                        } else {
+                            (
+                                m.left_provider.clone(),
+                                m.left_external_id.clone(),
+                                None,
+                                None,
+                                None,
+                            )
+                        };
+
+                        let image_url = image_ref
+                            .as_deref()
+                            .map(|r| yoink_shared::provider_image_url(&provider, r, 160));
+                        yoink_shared::MatchSuggestion {
+                            id: m.id,
+                            scope_type: m.scope_type,
+                            scope_id: m.scope_id,
+                            left_provider: m.left_provider,
+                            left_external_id: m.left_external_id,
+                            right_provider: provider,
+                            right_external_id: external_id,
+                            match_kind: m.match_kind,
+                            confidence: m.confidence,
+                            explanation: m.explanation,
+                            external_name,
+                            external_url,
+                            image_url,
+                            disambiguation: None,
+                            artist_type: None,
+                            country: None,
+                            tags: Vec::new(),
+                            popularity: None,
+                            status: m.status,
+                        }
+                    })
+                    .collect())
+            })
+        });
+
     let action_state = state.clone();
     let dispatch_action_fn: yoink_shared::DispatchActionFn =
         std::sync::Arc::new(move |action: yoink_shared::ServerAction| {
@@ -363,6 +602,8 @@ async fn main() {
         fetch_tracks: fetch_tracks_fn,
         fetch_artist_links: fetch_artist_links_fn,
         fetch_album_links: fetch_album_links_fn,
+        fetch_artist_match_suggestions: fetch_artist_match_suggestions_fn,
+        fetch_album_match_suggestions: fetch_album_match_suggestions_fn,
         dispatch_action: dispatch_action_fn,
     };
 
@@ -451,6 +692,16 @@ async fn main() {
     .expect("server error");
 }
 
+fn spawn_recompute_artist_match_suggestions(state: &AppState, artist_id: String) {
+    let s = state.clone();
+    tokio::spawn(async move {
+        if let Err(err) = recompute_artist_match_suggestions(&s, &artist_id).await {
+            warn!(artist_id = %artist_id, error = %err, "Background match recompute failed");
+        }
+        s.notify_sse();
+    });
+}
+
 /// Execute a `ServerAction` against the real `AppState`.
 async fn dispatch_action_impl(
     state: AppState,
@@ -520,6 +771,7 @@ async fn dispatch_action_impl(
 
         ServerAction::SyncArtistAlbums { artist_id } => {
             let _ = services::sync_artist_albums(&state, &artist_id).await;
+            spawn_recompute_artist_match_suggestions(&state, artist_id.clone());
             state.notify_sse();
         }
 
@@ -607,6 +859,7 @@ async fn dispatch_action_impl(
             };
 
             let _ = services::sync_artist_albums(&state, &artist_id).await;
+            spawn_recompute_artist_match_suggestions(&state, artist_id.clone());
             state.notify_sse();
         }
 
@@ -628,6 +881,7 @@ async fn dispatch_action_impl(
                 image_ref,
             };
             let _ = db::upsert_artist_provider_link(&state.db, &link).await;
+            spawn_recompute_artist_match_suggestions(&state, link.artist_id.clone());
             state.notify_sse();
         }
 
@@ -638,6 +892,211 @@ async fn dispatch_action_impl(
         } => {
             let _ = db::delete_artist_provider_link(&state.db, &artist_id, &provider, &external_id)
                 .await;
+            spawn_recompute_artist_match_suggestions(&state, artist_id.clone());
+            state.notify_sse();
+        }
+
+        ServerAction::AcceptMatchSuggestion { suggestion_id } => {
+            let suggestion = db::load_match_suggestion_by_id(&state.db, &suggestion_id)
+                .await
+                .map_err(|e| format!("failed to load match suggestion: {e}"))?
+                .ok_or_else(|| "match suggestion not found".to_string())?;
+
+            match suggestion.scope_type.as_str() {
+                "album" => {
+                    let album_links = db::load_album_provider_links(&state.db, &suggestion.scope_id)
+                        .await
+                        .map_err(|e| format!("failed loading album links: {e}"))?;
+                    let linked: std::collections::HashSet<(String, String)> = album_links
+                        .iter()
+                        .map(|l| (l.provider.clone(), l.external_id.clone()))
+                        .collect();
+                    let left_linked =
+                        linked.contains(&(suggestion.left_provider.clone(), suggestion.left_external_id.clone()));
+                    let right_linked = linked
+                        .contains(&(suggestion.right_provider.clone(), suggestion.right_external_id.clone()));
+                    let (target_provider, target_external_id) = if left_linked
+                        && !right_linked
+                    {
+                        (
+                            suggestion.right_provider.clone(),
+                            suggestion.right_external_id.clone(),
+                        )
+                    } else if right_linked
+                        && !left_linked
+                    {
+                        (
+                            suggestion.left_provider.clone(),
+                            suggestion.left_external_id.clone(),
+                        )
+                    } else {
+                        (
+                            suggestion.right_provider.clone(),
+                            suggestion.right_external_id.clone(),
+                        )
+                    };
+
+                    let existing = db::find_album_by_provider_link(
+                        &state.db,
+                        &target_provider,
+                        &target_external_id,
+                    )
+                    .await
+                    .map_err(|e| format!("failed checking existing album link: {e}"))?;
+
+                    if let Some(existing_album_id) = existing
+                        && existing_album_id != suggestion.scope_id
+                    {
+                        return Err(
+                            "Cannot accept: provider album is already linked to another local album"
+                                .to_string(),
+                        );
+                    }
+
+                    let link = db::AlbumProviderLink {
+                        id: db::uuid_to_string(&db::new_uuid()),
+                        album_id: suggestion.scope_id.clone(),
+                        provider: target_provider,
+                        external_id: target_external_id,
+                        external_url: None,
+                        external_title: None,
+                        cover_ref: None,
+                    };
+                    let _ = db::upsert_album_provider_link(&state.db, &link).await;
+                }
+                "artist" => {
+                    let artist_links =
+                        db::load_artist_provider_links(&state.db, &suggestion.scope_id)
+                            .await
+                            .map_err(|e| format!("failed loading artist links: {e}"))?;
+                    let linked: std::collections::HashSet<(String, String)> = artist_links
+                        .iter()
+                        .map(|l| (l.provider.clone(), l.external_id.clone()))
+                        .collect();
+                    let left_linked =
+                        linked.contains(&(suggestion.left_provider.clone(), suggestion.left_external_id.clone()));
+                    let right_linked = linked
+                        .contains(&(suggestion.right_provider.clone(), suggestion.right_external_id.clone()));
+                    let (target_provider, target_external_id) = if left_linked
+                        && !right_linked
+                    {
+                        (
+                            suggestion.right_provider.clone(),
+                            suggestion.right_external_id.clone(),
+                        )
+                    } else if right_linked
+                        && !left_linked
+                    {
+                        (
+                            suggestion.left_provider.clone(),
+                            suggestion.left_external_id.clone(),
+                        )
+                    } else {
+                        (
+                            suggestion.right_provider.clone(),
+                            suggestion.right_external_id.clone(),
+                        )
+                    };
+
+                    let existing = db::find_artist_by_provider_link(
+                        &state.db,
+                        &target_provider,
+                        &target_external_id,
+                    )
+                    .await
+                    .map_err(|e| format!("failed checking existing artist link: {e}"))?;
+
+                    if let Some(existing_artist_id) = existing
+                        && existing_artist_id != suggestion.scope_id
+                    {
+                        return Err(
+                            "Cannot accept: provider artist is already linked to another local artist"
+                                .to_string(),
+                        );
+                    }
+
+                    let link = db::ArtistProviderLink {
+                        id: db::uuid_to_string(&db::new_uuid()),
+                        artist_id: suggestion.scope_id.clone(),
+                        provider: target_provider,
+                        external_id: target_external_id,
+                        external_url: None,
+                        external_name: None,
+                        image_ref: None,
+                    };
+                    let _ = db::upsert_artist_provider_link(&state.db, &link).await;
+
+                    // Pull albums from the newly linked provider, then recompute matches.
+                    let _ = services::sync_artist_albums(&state, &suggestion.scope_id).await;
+                    spawn_recompute_artist_match_suggestions(&state, suggestion.scope_id.clone());
+                }
+                _ => return Err("unknown suggestion scope type".to_string()),
+            }
+
+            let _ = db::set_match_suggestion_status(&state.db, &suggestion_id, "accepted").await;
+
+            if suggestion.scope_type == "album" {
+                // Keep artist-level suggestions fresh after album linking decisions.
+                let artist_id = {
+                    let albums = state.monitored_albums.read().await;
+                    albums
+                        .iter()
+                        .find(|a| a.id == suggestion.scope_id)
+                        .map(|a| a.artist_id.clone())
+                };
+                if let Some(artist_id) = artist_id {
+                    spawn_recompute_artist_match_suggestions(&state, artist_id);
+                }
+            }
+
+            state.notify_sse();
+        }
+
+        ServerAction::DismissMatchSuggestion { suggestion_id } => {
+            let scope = db::load_match_suggestion_by_id(&state.db, &suggestion_id)
+                .await
+                .ok()
+                .flatten();
+            let _ = db::set_match_suggestion_status(&state.db, &suggestion_id, "dismissed").await;
+
+            if let Some(suggestion) = scope
+                && suggestion.scope_type == "album"
+            {
+                let artist_id = {
+                    let albums = state.monitored_albums.read().await;
+                    albums
+                        .iter()
+                        .find(|a| a.id == suggestion.scope_id)
+                        .map(|a| a.artist_id.clone())
+                };
+                if let Some(artist_id) = artist_id {
+                    spawn_recompute_artist_match_suggestions(&state, artist_id);
+                }
+            }
+            state.notify_sse();
+        }
+
+        ServerAction::RefreshMatchSuggestions { artist_id } => {
+            let _ = recompute_artist_match_suggestions(&state, &artist_id).await;
+            state.notify_sse();
+        }
+
+        ServerAction::MergeAlbums {
+            target_album_id,
+            source_album_id,
+        } => {
+            services::merge_albums(&state, &target_album_id, &source_album_id).await?;
+
+            let artist_id = {
+                let albums = state.monitored_albums.read().await;
+                albums
+                    .iter()
+                    .find(|a| a.id == target_album_id)
+                    .map(|a| a.artist_id.clone())
+            };
+            if let Some(artist_id) = artist_id {
+                spawn_recompute_artist_match_suggestions(&state, artist_id);
+            }
             state.notify_sse();
         }
 

@@ -42,6 +42,7 @@ pub fn App() -> impl IntoView {
                 <Route path=path!("/") view=pages::dashboard::DashboardPage />
                 <Route path=path!("/artists") view=pages::artists::ArtistsPage />
                 <Route path=path!("/artists/:id") view=pages::artist_detail::ArtistDetailPage />
+                <Route path=path!("/artists/:id/merge-albums") view=pages::merge_albums::MergeAlbumsPage />
                 <Route path=path!("/artists/:artist_id/albums/:album_id") view=pages::album_detail::AlbumDetailPage />
                 <Route path=path!("/wanted") view=pages::wanted::WantedPage />
             </Routes>

@@ -267,9 +267,7 @@ pub(crate) async fn load_albums(pool: &SqlitePool) -> Result<Vec<MonitoredAlbum>
             let artist_id: Vec<u8> = r.get("artist_id");
             MonitoredAlbum {
                 id: Uuid::from_slice(&id).unwrap_or_default().to_string(),
-                artist_id: Uuid::from_slice(&artist_id)
-                    .unwrap_or_default()
-                    .to_string(),
+                artist_id: Uuid::from_slice(&artist_id).unwrap_or_default().to_string(),
                 title: r.get("title"),
                 album_type: r.get("album_type"),
                 release_date: r.get("release_date"),
@@ -508,9 +506,7 @@ pub(crate) async fn load_artist_provider_links(
             let artist_id: Vec<u8> = r.get("artist_id");
             ArtistProviderLink {
                 id: Uuid::from_slice(&id).unwrap_or_default().to_string(),
-                artist_id: Uuid::from_slice(&artist_id)
-                    .unwrap_or_default()
-                    .to_string(),
+                artist_id: Uuid::from_slice(&artist_id).unwrap_or_default().to_string(),
                 provider: r.get("provider"),
                 external_id: r.get("external_id"),
                 external_url: r.get("external_url"),
@@ -599,9 +595,7 @@ pub(crate) async fn load_album_provider_links(
             let album_id: Vec<u8> = r.get("album_id");
             AlbumProviderLink {
                 id: Uuid::from_slice(&id).unwrap_or_default().to_string(),
-                album_id: Uuid::from_slice(&album_id)
-                    .unwrap_or_default()
-                    .to_string(),
+                album_id: Uuid::from_slice(&album_id).unwrap_or_default().to_string(),
                 provider: r.get("provider"),
                 external_id: r.get("external_id"),
                 external_url: r.get("external_url"),
@@ -674,9 +668,7 @@ pub(crate) async fn load_jobs(pool: &SqlitePool) -> Result<Vec<DownloadJob>, sql
             let album_id: Vec<u8> = r.get("album_id");
             DownloadJob {
                 id: Uuid::from_slice(&id).unwrap_or_default().to_string(),
-                album_id: Uuid::from_slice(&album_id)
-                    .unwrap_or_default()
-                    .to_string(),
+                album_id: Uuid::from_slice(&album_id).unwrap_or_default().to_string(),
                 source: r.get("source"),
                 album_title: r.get("album_title"),
                 artist_name: r.get("artist_name"),

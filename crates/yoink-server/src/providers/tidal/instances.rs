@@ -77,10 +77,7 @@ pub(crate) async fn candidate_base_urls(
     candidates
 }
 
-pub(crate) async fn ensure_instances_fresh(
-    cache: &RwLock<InstanceCache>,
-    http: &reqwest::Client,
-) {
+pub(crate) async fn ensure_instances_fresh(cache: &RwLock<InstanceCache>, http: &reqwest::Client) {
     let should_refresh = {
         let c = cache.read().await;
         c.is_stale()

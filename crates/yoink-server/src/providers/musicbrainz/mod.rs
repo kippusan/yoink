@@ -2,13 +2,13 @@ use std::{collections::HashMap, time::Duration};
 
 use async_trait::async_trait;
 use musicbrainz_rs::{
+    MusicBrainzClient,
     entity::{
         artist::{Artist as MbArtist, ArtistSearchQuery},
         release::Release as MbRelease,
         release_group::{ReleaseGroup, ReleaseGroupPrimaryType},
     },
     prelude::*,
-    MusicBrainzClient,
 };
 use serde_json::Value;
 use tracing::warn;
@@ -25,10 +25,7 @@ pub(crate) struct MusicBrainzProvider {
 impl MusicBrainzProvider {
     pub fn new() -> Self {
         let mut client = MusicBrainzClient::default();
-        let user_agent = format!(
-            "Yoink/{} (flyinpancake@pm.me)",
-            env!("CARGO_PKG_VERSION")
-        );
+        let user_agent = format!("Yoink/{} (flyinpancake@pm.me)", env!("CARGO_PKG_VERSION"));
         client
             .set_user_agent(&user_agent)
             .expect("invalid MusicBrainz user-agent");
@@ -90,24 +87,21 @@ impl MusicBrainzProvider {
         }
 
         // Score each release to find the best one
-        let best = releases
-            .into_iter()
-            .max_by_key(|r| {
-                let mut score: i32 = 0;
-                // Prefer Official releases
-                if r.status
-                    .as_ref()
-                    .is_some_and(|s| matches!(s, musicbrainz_rs::entity::release::ReleaseStatus::Official))
-                {
-                    score += 100;
-                }
-                // Prefer releases with more media (they likely have tracks)
-                if let Some(ref media) = r.media {
-                    let total_tracks: u32 = media.iter().map(|m| m.track_count).sum();
-                    score += total_tracks as i32;
-                }
-                score
-            });
+        let best = releases.into_iter().max_by_key(|r| {
+            let mut score: i32 = 0;
+            // Prefer Official releases
+            if r.status.as_ref().is_some_and(|s| {
+                matches!(s, musicbrainz_rs::entity::release::ReleaseStatus::Official)
+            }) {
+                score += 100;
+            }
+            // Prefer releases with more media (they likely have tracks)
+            if let Some(ref media) = r.media {
+                let total_tracks: u32 = media.iter().map(|m| m.track_count).sum();
+                score += total_tracks as i32;
+            }
+            score
+        });
 
         Ok(best)
     }
@@ -135,9 +129,7 @@ impl MetadataProvider for MusicBrainzProvider {
     }
 
     async fn search_artists(&self, query: &str) -> Result<Vec<ProviderArtist>, ProviderError> {
-        let lucene_query = ArtistSearchQuery::query_builder()
-            .artist(query)
-            .build();
+        let lucene_query = ArtistSearchQuery::query_builder().artist(query).build();
 
         let result = MbArtist::search(lucene_query)
             .execute_with_client(&self.client)
@@ -156,10 +148,7 @@ impl MetadataProvider for MusicBrainzProvider {
                     Some(a.disambiguation)
                 };
                 let artist_type = a.artist_type.as_ref().map(|t| format!("{t:?}"));
-                let country = a
-                    .area
-                    .as_ref()
-                    .map(|area| area.name.clone());
+                let country = a.area.as_ref().map(|area| area.name.clone());
                 // Collect top tags by vote count, capped at 5.
                 let mut tag_pairs: Vec<(i32, String)> = a
                     .tags
@@ -195,7 +184,10 @@ impl MetadataProvider for MusicBrainzProvider {
         Ok(release_groups
             .into_iter()
             .map(|rg| {
-                let album_type = rg.primary_type.as_ref().map(|pt| primary_type_str(pt).to_string());
+                let album_type = rg
+                    .primary_type
+                    .as_ref()
+                    .map(|pt| primary_type_str(pt).to_string());
                 let release_date = rg.first_release_date.map(|d| d.0);
                 // Use release group MBID as cover art ref (for Cover Art Archive)
                 let cover_ref = Some(rg.id.clone());
@@ -257,10 +249,7 @@ impl MetadataProvider for MusicBrainzProvider {
                             .unwrap_or_default();
 
                         let mut extra = HashMap::new();
-                        extra.insert(
-                            "mb_recording_id".to_string(),
-                            Value::String(recording_id),
-                        );
+                        extra.insert("mb_recording_id".to_string(), Value::String(recording_id));
                         if let Some(ref isrc_val) = isrc {
                             extra.insert("isrc".to_string(), Value::String(isrc_val.clone()));
                         }
@@ -294,10 +283,7 @@ impl MetadataProvider for MusicBrainzProvider {
 
     fn validate_image_id(&self, image_id: &str) -> bool {
         // MusicBrainz IDs are UUIDs: 36 chars, hex digits and hyphens
-        image_id.len() == 36
-            && image_id
-                .chars()
-                .all(|c| c.is_ascii_hexdigit() || c == '-')
+        image_id.len() == 36 && image_id.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
     }
 
     fn image_url(&self, image_ref: &str, size: u16) -> String {
@@ -310,15 +296,11 @@ impl MetadataProvider for MusicBrainzProvider {
         } else {
             1200
         };
-        format!(
-            "https://coverartarchive.org/release-group/{image_ref}/front-{caa_size}"
-        )
+        format!("https://coverartarchive.org/release-group/{image_ref}/front-{caa_size}")
     }
 
     async fn fetch_cover_art_bytes(&self, image_ref: &str) -> Option<Vec<u8>> {
-        let url = format!(
-            "https://coverartarchive.org/release-group/{image_ref}/front-1200"
-        );
+        let url = format!("https://coverartarchive.org/release-group/{image_ref}/front-1200");
         let resp = self
             .http
             .get(&url)

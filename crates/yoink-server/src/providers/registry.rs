@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use super::{DownloadSource, MetadataProvider, ProviderArtist, ProviderError};
 use super::tidal::TidalProvider;
+use super::{DownloadSource, MetadataProvider, ProviderArtist, ProviderError};
 
 /// Central registry that holds all enabled providers and dispatches operations.
 pub(crate) struct ProviderRegistry {
@@ -42,10 +42,7 @@ impl ProviderRegistry {
 
     /// Fan-out search to all metadata providers concurrently.
     /// Returns a list of (provider_id, results).
-    pub async fn search_artists_all(
-        &self,
-        query: &str,
-    ) -> Vec<(String, Vec<ProviderArtist>)> {
+    pub async fn search_artists_all(&self, query: &str) -> Vec<(String, Vec<ProviderArtist>)> {
         let mut handles = Vec::new();
 
         for provider in &self.metadata {

@@ -97,10 +97,7 @@ pub(crate) struct DeezerProvider {
 
 impl DeezerProvider {
     pub fn new() -> Self {
-        let user_agent = format!(
-            "Yoink/{} (flyinpancake@pm.me)",
-            env!("CARGO_PKG_VERSION")
-        );
+        let user_agent = format!("Yoink/{} (flyinpancake@pm.me)", env!("CARGO_PKG_VERSION"));
 
         let http = reqwest::Client::builder()
             .user_agent(&user_agent)
@@ -150,14 +147,11 @@ impl DeezerProvider {
         }
 
         if !status.is_success() {
-            return Err(ProviderError(format!(
-                "Deezer HTTP {status}: {body}"
-            )));
+            return Err(ProviderError(format!("Deezer HTTP {status}: {body}")));
         }
 
-        serde_json::from_str::<T>(&body).map_err(|e| {
-            ProviderError(format!("Deezer JSON parse error: {e}"))
-        })
+        serde_json::from_str::<T>(&body)
+            .map_err(|e| ProviderError(format!("Deezer JSON parse error: {e}")))
     }
 
     /// Build a Deezer API URL with query parameters (handles encoding).
@@ -174,13 +168,9 @@ impl DeezerProvider {
                 // Percent-encode the value for URL safety.
                 for byte in value.bytes() {
                     match byte {
-                        b'A'..=b'Z'
-                        | b'a'..=b'z'
-                        | b'0'..=b'9'
-                        | b'-'
-                        | b'_'
-                        | b'.'
-                        | b'~' => url.push(byte as char),
+                        b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                            url.push(byte as char)
+                        }
                         _ => {
                             url.push('%');
                             url.push_str(&format!("{byte:02X}"));
@@ -279,10 +269,10 @@ impl MetadataProvider for DeezerProvider {
                 if let Some(n) = a.nb_album {
                     disambiguation_parts.push(format!("{n} albums"));
                 }
-                if let Some(fans) = a.nb_fan {
-                    if fans > 0 {
-                        disambiguation_parts.push(format!("{} fans", format_fan_count(fans)));
-                    }
+                if let Some(fans) = a.nb_fan
+                    && fans > 0
+                {
+                    disambiguation_parts.push(format!("{} fans", format_fan_count(fans)));
                 }
                 let disambiguation = if disambiguation_parts.is_empty() {
                     None
@@ -309,9 +299,7 @@ impl MetadataProvider for DeezerProvider {
         &self,
         external_artist_id: &str,
     ) -> Result<Vec<ProviderAlbum>, ProviderError> {
-        let url = format!(
-            "{DEEZER_API_BASE}/artist/{external_artist_id}/albums?limit=50"
-        );
+        let url = format!("{DEEZER_API_BASE}/artist/{external_artist_id}/albums?limit=50");
         let albums = self.deezer_get_all::<DeezerAlbum>(&url).await?;
 
         Ok(albums
@@ -341,9 +329,7 @@ impl MetadataProvider for DeezerProvider {
         &self,
         external_album_id: &str,
     ) -> Result<(Vec<ProviderTrack>, HashMap<String, Value>), ProviderError> {
-        let url = format!(
-            "{DEEZER_API_BASE}/album/{external_album_id}/tracks?limit=200"
-        );
+        let url = format!("{DEEZER_API_BASE}/album/{external_album_id}/tracks?limit=200");
         let tracks = self.deezer_get_all::<DeezerTrack>(&url).await?;
 
         let album_extra = HashMap::new();
@@ -405,9 +391,7 @@ impl MetadataProvider for DeezerProvider {
             ("cover", image_ref)
         };
 
-        format!(
-            "https://cdn-images.dzcdn.net/images/{img_type}/{md5}/{sz}x{sz}-000000-80-0-0.jpg"
-        )
+        format!("https://cdn-images.dzcdn.net/images/{img_type}/{md5}/{sz}x{sz}-000000-80-0-0.jpg")
     }
 
     async fn fetch_cover_art_bytes(&self, image_ref: &str) -> Option<Vec<u8>> {
@@ -624,10 +608,7 @@ mod tests {
     #[test]
     fn api_url_multiple_params() {
         let url = DeezerProvider::api_url("/search/artist", &[("q", "test"), ("limit", "25")]);
-        assert_eq!(
-            url,
-            "https://api.deezer.com/search/artist?q=test&limit=25"
-        );
+        assert_eq!(url, "https://api.deezer.com/search/artist?q=test&limit=25");
     }
 
     // ── validate_image_id ──────────────────────────────────────

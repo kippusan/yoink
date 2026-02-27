@@ -44,7 +44,7 @@ pub async fn search_artists_scoped(
 
     (ctx.search_artists_scoped)(provider, trimmed)
         .await
-        .map_err(|e| ServerFnError::new(e))
+        .map_err(ServerFnError::new)
 }
 
 // ── Component ───────────────────────────────────────────────
@@ -201,10 +201,10 @@ pub fn LinkProviderDialog(
 
                                             // Auto-select first available provider if none selected
                                             let current = selected_provider.get_untracked();
-                                            if current.is_empty() {
-                                                if let Some(first) = all_providers.first() {
-                                                    set_selected_provider.set(first.clone());
-                                                }
+                                            if current.is_empty()
+                                                && let Some(first) = all_providers.first()
+                                            {
+                                                set_selected_provider.set(first.clone());
                                             }
 
                                             view! {

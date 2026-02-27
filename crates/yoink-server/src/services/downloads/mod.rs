@@ -21,9 +21,7 @@ use crate::{
 
 use super::library::update_wanted;
 use io::{normalize_quality, parse_track_number_from_path, sanitize_path_component as sanitize};
-use metadata::{
-    build_full_artist_string, extract_disc_number,
-};
+use metadata::{build_full_artist_string, extract_disc_number};
 use worker::download_album_job;
 
 pub(crate) async fn enqueue_album_download(state: &AppState, album: &MonitoredAlbum) {
@@ -228,8 +226,10 @@ pub(crate) async fn retag_existing_files(
     let artists = state.monitored_artists.read().await.clone();
     let albums = state.monitored_albums.read().await.clone();
 
-    let artist_names: HashMap<String, String> =
-        artists.into_iter().map(|a| (a.id.clone(), a.name)).collect();
+    let artist_names: HashMap<String, String> = artists
+        .into_iter()
+        .map(|a| (a.id.clone(), a.name))
+        .collect();
 
     let mut tagged_files = 0usize;
     let mut missing_files = 0usize;
@@ -246,9 +246,9 @@ pub(crate) async fn retag_existing_files(
             .unwrap_or_default();
 
         // Find the first link that has a matching metadata provider
-        let provider_link = album_links.iter().find(|l| {
-            state.registry.metadata_provider(&l.provider).is_some()
-        });
+        let provider_link = album_links
+            .iter()
+            .find(|l| state.registry.metadata_provider(&l.provider).is_some());
         let Some(link) = provider_link else {
             continue;
         };
@@ -329,9 +329,7 @@ pub(crate) async fn retag_existing_files(
 
         for (idx, track) in provider_tracks.iter().enumerate() {
             let track_number = track.track_number;
-            let track_info_extra = provider
-                .fetch_track_info_extra(&track.external_id)
-                .await;
+            let track_info_extra = provider.fetch_track_info_extra(&track.external_id).await;
             let track_artist = build_full_artist_string(
                 &track.title,
                 &track.extra,

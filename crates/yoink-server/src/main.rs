@@ -60,8 +60,22 @@ fn search_relevance_score(query: &str, name: &str) -> f64 {
     (jw + prefix_bonus + contains_bonus).min(1.0)
 }
 
+fn load_env_file_for_dev() {
+    match dotenvy::from_filename(".env") {
+        Ok(path) => {
+            eprintln!("Loaded environment from {}", path.display());
+        }
+        Err(dotenvy::Error::Io(err)) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) => {
+            eprintln!("Warning: failed to load .env: {err}");
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() {
+    load_env_file_for_dev();
+
     let app_config = AppConfig::from_env().unwrap_or_else(|err| {
         panic!("Failed to parse configuration from environment: {err}");
     });
@@ -128,6 +142,7 @@ async fn main() {
         music_root,
         default_quality,
         app_config.download_lyrics,
+        app_config.download_max_parallel_tracks,
         &db_url,
         registry,
     )
@@ -621,9 +636,8 @@ async fn dispatch_action_impl(
             provider,
             external_id,
         } => {
-            let _ =
-                db::delete_artist_provider_link(&state.db, &artist_id, &provider, &external_id)
-                    .await;
+            let _ = db::delete_artist_provider_link(&state.db, &artist_id, &provider, &external_id)
+                .await;
             state.notify_sse();
         }
 

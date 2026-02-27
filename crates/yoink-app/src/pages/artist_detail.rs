@@ -3,8 +3,8 @@ use lucide_leptos::ArrowLeft;
 
 use yoink_shared::{
     DownloadJob, MonitoredAlbum, MonitoredArtist, ProviderLink, ServerAction, album_cover_url,
-    album_type_label, album_type_rank, build_latest_jobs, provider_display_name,
-    status_class, status_label_text,
+    album_type_label, album_type_rank, build_latest_jobs, provider_display_name, status_class,
+    status_label_text,
 };
 
 use leptoaster::{ToastBuilder, ToastLevel, ToastPosition, expect_toaster};
@@ -51,7 +51,9 @@ pub async fn get_artist_detail(artist_id: String) -> Result<ArtistDetailData, Se
     let jobs = ctx.download_jobs.read().await.clone();
 
     let provider_links = if artist.is_some() {
-        (ctx.fetch_artist_links)(artist_id).await.unwrap_or_default()
+        (ctx.fetch_artist_links)(artist_id)
+            .await
+            .unwrap_or_default()
     } else {
         Vec::new()
     };
@@ -70,12 +72,7 @@ pub async fn get_artist_detail(artist_id: String) -> Result<ArtistDetailData, Se
 pub fn ArtistDetailPage() -> impl IntoView {
     set_page_title("Artist");
     let params = leptos_router::hooks::use_params_map();
-    let artist_id = move || {
-        params
-            .read()
-            .get("id")
-            .unwrap_or_default()
-    };
+    let artist_id = move || params.read().get("id").unwrap_or_default();
 
     let version = use_sse_version();
     let data = Resource::new(
@@ -208,7 +205,11 @@ fn ArtistDetailContent(
 ) -> impl IntoView {
     // Helper: unwrap the Option — safe because this component is only
     // rendered inside <Show when=move || artist_sig.get().is_some()>.
-    let a = move || artist.get().expect("ArtistDetailContent rendered without artist");
+    let a = move || {
+        artist
+            .get()
+            .expect("ArtistDetailContent rendered without artist")
+    };
 
     // Confirmation dialog signals
     let show_unmonitor_all = RwSignal::new(false);
@@ -516,7 +517,7 @@ fn ArtistDetailContent(
                                         key=|album| album.id.clone()
                                         let:album
                                     >
-                                        <AlbumSleeve album=album albums=albums jobs=jobs artist_id=artist.clone() />
+                                        <AlbumSleeve album=album albums=albums jobs=jobs artist_id=artist />
                                     </For>
                                 </div>
                             </div>
@@ -556,7 +557,11 @@ fn AlbumSleeve(
     let show_remove_files = RwSignal::new(false);
 
     let cover_url = album_cover_url(&album, 640);
-    let detail_url = format!("/artists/{}/albums/{}", artist_id.get_untracked().map(|a| a.id).unwrap_or_default(), album_id_for_url);
+    let detail_url = format!(
+        "/artists/{}/albums/{}",
+        artist_id.get_untracked().map(|a| a.id).unwrap_or_default(),
+        album_id_for_url
+    );
 
     // Reactively derive mutable album flags from the canonical albums signal.
     // This ensures that when the server updates an album (e.g. toggling monitor),

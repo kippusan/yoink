@@ -13,11 +13,7 @@ use axum::{
 use tokio_stream::{StreamExt as _, wrappers::BroadcastStream};
 use tracing::debug;
 
-use crate::{
-    db,
-    models::*,
-    state::AppState,
-};
+use crate::{db, models::*, state::AppState};
 
 pub(crate) fn build_router(state: AppState) -> Router {
     Router::new()

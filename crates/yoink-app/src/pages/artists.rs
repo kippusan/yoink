@@ -208,7 +208,11 @@ fn ArtistsContent(
     search_result: Resource<Result<SearchResult, ServerFnError>>,
 ) -> impl IntoView {
     let monitored_count = data.monitored.len();
-    let monitored_names: HashSet<String> = data.monitored.iter().map(|a| a.name.to_lowercase()).collect();
+    let monitored_names: HashSet<String> = data
+        .monitored
+        .iter()
+        .map(|a| a.name.to_lowercase())
+        .collect();
     let albums_by_artist = build_albums_by_artist(data.albums);
 
     // Client-side filter and sort for the collection grid

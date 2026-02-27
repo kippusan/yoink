@@ -75,6 +75,10 @@ pub(crate) struct AppConfig {
 
     #[envconfig(from = "DOWNLOAD_LYRICS", default = "false")]
     pub(crate) download_lyrics: bool,
+
+    /// Maximum number of tracks to download in parallel per album job.
+    #[envconfig(from = "DOWNLOAD_MAX_PARALLEL_TRACKS", default = "1")]
+    pub(crate) download_max_parallel_tracks: usize,
 }
 
 impl AppConfig {
@@ -118,6 +122,7 @@ impl AppConfig {
         self.leptos_site_root = normalize_string(&self.leptos_site_root, DEFAULT_SITE_ROOT);
         self.log_format =
             normalize_string(&self.log_format, DEFAULT_LOG_FORMAT).to_ascii_lowercase();
+        self.download_max_parallel_tracks = self.download_max_parallel_tracks.clamp(1, 16);
     }
 }
 

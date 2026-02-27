@@ -135,8 +135,8 @@ pub fn Sidebar(#[prop(into)] active: String) -> impl IntoView {
         // OS theme sync: listen to prefers-color-scheme changes.
         // Only apply when the user hasn't explicitly set a theme in localStorage.
         {
-            use wasm_bindgen::prelude::*;
             use wasm_bindgen::JsCast;
+            use wasm_bindgen::prelude::*;
 
             let win = leptos::prelude::window();
             if let Ok(Some(mql)) = win.match_media("(prefers-color-scheme: dark)") {

@@ -291,7 +291,10 @@ fn DashboardContent(data: DashboardData) -> impl IntoView {
 
 /// A single job row in the recent activity table.
 #[component]
-fn JobRow(job: DownloadJob, #[allow(unused_variables)] artist_names: HashMap<String, String>) -> impl IntoView {
+fn JobRow(
+    job: DownloadJob,
+    #[allow(unused_variables)] artist_names: HashMap<String, String>,
+) -> impl IntoView {
     let sc = status_class(&job.status).to_string();
     let st_label = status_label_text(&job.status, job.completed_tracks, job.total_tracks);
     let progress = format!("{}/{}", job.completed_tracks, job.total_tracks);

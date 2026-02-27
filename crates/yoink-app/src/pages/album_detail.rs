@@ -43,7 +43,9 @@ pub async fn get_album_detail(album_id: String) -> Result<AlbumDetailData, Serve
         None
     };
 
-    let tracks = (ctx.fetch_tracks)(album_id.clone()).await.unwrap_or_default();
+    let tracks = (ctx.fetch_tracks)(album_id.clone())
+        .await
+        .unwrap_or_default();
 
     let jobs = ctx.download_jobs.read().await.clone();
 

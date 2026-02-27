@@ -1,8 +1,11 @@
-use std::{path::{Path, PathBuf}, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, Semaphore};
 use tracing::{debug, warn};
 
 use super::{DownloadSource, DownloadTrackContext, PlaybackInfo, ProviderError, Quality};
@@ -14,6 +17,7 @@ pub(crate) struct SoulSeekSource {
     password: String,
     downloads_dir: PathBuf,
     token: RwLock<Option<String>>,
+    search_request_gate: Semaphore,
 }
 
 impl SoulSeekSource {
@@ -31,6 +35,8 @@ impl SoulSeekSource {
             password: password.trim().to_string(),
             downloads_dir: PathBuf::from(downloads_dir.trim()),
             token: RwLock::new(None),
+            // slskd allows only one concurrent POST /searches operation.
+            search_request_gate: Semaphore::new(1),
         }
     }
 
@@ -81,7 +87,11 @@ impl SoulSeekSource {
     ) -> Result<T, ProviderError> {
         let token = self.auth_token().await?;
         let url = format!("{}{}", self.slskd_base_url, path);
-        let mut req = self.http.post(url).json(body).timeout(Duration::from_secs(30));
+        let mut req = self
+            .http
+            .post(url)
+            .json(body)
+            .timeout(Duration::from_secs(30));
         if let Some(t) = token {
             req = req.bearer_auth(t);
         }
@@ -129,14 +139,93 @@ impl SoulSeekSource {
     }
 
     async fn start_search(&self, query: &str) -> Result<SlskdSearch, ProviderError> {
+        let _permit = self
+            .search_request_gate
+            .acquire()
+            .await
+            .map_err(|_| ProviderError("soulseek search gate closed".to_string()))?;
+
         let req = SlskdSearchRequest {
             id: None,
             search_text: query.to_string(),
-            search_timeout: Some(12),
-            response_limit: Some(100),
-            file_limit: Some(500),
+            // Let slskd defaults (and user-configured server options) decide limits.
+            search_timeout: None,
+            response_limit: None,
+            file_limit: None,
         };
-        self.post_json("/api/v0/searches", &req).await
+
+        // slskd returns 429 if a concurrent /searches request is in-flight.
+        // Retry briefly with backoff to smooth bursts from parallel track jobs.
+        let mut delay_secs = 1u64;
+        for attempt in 1..=5 {
+            match self.post_json("/api/v0/searches", &req).await {
+                Ok(search) => return Ok(search),
+                Err(err) if is_rate_limited_error(&err) && attempt < 5 => {
+                    warn!(
+                        query = %query,
+                        attempt,
+                        delay_secs,
+                        "SoulSeek search creation rate-limited; retrying"
+                    );
+                    tokio::time::sleep(Duration::from_secs(delay_secs)).await;
+                    delay_secs = (delay_secs * 2).min(8);
+                }
+                Err(err) => return Err(err),
+            }
+        }
+
+        Err(ProviderError(
+            "SoulSeek search creation failed after retries".to_string(),
+        ))
+    }
+
+    async fn search_with_fallback_queries(
+        &self,
+        ctx: &DownloadTrackContext,
+    ) -> Result<Vec<SlskdSearchResponse>, ProviderError> {
+        let mut queries = Vec::new();
+        let artist = ctx.artist_name.trim();
+        let album = ctx.album_title.trim();
+        let track = ctx.track_title.trim();
+
+        // Most precise to broadest.
+        queries.push(format!("{artist} {album} {track}"));
+        queries.push(format!("{artist} {track}"));
+        queries.push(format!("{track} {artist}"));
+        queries.push(format!("{track} {album}"));
+        queries.push(track.to_string());
+
+        // Add a normalized variant with punctuation removed for troublesome titles.
+        let track_norm = normalize(track);
+        if !track_norm.is_empty() && track_norm != track.to_ascii_lowercase() {
+            queries.push(track_norm);
+        }
+
+        // Deduplicate while preserving order.
+        let mut deduped = Vec::new();
+        for q in queries {
+            let q = q.trim().to_string();
+            if q.is_empty() || deduped.iter().any(|existing: &String| existing == &q) {
+                continue;
+            }
+            deduped.push(q);
+        }
+
+        for query in deduped {
+            let search = self.start_search(&query).await?;
+            let responses = self.poll_search_responses(&search.id, 75).await?;
+            if !responses.is_empty() {
+                debug!(
+                    query = %query,
+                    responses = responses.len(),
+                    "SoulSeek search returned responses"
+                );
+                return Ok(responses);
+            }
+            debug!(query = %query, "SoulSeek search returned no responses");
+        }
+
+        Ok(Vec::new())
     }
 
     async fn poll_search_responses(
@@ -145,22 +234,52 @@ impl SoulSeekSource {
         wait_secs: u64,
     ) -> Result<Vec<SlskdSearchResponse>, ProviderError> {
         let mut elapsed = 0u64;
-        let path = format!("/api/v0/searches/{search_id}/responses");
+        let state_path = format!("/api/v0/searches/{search_id}");
+        let responses_path = format!("/api/v0/searches/{search_id}/responses");
+        let mut saw_response_count = false;
 
         while elapsed < wait_secs {
-            let responses: Vec<SlskdSearchResponse> = self.get_json(&path).await?;
-            if !responses.is_empty() {
+            let status: SlskdSearchStatus = self.get_json(&state_path).await?;
+            if status.response_count > 0 {
+                saw_response_count = true;
+                let responses: Vec<SlskdSearchResponse> = self.get_json(&responses_path).await?;
+                if !responses.is_empty() {
+                    return Ok(responses);
+                }
+            }
+
+            if status.is_complete {
+                if !saw_response_count {
+                    return Ok(Vec::new());
+                }
+
+                // slskd may only materialize response payloads near completion.
+                let responses: Vec<SlskdSearchResponse> = self.get_json(&responses_path).await?;
                 return Ok(responses);
             }
+
             tokio::time::sleep(Duration::from_secs(2)).await;
             elapsed += 2;
+        }
+
+        if saw_response_count {
+            let responses: Vec<SlskdSearchResponse> = self.get_json(&responses_path).await?;
+            return Ok(responses);
         }
 
         Ok(Vec::new())
     }
 
-    async fn enqueue_download(&self, username: &str, filename: &str, size: i64) -> Result<(), ProviderError> {
-        let path = format!("/api/v0/transfers/downloads/{}", percent_encode_path(username));
+    async fn enqueue_download(
+        &self,
+        username: &str,
+        filename: &str,
+        size: i64,
+    ) -> Result<(), ProviderError> {
+        let path = format!(
+            "/api/v0/transfers/downloads/{}",
+            percent_encode_path(username)
+        );
         let body = vec![SlskdQueueDownloadRequest {
             filename: filename.to_string(),
             size,
@@ -168,7 +287,11 @@ impl SoulSeekSource {
 
         let token = self.auth_token().await?;
         let url = format!("{}{}", self.slskd_base_url, path);
-        let mut req = self.http.post(url).json(&body).timeout(Duration::from_secs(30));
+        let mut req = self
+            .http
+            .post(url)
+            .json(&body)
+            .timeout(Duration::from_secs(30));
         if let Some(t) = token {
             req = req.bearer_auth(t);
         }
@@ -194,7 +317,10 @@ impl SoulSeekSource {
         filename: &str,
         timeout_secs: u64,
     ) -> Result<PathBuf, ProviderError> {
-        let path = format!("/api/v0/transfers/downloads/{}", percent_encode_path(username));
+        let path = format!(
+            "/api/v0/transfers/downloads/{}",
+            percent_encode_path(username)
+        );
         let mut elapsed = 0u64;
 
         while elapsed < timeout_secs {
@@ -231,7 +357,10 @@ impl SoulSeekSource {
             }
 
             if seen_matching_transfer {
-                debug!(username, filename, "soulseek transfer found, waiting for completion");
+                debug!(
+                    username,
+                    filename, "soulseek transfer found, waiting for completion"
+                );
             }
 
             tokio::time::sleep(Duration::from_secs(2)).await;
@@ -292,10 +421,7 @@ impl DownloadSource for SoulSeekSource {
             ProviderError("SoulSeek requires track context for search/matching".to_string())
         })?;
 
-        let query = format!("{} {} {}", ctx.artist_name, ctx.album_title, ctx.track_title);
-        let search = self.start_search(&query).await?;
-
-        let responses = self.poll_search_responses(&search.id, 18).await?;
+        let responses = self.search_with_fallback_queries(ctx).await?;
         if responses.is_empty() {
             return Err(ProviderError(format!(
                 "No SoulSeek search responses for track '{}'",
@@ -448,6 +574,10 @@ fn percent_encode_path(s: &str) -> String {
     out
 }
 
+fn is_rate_limited_error(err: &ProviderError) -> bool {
+    err.0.contains("429") || err.0.to_ascii_lowercase().contains("too many requests")
+}
+
 fn sanitize_relative_path(input: &str) -> PathBuf {
     let relative = input.replace('\\', "/").trim_start_matches('/').to_string();
     let path = Path::new(&relative);
@@ -493,7 +623,8 @@ fn is_transfer_complete_success(t: &SlskdTransfer) -> bool {
         return true;
     }
 
-    if let (Some(total), Some(done), Some(remaining)) = (t.size, t.bytes_transferred, t.bytes_remaining)
+    if let (Some(total), Some(done), Some(remaining)) =
+        (t.size, t.bytes_transferred, t.bytes_remaining)
     {
         return total > 0 && remaining <= 0 && done >= total;
     }
@@ -526,6 +657,15 @@ struct SlskdSearchRequest {
 #[serde(rename_all = "camelCase")]
 struct SlskdSearch {
     id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SlskdSearchStatus {
+    #[serde(default)]
+    is_complete: bool,
+    #[serde(default)]
+    response_count: usize,
 }
 
 #[derive(Debug, Deserialize)]
@@ -645,9 +785,8 @@ mod tests {
             "audiophile\\ATMOS\\Frank Zappa\\Over-Nite Sensation\\1-03 Dirty Love.m4a",
         );
 
-        let expected_leaf = PathBuf::from(
-            "/tmp/slskd-downloads/Over-Nite Sensation/1-03 Dirty Love.m4a",
-        );
+        let expected_leaf =
+            PathBuf::from("/tmp/slskd-downloads/Over-Nite Sensation/1-03 Dirty Love.m4a");
 
         assert!(paths.contains(&expected_leaf));
     }

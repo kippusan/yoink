@@ -17,8 +17,7 @@ use self::{
 };
 use super::{
     DownloadSource, DownloadTrackContext, MetadataProvider, PlaybackInfo, ProviderAlbum,
-    ProviderArtist, ProviderError,
-    ProviderTrack, Quality,
+    ProviderArtist, ProviderError, ProviderTrack, Quality,
 };
 
 // ── TidalProvider ───────────────────────────────────────────────────
@@ -77,10 +76,7 @@ impl MetadataProvider for TidalProvider {
 
     async fn search_artists(&self, query: &str) -> Result<Vec<ProviderArtist>, ProviderError> {
         let parsed = self
-            .hifi_get::<HifiResponse>(
-                "/search/",
-                vec![("a".to_string(), query.to_string())],
-            )
+            .hifi_get::<HifiResponse>("/search/", vec![("a".to_string(), query.to_string())])
             .await
             .map_err(ProviderError::from)?;
 
@@ -204,11 +200,7 @@ impl MetadataProvider for TidalProvider {
             .ok()?;
 
         let data = response.get("data")?.as_object()?;
-        Some(
-            data.iter()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect(),
-        )
+        Some(data.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
     }
 
     fn validate_image_id(&self, image_id: &str) -> bool {
@@ -291,8 +283,7 @@ impl DownloadSource for TidalProvider {
                     .await
                     .map_err(ProviderError::from)?;
 
-                extract_download_payload(&fallback_playback.data)
-                    .map_err(ProviderError::from)
+                extract_download_payload(&fallback_playback.data).map_err(ProviderError::from)
             }
             Err(err) => Err(ProviderError::from(err)),
         }

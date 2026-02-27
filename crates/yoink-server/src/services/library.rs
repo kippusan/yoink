@@ -28,10 +28,7 @@ pub(crate) fn update_wanted(album: &mut MonitoredAlbum) {
 /// Groups incoming albums by identity key (title + year), merges all provider
 /// links onto a single local album per key, and picks the best provider source
 /// for display metadata.
-pub(crate) async fn sync_artist_albums(
-    state: &AppState,
-    artist_id: &str,
-) -> Result<(), String> {
+pub(crate) async fn sync_artist_albums(state: &AppState, artist_id: &str) -> Result<(), String> {
     let links = db::load_artist_provider_links(&state.db, artist_id)
         .await
         .map_err(|e| format!("failed to load provider links: {e}"))?;
@@ -96,10 +93,10 @@ pub(crate) async fn sync_artist_albums(
                     && k.as_bytes().get(title_part.len()) == Some(&b'|')
             })
             .cloned();
-        if let Some(dated_key) = dated_match {
-            if let Some(entries) = groups.remove(&dateless_key) {
-                groups.entry(dated_key).or_default().extend(entries);
-            }
+        if let Some(dated_key) = dated_match
+            && let Some(entries) = groups.remove(&dateless_key)
+        {
+            groups.entry(dated_key).or_default().extend(entries);
         }
     }
 
@@ -109,12 +106,10 @@ pub(crate) async fn sync_artist_albums(
     let mut albums = state.monitored_albums.write().await;
 
     // ── 3. Process each group ───────────────────────────────────────────
-    for (_, entries) in &groups {
+    for entries in groups.values() {
         // Pick the best album for display metadata.
-        let (best_provider, best_album) = entries
-            .iter()
-            .skip(1)
-            .fold(&entries[0], |acc, candidate| {
+        let (best_provider, best_album) =
+            entries.iter().skip(1).fold(&entries[0], |acc, candidate| {
                 if should_prefer_album(&acc.0, &acc.1, &candidate.0, &candidate.1) {
                     candidate
                 } else {
@@ -140,9 +135,10 @@ pub(crate) async fn sync_artist_albums(
                 existing.title = best_album.title.clone();
                 existing.album_type = best_album.album_type.clone();
                 existing.release_date = best_album.release_date.clone();
-                existing.cover_url = best_album.cover_ref.as_deref().map(|c| {
-                    yoink_shared::provider_image_url(best_provider, c, 640)
-                });
+                existing.cover_url = best_album
+                    .cover_ref
+                    .as_deref()
+                    .map(|c| yoink_shared::provider_image_url(best_provider, c, 640));
                 existing.explicit = best_album.explicit;
                 let _ = db::upsert_album(&state.db, existing).await;
             }
@@ -156,9 +152,10 @@ pub(crate) async fn sync_artist_albums(
                 title: best_album.title.clone(),
                 album_type: best_album.album_type.clone(),
                 release_date: best_album.release_date.clone(),
-                cover_url: best_album.cover_ref.as_deref().map(|c| {
-                    yoink_shared::provider_image_url(best_provider, c, 640)
-                }),
+                cover_url: best_album
+                    .cover_ref
+                    .as_deref()
+                    .map(|c| yoink_shared::provider_image_url(best_provider, c, 640)),
                 explicit: best_album.explicit,
                 monitored: false,
                 acquired: false,
@@ -207,8 +204,10 @@ pub(crate) async fn sync_artist_albums(
 
 pub(crate) async fn reconcile_library_files(state: &AppState) -> Result<usize, String> {
     let artists = state.monitored_artists.read().await.clone();
-    let artist_names: HashMap<String, String> =
-        artists.into_iter().map(|a| (a.id.clone(), a.name)).collect();
+    let artist_names: HashMap<String, String> = artists
+        .into_iter()
+        .map(|a| (a.id.clone(), a.name))
+        .collect();
     let albums_snapshot = state.monitored_albums.read().await.clone();
 
     let mut missing_ids = HashSet::new();
@@ -308,8 +307,7 @@ pub(crate) async fn scan_and_import_library(state: &AppState) -> Result<ScanImpo
             synced_artists.insert(artist_id.clone());
         }
 
-        if import_local_album(state, &artist_id, &local.album_title, local.year.as_deref()).await?
-        {
+        if import_local_album(state, &artist_id, &local.album_title, local.year.as_deref()).await? {
             imported_albums += 1;
         } else {
             unmatched_albums += 1;
@@ -418,10 +416,10 @@ async fn ensure_monitored_artist(
             break;
         }
         // Otherwise take the first result from any provider
-        if best_match.is_none() {
-            if let Some(first) = candidates.first().cloned() {
-                best_match = Some((provider_id.clone(), first));
-            }
+        if best_match.is_none()
+            && let Some(first) = candidates.first().cloned()
+        {
+            best_match = Some((provider_id.clone(), first));
         }
     }
 
@@ -584,11 +582,7 @@ fn album_identity_key(title: &str, release_date: Option<&str>) -> String {
     let year = release_date
         .and_then(|d| d.split('-').next())
         .filter(|y| !y.is_empty());
-    format!(
-        "{}|{}",
-        normalize_title(title),
-        year.unwrap_or("")
-    )
+    format!("{}|{}", normalize_title(title), year.unwrap_or(""))
 }
 
 /// Normalize a title for deduplication: lowercase, collapse Unicode punctuation

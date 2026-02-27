@@ -1,18 +1,21 @@
+use std::sync::Arc;
+
 use chrono::Utc;
 use tokio::fs;
+use tokio::task::JoinSet;
 use tracing::{debug, info, warn};
 
 use crate::{
     db,
     models::{DownloadJob, DownloadStatus},
-    providers::{DownloadTrackContext, PlaybackInfo, Quality},
+    providers::{
+        DownloadSource, DownloadTrackContext, MetadataProvider, PlaybackInfo, ProviderTrack,
+        Quality,
+    },
     state::AppState,
 };
 
-use super::io::{
-    has_flac_stream_marker, sanitize_path_component,
-    sniff_media_container,
-};
+use super::io::{has_flac_stream_marker, sanitize_path_component, sniff_media_container};
 use super::lyrics::{fetch_track_lyrics, write_lrc_sidecar};
 use super::metadata::{
     TrackMetadata, build_full_artist_string, extract_disc_number, write_audio_metadata,
@@ -35,7 +38,9 @@ pub(crate) async fn download_album_job(state: &AppState, job: DownloadJob) -> Re
     // If the source itself has metadata, prefer it; otherwise use highest-priority linked metadata.
     let metadata_link = album_links
         .iter()
-        .find(|l| l.provider == job.source && state.registry.metadata_provider(&l.provider).is_some())
+        .find(|l| {
+            l.provider == job.source && state.registry.metadata_provider(&l.provider).is_some()
+        })
         .or_else(|| {
             album_links
                 .iter()
@@ -47,7 +52,12 @@ pub(crate) async fn download_album_job(state: &AppState, job: DownloadJob) -> Re
     let metadata_provider = state
         .registry
         .metadata_provider(&metadata_link.provider)
-        .ok_or_else(|| format!("Metadata provider '{}' not available", metadata_link.provider))?;
+        .ok_or_else(|| {
+            format!(
+                "Metadata provider '{}' not available",
+                metadata_link.provider
+            )
+        })?;
 
     let external_album_id = &metadata_link.external_id;
 
@@ -103,9 +113,7 @@ pub(crate) async fn download_album_job(state: &AppState, job: DownloadJob) -> Re
         None
     };
 
-    let artist_dir = state
-        .music_root
-        .join(sanitize_path_component(artist_name));
+    let artist_dir = state.music_root.join(sanitize_path_component(artist_name));
     let album_dir = artist_dir.join(sanitize_path_component(&format!(
         "{} ({})",
         job.album_title, release_suffix
@@ -114,192 +122,344 @@ pub(crate) async fn download_album_job(state: &AppState, job: DownloadJob) -> Re
         .await
         .map_err(|err| format!("failed to create output directory: {err}"))?;
 
-    for (idx, track) in provider_tracks.iter().enumerate() {
-        debug!(
-            job_id = %job.id,
-            album_id = %job.album_id,
-            track_id = %track.external_id,
-            track_number = track.track_number,
-            track_title = %track.title,
-            "Resolving track playback"
-        );
+    let max_parallel = state.download_max_parallel_tracks.max(1);
+    info!(
+        job_id = %job.id,
+        album_id = %job.album_id,
+        max_parallel_tracks = max_parallel,
+        "Downloading tracks with configured parallelism"
+    );
 
-        let track_payload = download_source
-            .resolve_playback(
-                &track.external_id,
-                &requested_quality,
-                Some(&DownloadTrackContext {
-                    artist_name: artist_name.to_string(),
-                    album_title: job.album_title.clone(),
-                    track_title: track.title.clone(),
-                    duration_secs: Some(track.duration_secs),
-                }),
-            )
-            .await
-            .map_err(|e| format!("Failed to resolve playback for {}: {}", track.title, e.0))?;
+    let mut completed_tracks = 0usize;
+    let mut join_set = JoinSet::new();
+    let mut track_iter = provider_tracks.into_iter();
+    let mut in_flight = 0usize;
 
-        if matches!(track_payload, PlaybackInfo::SegmentUrls(_)) {
-            info!(
-                track_id = %track.external_id,
-                album_id = %job.album_id,
-                "Using segment download for track"
-            );
-        }
-
-        let track_number = track.track_number;
-        let track_info_extra = metadata_provider
-            .fetch_track_info_extra(&track.external_id)
-            .await;
-        let track_artist = build_full_artist_string(
-            &track.title,
-            &track.extra,
-            track_info_extra.as_ref(),
-            artist_name,
-        );
-        let disc_number = extract_disc_number(&track.extra, track_info_extra.as_ref());
-        let lyrics = if state.download_lyrics {
-            fetch_track_lyrics(
-                state,
-                &track.title,
-                artist_name,
-                &job.album_title,
-                Some(track.duration_secs),
-            )
-            .await
-        } else {
-            None
+    while in_flight < max_parallel {
+        let Some(track) = track_iter.next() else {
+            break;
         };
-        let base_name = format!(
-            "{:02} - {}",
-            track_number,
-            sanitize_path_component(&track.title)
-        );
-        let temp_path = album_dir.join(format!("{base_name}.part"));
+        in_flight += 1;
 
-        download_playback_to_file(&state.http, &track_payload, &temp_path)
+        let state_clone = state.clone();
+        let job_clone = job.clone();
+        let requested_quality_clone = requested_quality.clone();
+        let download_source_clone = Arc::clone(&download_source);
+        let metadata_provider_clone = Arc::clone(&metadata_provider);
+        let metadata_provider_id = metadata_provider.id().to_string();
+        let artist_name_owned = artist_name.to_string();
+        let release_suffix_owned = release_suffix.clone();
+        let album_dir_clone = album_dir.clone();
+        let album_extra_clone = album_extra.clone();
+        let cover_art_clone = cover_art.clone();
+
+        join_set.spawn(async move {
+            process_track_download(
+                state_clone,
+                job_clone,
+                track,
+                requested_quality_clone,
+                download_source_clone,
+                metadata_provider_clone,
+                metadata_provider_id,
+                artist_name_owned,
+                release_suffix_owned,
+                album_dir_clone,
+                album_extra_clone,
+                cover_art_clone,
+                total_tracks,
+            )
             .await
-            .map_err(|err| format!("failed track {}: {err}", track.title))?;
+        });
+    }
 
-        let mut final_ext = "flac";
-        if requested_quality == Quality::HiRes {
-            let is_flac = has_flac_stream_marker(&temp_path).await.map_err(|err| {
-                format!("failed validating downloaded track {}: {err}", track.title)
-            })?;
-            if !is_flac {
-                let container = sniff_media_container(&temp_path)
-                    .await
-                    .unwrap_or_else(|_| "unknown".to_string());
-                if container == "mp4" {
-                    final_ext = "m4a";
-                    info!(
-                        track_id = %track.external_id,
-                        album_id = %job.album_id,
-                        file = %temp_path.display(),
-                        "HI_RES track is MP4 container with FLAC audio; keeping as .m4a"
-                    );
-                } else {
-                    warn!(
-                        track_id = %track.external_id,
-                        album_id = %job.album_id,
-                        file = %temp_path.display(),
-                        container = %container,
-                        "HI_RES output is not FLAC, retrying track in LOSSLESS"
-                    );
+    while in_flight > 0 {
+        let Some(result) = join_set.join_next().await else {
+            break;
+        };
+        in_flight -= 1;
 
-                    let lossless_payload = download_source
-                        .resolve_playback(
-                            &track.external_id,
-                            &Quality::Lossless,
-                            Some(&DownloadTrackContext {
-                                artist_name: artist_name.to_string(),
-                                album_title: job.album_title.clone(),
-                                track_title: track.title.clone(),
-                                duration_secs: Some(track.duration_secs),
-                            }),
+        match result {
+            Ok(Ok(())) => {
+                completed_tracks += 1;
+                update_job_progress(
+                    state,
+                    &job.id,
+                    total_tracks,
+                    completed_tracks,
+                    DownloadStatus::Downloading,
+                    None,
+                )
+                .await;
+
+                if let Some(next_track) = track_iter.next() {
+                    in_flight += 1;
+
+                    let state_clone = state.clone();
+                    let job_clone = job.clone();
+                    let requested_quality_clone = requested_quality.clone();
+                    let download_source_clone = Arc::clone(&download_source);
+                    let metadata_provider_clone = Arc::clone(&metadata_provider);
+                    let metadata_provider_id = metadata_provider.id().to_string();
+                    let artist_name_owned = artist_name.to_string();
+                    let release_suffix_owned = release_suffix.clone();
+                    let album_dir_clone = album_dir.clone();
+                    let album_extra_clone = album_extra.clone();
+                    let cover_art_clone = cover_art.clone();
+
+                    join_set.spawn(async move {
+                        process_track_download(
+                            state_clone,
+                            job_clone,
+                            next_track,
+                            requested_quality_clone,
+                            download_source_clone,
+                            metadata_provider_clone,
+                            metadata_provider_id,
+                            artist_name_owned,
+                            release_suffix_owned,
+                            album_dir_clone,
+                            album_extra_clone,
+                            cover_art_clone,
+                            total_tracks,
                         )
                         .await
-                        .map_err(|e| {
-                            format!(
-                                "Failed to resolve LOSSLESS playback for {}: {}",
-                                track.title, e.0
-                            )
-                        })?;
-                    download_playback_to_file(&state.http, &lossless_payload, &temp_path)
-                        .await
-                        .map_err(|err| {
-                            format!("failed track {} in LOSSLESS fallback: {err}", track.title)
-                        })?;
-
-                    let fallback_is_flac =
-                        has_flac_stream_marker(&temp_path).await.map_err(|err| {
-                            format!(
-                                "failed validating LOSSLESS fallback track {}: {err}",
-                                track.title
-                            )
-                        })?;
-                    if !fallback_is_flac {
-                        return Err(format!(
-                            "track {} is not FLAC even after LOSSLESS fallback",
-                            track.title
-                        ));
-                    }
+                    });
                 }
             }
+            Ok(Err(err)) => return Err(err),
+            Err(err) => return Err(format!("track task join failed: {err}")),
         }
-
-        let final_path = album_dir.join(format!("{base_name}.{final_ext}"));
-
-        fs::rename(&temp_path, &final_path)
-            .await
-            .map_err(|err| format!("failed to finalize track file: {err}"))?;
-
-        if let Err(err) = write_audio_metadata(&TrackMetadata {
-            path: &final_path,
-            title: &track.title,
-            track_artist: &track_artist,
-            album_artist: artist_name,
-            album: &job.album_title,
-            track_number,
-            disc_number,
-            total_tracks: total_tracks as u32,
-            release_date: &release_suffix,
-            track_extra: &track.extra,
-            album_extra: &album_extra,
-            track_info_extra: track_info_extra.as_ref(),
-            lyrics_text: lyrics.as_ref().and_then(|v| v.embedded_text.as_deref()),
-            cover_art_jpeg: cover_art.as_deref(),
-        }) {
-            warn!(
-                track_id = %track.external_id,
-                file = %final_path.display(),
-                error = %err,
-                "Skipping metadata write for track"
-            );
-        }
-
-        if let Some(synced) = lyrics.as_ref().and_then(|v| v.synced_lrc.as_deref())
-            && let Err(err) = write_lrc_sidecar(&final_path, synced).await
-        {
-            warn!(
-                track_id = %track.external_id,
-                file = %final_path.display(),
-                error = %err,
-                "Skipping LRC sidecar write"
-            );
-        }
-
-        update_job_progress(
-            state,
-            &job.id,
-            total_tracks,
-            idx + 1,
-            DownloadStatus::Downloading,
-            None,
-        )
-        .await;
     }
 
     Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn process_track_download(
+    state: AppState,
+    job: DownloadJob,
+    track: ProviderTrack,
+    requested_quality: Quality,
+    download_source: Arc<dyn DownloadSource>,
+    metadata_provider: Arc<dyn MetadataProvider>,
+    metadata_provider_id: String,
+    artist_name: String,
+    release_suffix: String,
+    album_dir: std::path::PathBuf,
+    album_extra: std::collections::HashMap<String, serde_json::Value>,
+    cover_art: Option<Vec<u8>>,
+    total_tracks: usize,
+) -> Result<(), String> {
+    let base_name = format!(
+        "{:02} - {}",
+        track.track_number,
+        sanitize_path_component(&track.title)
+    );
+
+    if let Some(existing_path) = find_existing_track_file(&album_dir, &base_name).await {
+        info!(
+            track_id = %track.external_id,
+            file = %existing_path.display(),
+            "Skipping already downloaded track"
+        );
+        return Ok(());
+    }
+
+    debug!(
+        job_id = %job.id,
+        album_id = %job.album_id,
+        track_id = %track.external_id,
+        track_number = track.track_number,
+        track_title = %track.title,
+        "Resolving track playback"
+    );
+
+    let track_context = DownloadTrackContext {
+        artist_name: artist_name.clone(),
+        album_title: job.album_title.clone(),
+        track_title: track.title.clone(),
+        duration_secs: Some(track.duration_secs),
+    };
+
+    let (track_payload, resolved_source_id) = resolve_playback_with_fallback(
+        &state,
+        download_source.as_ref(),
+        &metadata_provider_id,
+        &track.external_id,
+        &track.title,
+        &requested_quality,
+        &track_context,
+    )
+    .await?;
+
+    if resolved_source_id != download_source.id() {
+        info!(
+            requested_source = %download_source.id(),
+            resolved_source = %resolved_source_id,
+            track_id = %track.external_id,
+            track_title = %track.title,
+            "Resolved playback via fallback source"
+        );
+    }
+
+    if matches!(track_payload, PlaybackInfo::SegmentUrls(_)) {
+        info!(
+            track_id = %track.external_id,
+            album_id = %job.album_id,
+            "Using segment download for track"
+        );
+    }
+
+    let track_number = track.track_number;
+    let track_info_extra = metadata_provider
+        .fetch_track_info_extra(&track.external_id)
+        .await;
+    let track_artist = build_full_artist_string(
+        &track.title,
+        &track.extra,
+        track_info_extra.as_ref(),
+        &artist_name,
+    );
+    let disc_number = extract_disc_number(&track.extra, track_info_extra.as_ref());
+    let lyrics = if state.download_lyrics {
+        fetch_track_lyrics(
+            &state,
+            &track.title,
+            &artist_name,
+            &job.album_title,
+            Some(track.duration_secs),
+        )
+        .await
+    } else {
+        None
+    };
+
+    let temp_path = album_dir.join(format!("{base_name}.part"));
+
+    download_playback_to_file(&state.http, &track_payload, &temp_path)
+        .await
+        .map_err(|err| format!("failed track {}: {err}", track.title))?;
+
+    let mut final_ext = "flac";
+    if requested_quality == Quality::HiRes {
+        let is_flac = has_flac_stream_marker(&temp_path)
+            .await
+            .map_err(|err| format!("failed validating downloaded track {}: {err}", track.title))?;
+        if !is_flac {
+            let container = sniff_media_container(&temp_path)
+                .await
+                .unwrap_or_else(|_| "unknown".to_string());
+            if container == "mp4" {
+                final_ext = "m4a";
+                info!(
+                    track_id = %track.external_id,
+                    album_id = %job.album_id,
+                    file = %temp_path.display(),
+                    "HI_RES track is MP4 container with FLAC audio; keeping as .m4a"
+                );
+            } else {
+                warn!(
+                    track_id = %track.external_id,
+                    album_id = %job.album_id,
+                    file = %temp_path.display(),
+                    container = %container,
+                    "HI_RES output is not FLAC, retrying track in LOSSLESS"
+                );
+
+                let (lossless_payload, _) = resolve_playback_with_fallback(
+                    &state,
+                    download_source.as_ref(),
+                    &metadata_provider_id,
+                    &track.external_id,
+                    &track.title,
+                    &Quality::Lossless,
+                    &track_context,
+                )
+                .await
+                .map_err(|e| {
+                    format!(
+                        "Failed to resolve LOSSLESS playback for {}: {e}",
+                        track.title
+                    )
+                })?;
+
+                download_playback_to_file(&state.http, &lossless_payload, &temp_path)
+                    .await
+                    .map_err(|err| {
+                        format!("failed track {} in LOSSLESS fallback: {err}", track.title)
+                    })?;
+
+                let fallback_is_flac = has_flac_stream_marker(&temp_path).await.map_err(|err| {
+                    format!(
+                        "failed validating LOSSLESS fallback track {}: {err}",
+                        track.title
+                    )
+                })?;
+                if !fallback_is_flac {
+                    return Err(format!(
+                        "track {} is not FLAC even after LOSSLESS fallback",
+                        track.title
+                    ));
+                }
+            }
+        }
+    }
+
+    let final_path = album_dir.join(format!("{base_name}.{final_ext}"));
+    fs::rename(&temp_path, &final_path)
+        .await
+        .map_err(|err| format!("failed to finalize track file: {err}"))?;
+
+    if let Err(err) = write_audio_metadata(&TrackMetadata {
+        path: &final_path,
+        title: &track.title,
+        track_artist: &track_artist,
+        album_artist: &artist_name,
+        album: &job.album_title,
+        track_number,
+        disc_number,
+        total_tracks: total_tracks as u32,
+        release_date: &release_suffix,
+        track_extra: &track.extra,
+        album_extra: &album_extra,
+        track_info_extra: track_info_extra.as_ref(),
+        lyrics_text: lyrics.as_ref().and_then(|v| v.embedded_text.as_deref()),
+        cover_art_jpeg: cover_art.as_deref(),
+    }) {
+        warn!(
+            track_id = %track.external_id,
+            file = %final_path.display(),
+            error = %err,
+            "Skipping metadata write for track"
+        );
+    }
+
+    if let Some(synced) = lyrics.as_ref().and_then(|v| v.synced_lrc.as_deref())
+        && let Err(err) = write_lrc_sidecar(&final_path, synced).await
+    {
+        warn!(
+            track_id = %track.external_id,
+            file = %final_path.display(),
+            error = %err,
+            "Skipping LRC sidecar write"
+        );
+    }
+
+    Ok(())
+}
+
+async fn find_existing_track_file(
+    album_dir: &std::path::Path,
+    base_name: &str,
+) -> Option<std::path::PathBuf> {
+    for ext in ["flac", "m4a", "mp3", "ogg", "wav", "aac"] {
+        let path = album_dir.join(format!("{base_name}.{ext}"));
+        if tokio::fs::try_exists(&path).await.ok()? {
+            return Some(path);
+        }
+    }
+    None
 }
 
 pub(crate) async fn update_job_progress(
@@ -363,4 +523,62 @@ fn metadata_provider_priority(provider_id: &str) -> u8 {
         "musicbrainz" => 1,
         _ => 5,
     }
+}
+
+async fn resolve_playback_with_fallback(
+    state: &AppState,
+    primary_source: &dyn crate::providers::DownloadSource,
+    metadata_provider_id: &str,
+    external_track_id: &str,
+    track_title: &str,
+    quality: &Quality,
+    context: &DownloadTrackContext,
+) -> Result<(PlaybackInfo, String), String> {
+    match primary_source
+        .resolve_playback(external_track_id, quality, Some(context))
+        .await
+    {
+        Ok(payload) => return Ok((payload, primary_source.id().to_string())),
+        Err(primary_err) => {
+            warn!(
+                source = %primary_source.id(),
+                track_id = %external_track_id,
+                track_title,
+                error = %primary_err.0,
+                "Primary download source failed to resolve playback; attempting fallback"
+            );
+        }
+    }
+
+    for source in state.registry.download_sources() {
+        if source.id() == primary_source.id() {
+            continue;
+        }
+
+        // Only try sources that can work without linked provider IDs,
+        // or those that match the metadata provider we fetched tracks from.
+        if source.requires_linked_provider() && source.id() != metadata_provider_id {
+            continue;
+        }
+
+        match source
+            .resolve_playback(external_track_id, quality, Some(context))
+            .await
+        {
+            Ok(payload) => return Ok((payload, source.id().to_string())),
+            Err(err) => {
+                warn!(
+                    source = %source.id(),
+                    track_id = %external_track_id,
+                    track_title,
+                    error = %err.0,
+                    "Fallback download source failed to resolve playback"
+                );
+            }
+        }
+    }
+
+    Err(format!(
+        "Failed to resolve playback for {track_title}: no source could resolve track"
+    ))
 }

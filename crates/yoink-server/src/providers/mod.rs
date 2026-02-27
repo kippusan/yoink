@@ -1,7 +1,7 @@
-pub(crate) mod soulseek;
 pub(crate) mod deezer;
 pub(crate) mod musicbrainz;
 pub(crate) mod registry;
+pub(crate) mod soulseek;
 pub(crate) mod tidal;
 
 use std::collections::HashMap;

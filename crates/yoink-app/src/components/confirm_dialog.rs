@@ -115,50 +115,50 @@ pub fn ConfirmDialog(
     let close_on_escape = move |ev: leptos::ev::KeyboardEvent| {
         if ev.key() == "Escape" {
             open.set(false);
-            return;
-        }
-        #[cfg(feature = "hydrate")]
-        {
-            if ev.key() == "Tab"
-                && let Some(dialog_el) = card_ref.get_untracked()
+        } else {
+            #[cfg(feature = "hydrate")]
             {
-                use wasm_bindgen::JsCast;
-                let el: &web_sys::Element = &dialog_el;
-                if let Ok(nodes) = el.query_selector_all(
-                    "button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])",
-                ) {
-                    let len = nodes.length();
-                    if len == 0 {
-                        return;
-                    }
-                    let first = nodes
-                        .item(0)
-                        .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok());
-                    let last = nodes
-                        .item(len - 1)
-                        .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok());
-                    if let (Some(first), Some(last)) = (first, last) {
-                        let doc = leptos::prelude::document();
-                        let active = doc.active_element();
-                        if ev.shift_key() {
-                            // Shift+Tab on first focusable → wrap to last
-                            if active
-                                .as_ref()
-                                .map(|a| *a == *first.as_ref())
-                                .unwrap_or(false)
-                            {
-                                ev.prevent_default();
-                                let _ = last.focus();
-                            }
-                        } else {
-                            // Tab on last focusable → wrap to first
-                            if active
-                                .as_ref()
-                                .map(|a| *a == *last.as_ref())
-                                .unwrap_or(false)
-                            {
-                                ev.prevent_default();
-                                let _ = first.focus();
+                if ev.key() == "Tab"
+                    && let Some(dialog_el) = card_ref.get_untracked()
+                {
+                    use wasm_bindgen::JsCast;
+                    let el: &web_sys::Element = &dialog_el;
+                    if let Ok(nodes) = el.query_selector_all(
+                        "button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])",
+                    ) {
+                        let len = nodes.length();
+                        if len == 0 {
+                            return;
+                        }
+                        let first = nodes
+                            .item(0)
+                            .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok());
+                        let last = nodes
+                            .item(len - 1)
+                            .and_then(|n| n.dyn_into::<web_sys::HtmlElement>().ok());
+                        if let (Some(first), Some(last)) = (first, last) {
+                            let doc = leptos::prelude::document();
+                            let active = doc.active_element();
+                            if ev.shift_key() {
+                                // Shift+Tab on first focusable → wrap to last
+                                if active
+                                    .as_ref()
+                                    .map(|a| *a == *first.as_ref())
+                                    .unwrap_or(false)
+                                {
+                                    ev.prevent_default();
+                                    let _ = last.focus();
+                                }
+                            } else {
+                                // Tab on last focusable → wrap to first
+                                if active
+                                    .as_ref()
+                                    .map(|a| *a == *last.as_ref())
+                                    .unwrap_or(false)
+                                {
+                                    ev.prevent_default();
+                                    let _ = first.focus();
+                                }
                             }
                         }
                     }

@@ -23,6 +23,7 @@ pub(crate) struct AppState {
     pub(crate) music_root: PathBuf,
     pub(crate) default_quality: String,
     pub(crate) download_lyrics: bool,
+    pub(crate) download_max_parallel_tracks: usize,
     pub(crate) registry: Arc<ProviderRegistry>,
 }
 
@@ -31,6 +32,7 @@ impl AppState {
         music_root: PathBuf,
         default_quality: String,
         download_lyrics: bool,
+        download_max_parallel_tracks: usize,
         db_url: &str,
         registry: ProviderRegistry,
     ) -> Self {
@@ -82,6 +84,7 @@ impl AppState {
             music_root,
             default_quality,
             download_lyrics,
+            download_max_parallel_tracks,
             registry: Arc::new(registry),
         }
     }

@@ -1,3 +1,4 @@
+pub(crate) mod deezer;
 pub(crate) mod musicbrainz;
 pub(crate) mod registry;
 pub(crate) mod tidal;

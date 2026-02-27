@@ -29,6 +29,10 @@ pub(crate) struct AppConfig {
     #[envconfig(from = "MUSICBRAINZ_ENABLED", default = "true")]
     pub(crate) musicbrainz_enabled: bool,
 
+    /// Whether the Deezer metadata provider is enabled. Defaults to true.
+    #[envconfig(from = "DEEZER_ENABLED", default = "true")]
+    pub(crate) deezer_enabled: bool,
+
     #[envconfig(from = "MUSIC_ROOT", default = "./music")]
     pub(crate) music_root: String,
 

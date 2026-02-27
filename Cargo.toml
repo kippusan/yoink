@@ -22,6 +22,7 @@ lucide-leptos = { version = "2", features = ["all-icons"] }
 
 # ── Server ──────────────────────────────────────────────────
 axum = { version = "0.8", features = ["form", "json", "macros"] }
+governor = "0.8"
 base64 = "0.22"
 envconfig = "0.11"
 lrclib-api-rs = "0.3"

@@ -23,7 +23,8 @@ use crate::{
     config::QUALITY_WARNING,
     logging::init_logging,
     providers::{
-        musicbrainz::MusicBrainzProvider, registry::ProviderRegistry, tidal::TidalProvider,
+        deezer::DeezerProvider, musicbrainz::MusicBrainzProvider, registry::ProviderRegistry,
+        tidal::TidalProvider,
     },
     routes::build_router,
     services::{download_worker_loop, reconcile_library_files},
@@ -103,6 +104,12 @@ async fn main() {
         let mb = Arc::new(MusicBrainzProvider::new());
         registry.register_metadata(Arc::clone(&mb) as Arc<dyn providers::MetadataProvider>);
         info!("MusicBrainz metadata provider enabled");
+    }
+
+    if app_config.deezer_enabled {
+        let deezer = Arc::new(DeezerProvider::new());
+        registry.register_metadata(Arc::clone(&deezer) as Arc<dyn providers::MetadataProvider>);
+        info!("Deezer metadata provider enabled");
     }
 
     let state = AppState::new(

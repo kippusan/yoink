@@ -24,7 +24,7 @@ use crate::{
     logging::init_logging,
     providers::{
         deezer::DeezerProvider, musicbrainz::MusicBrainzProvider, registry::ProviderRegistry,
-        tidal::TidalProvider,
+        soulseek::SoulSeekSource, tidal::TidalProvider,
     },
     routes::build_router,
     services::{download_worker_loop, reconcile_library_files},
@@ -110,6 +110,18 @@ async fn main() {
         let deezer = Arc::new(DeezerProvider::new());
         registry.register_metadata(Arc::clone(&deezer) as Arc<dyn providers::MetadataProvider>);
         info!("Deezer metadata provider enabled");
+    }
+
+    if app_config.soulseek_enabled {
+        let soulseek = Arc::new(SoulSeekSource::new(
+            reqwest::Client::new(),
+            app_config.slskd_base_url.clone(),
+            app_config.slskd_username.clone(),
+            app_config.slskd_password.clone(),
+            app_config.slskd_downloads_dir.clone(),
+        ));
+        registry.register_download(Arc::clone(&soulseek) as Arc<dyn providers::DownloadSource>);
+        info!("SoulSeek download source enabled");
     }
 
     let state = AppState::new(

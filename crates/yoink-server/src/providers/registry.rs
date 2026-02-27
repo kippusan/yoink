@@ -85,9 +85,9 @@ impl ProviderRegistry {
         self.metadata.iter().map(|p| p.id().to_string()).collect()
     }
 
-    /// List all enabled download source IDs.
-    pub fn download_source_ids(&self) -> Vec<String> {
-        self.download.iter().map(|s| s.id().to_string()).collect()
+    /// List all enabled download sources.
+    pub fn download_sources(&self) -> Vec<Arc<dyn DownloadSource>> {
+        self.download.clone()
     }
 
     /// Search artists using a specific metadata provider.

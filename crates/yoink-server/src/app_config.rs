@@ -9,6 +9,8 @@ const DEFAULT_MUSIC_ROOT: &str = "./music";
 const DEFAULT_DATABASE_URL: &str = "sqlite:./yoink.db?mode=rwc";
 const DEFAULT_SITE_ROOT: &str = "target/site";
 const DEFAULT_LOG_FORMAT: &str = "pretty";
+const DEFAULT_SLSKD_BASE_URL: &str = "http://127.0.0.1:5030";
+const DEFAULT_SLSKD_DOWNLOADS_DIR: &str = "./development/slskd-data/downloads";
 
 #[derive(Debug, Clone, Envconfig)]
 pub(crate) struct AppConfig {
@@ -32,6 +34,29 @@ pub(crate) struct AppConfig {
     /// Whether the Deezer metadata provider is enabled. Defaults to true.
     #[envconfig(from = "DEEZER_ENABLED", default = "true")]
     pub(crate) deezer_enabled: bool,
+
+    /// Whether the SoulSeek download source is enabled. Defaults to false.
+    #[envconfig(from = "SOULSEEK_ENABLED", default = "false")]
+    pub(crate) soulseek_enabled: bool,
+
+    /// Base URL for the slskd REST API.
+    #[envconfig(from = "SLSKD_BASE_URL", default = "http://127.0.0.1:5030")]
+    pub(crate) slskd_base_url: String,
+
+    /// Optional slskd web username for JWT auth.
+    #[envconfig(from = "SLSKD_USERNAME", default = "")]
+    pub(crate) slskd_username: String,
+
+    /// Optional slskd web password for JWT auth.
+    #[envconfig(from = "SLSKD_PASSWORD", default = "")]
+    pub(crate) slskd_password: String,
+
+    /// Local path to slskd downloads directory.
+    #[envconfig(
+        from = "SLSKD_DOWNLOADS_DIR",
+        default = "./development/slskd-data/downloads"
+    )]
+    pub(crate) slskd_downloads_dir: String,
 
     #[envconfig(from = "MUSIC_ROOT", default = "./music")]
     pub(crate) music_root: String,
@@ -80,6 +105,13 @@ impl AppConfig {
             normalize_string(&self.hifi_api_base_url, DEFAULT_TIDAL_API_BASE_URL)
                 .trim_end_matches('/')
                 .to_string();
+        self.slskd_base_url = normalize_string(&self.slskd_base_url, DEFAULT_SLSKD_BASE_URL)
+            .trim_end_matches('/')
+            .to_string();
+        self.slskd_downloads_dir =
+            normalize_string(&self.slskd_downloads_dir, DEFAULT_SLSKD_DOWNLOADS_DIR);
+        self.slskd_username = normalize_string_opt(&self.slskd_username).unwrap_or_default();
+        self.slskd_password = normalize_string_opt(&self.slskd_password).unwrap_or_default();
         self.music_root = normalize_string(&self.music_root, DEFAULT_MUSIC_ROOT);
         self.default_quality = normalize_string(&self.default_quality, DEFAULT_QUALITY);
         self.database_url = normalize_string(&self.database_url, DEFAULT_DATABASE_URL);

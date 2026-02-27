@@ -69,19 +69,29 @@ pub(crate) async fn enqueue_album_download(state: &AppState, album: &MonitoredAl
         let links = db::load_album_provider_links(&state.db, &album.id)
             .await
             .unwrap_or_default();
-        // Prefer the first link whose provider is a registered download source
-        let download_source_ids = state.registry.download_source_ids();
-        links
+        let download_sources = state.registry.download_sources();
+        let download_source_ids: Vec<String> = download_sources
+            .iter()
+            .map(|s| s.id().to_string())
+            .collect();
+
+        // Prefer a linked provider that is also a download source.
+        let linked = links
             .iter()
             .find(|l| download_source_ids.contains(&l.provider))
-            .map(|l| l.provider.clone())
-            .unwrap_or_else(|| {
-                // Fall back to the first available download source
-                download_source_ids
-                    .first()
-                    .cloned()
-                    .unwrap_or_else(|| "tidal".to_string())
-            })
+            .map(|l| l.provider.clone());
+
+        if let Some(id) = linked {
+            id
+        } else {
+            // Fall back to a source that can operate without provider-linked IDs.
+            download_sources
+                .iter()
+                .find(|s| !s.requires_linked_provider())
+                .map(|s| s.id().to_string())
+                .or_else(|| download_source_ids.first().cloned())
+                .unwrap_or_else(|| "tidal".to_string())
+        }
     };
 
     let job_id = db::uuid_to_string(&db::new_uuid());

@@ -16,7 +16,8 @@ use self::{
     models::*,
 };
 use super::{
-    DownloadSource, MetadataProvider, PlaybackInfo, ProviderAlbum, ProviderArtist, ProviderError,
+    DownloadSource, DownloadTrackContext, MetadataProvider, PlaybackInfo, ProviderAlbum,
+    ProviderArtist, ProviderError,
     ProviderTrack, Quality,
 };
 
@@ -250,6 +251,7 @@ impl DownloadSource for TidalProvider {
         &self,
         external_track_id: &str,
         quality: &Quality,
+        _context: Option<&DownloadTrackContext>,
     ) -> Result<PlaybackInfo, ProviderError> {
         let quality_str = quality.as_str().to_string();
         let playback = self

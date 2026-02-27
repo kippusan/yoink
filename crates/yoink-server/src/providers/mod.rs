@@ -1,9 +1,11 @@
+pub(crate) mod soulseek;
 pub(crate) mod deezer;
 pub(crate) mod musicbrainz;
 pub(crate) mod registry;
 pub(crate) mod tidal;
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use async_trait::async_trait;
 use serde_json::Value;
@@ -85,6 +87,17 @@ pub(crate) enum PlaybackInfo {
     DirectUrl(String),
     /// Multiple segment URLs to concatenate (e.g. DASH).
     SegmentUrls(Vec<String>),
+    /// A local file path that has already been downloaded.
+    LocalFile(PathBuf),
+}
+
+/// Supplemental context for download sources that cannot resolve by track ID alone.
+#[derive(Debug, Clone)]
+pub(crate) struct DownloadTrackContext {
+    pub artist_name: String,
+    pub album_title: String,
+    pub track_title: String,
+    pub duration_secs: Option<u32>,
 }
 
 // ── Quality ─────────────────────────────────────────────────────────
@@ -171,10 +184,16 @@ pub(crate) trait DownloadSource: Send + Sync {
     /// Unique source identifier (e.g. "tidal").
     fn id(&self) -> &str;
 
+    /// Whether this source requires provider-linked external IDs.
+    fn requires_linked_provider(&self) -> bool {
+        true
+    }
+
     /// Resolve playback info (download URL / segments) for a track.
     async fn resolve_playback(
         &self,
         external_track_id: &str,
         quality: &Quality,
+        context: Option<&DownloadTrackContext>,
     ) -> Result<PlaybackInfo, ProviderError>;
 }

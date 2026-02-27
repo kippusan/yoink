@@ -5,7 +5,7 @@ use tracing::{debug, info, warn};
 use crate::{
     db,
     models::{DownloadJob, DownloadStatus},
-    providers::{PlaybackInfo, Quality},
+    providers::{DownloadTrackContext, PlaybackInfo, Quality},
     state::AppState,
 };
 
@@ -26,28 +26,30 @@ pub(crate) async fn download_album_job(state: &AppState, job: DownloadJob) -> Re
         .await
         .map_err(|e| format!("failed to load album provider links: {e}"))?;
 
-    // Find the download source matching the job's source field
-    let source_link = album_links
-        .iter()
-        .find(|l| l.provider == job.source)
-        .ok_or_else(|| {
-            format!(
-                "No {} provider link found for this album",
-                job.source
-            )
-        })?;
-
     let download_source = state
         .registry
         .download_source(&job.source)
         .ok_or_else(|| format!("Download source '{}' not available", job.source))?;
 
+    // Pick a metadata provider link independently from the download source.
+    // If the source itself has metadata, prefer it; otherwise use highest-priority linked metadata.
+    let metadata_link = album_links
+        .iter()
+        .find(|l| l.provider == job.source && state.registry.metadata_provider(&l.provider).is_some())
+        .or_else(|| {
+            album_links
+                .iter()
+                .filter(|l| state.registry.metadata_provider(&l.provider).is_some())
+                .max_by_key(|l| metadata_provider_priority(&l.provider))
+        })
+        .ok_or_else(|| "No metadata provider link found for this album".to_string())?;
+
     let metadata_provider = state
         .registry
-        .metadata_provider(&job.source)
-        .ok_or_else(|| format!("Metadata provider '{}' not available", job.source))?;
+        .metadata_provider(&metadata_link.provider)
+        .ok_or_else(|| format!("Metadata provider '{}' not available", metadata_link.provider))?;
 
-    let external_album_id = &source_link.external_id;
+    let external_album_id = &metadata_link.external_id;
 
     info!(
         job_id = %job.id,
@@ -94,8 +96,8 @@ pub(crate) async fn download_album_job(state: &AppState, job: DownloadJob) -> Re
         .and_then(|album| album.release_date.clone())
         .unwrap_or_else(|| "Unknown".to_string());
 
-    // Fetch cover art via the provider
-    let cover_art = if let Some(cover_ref) = source_link.cover_ref.as_deref() {
+    // Fetch cover art via the selected metadata provider
+    let cover_art = if let Some(cover_ref) = metadata_link.cover_ref.as_deref() {
         metadata_provider.fetch_cover_art_bytes(cover_ref).await
     } else {
         None
@@ -123,7 +125,16 @@ pub(crate) async fn download_album_job(state: &AppState, job: DownloadJob) -> Re
         );
 
         let track_payload = download_source
-            .resolve_playback(&track.external_id, &requested_quality)
+            .resolve_playback(
+                &track.external_id,
+                &requested_quality,
+                Some(&DownloadTrackContext {
+                    artist_name: artist_name.to_string(),
+                    album_title: job.album_title.clone(),
+                    track_title: track.title.clone(),
+                    duration_secs: Some(track.duration_secs),
+                }),
+            )
             .await
             .map_err(|e| format!("Failed to resolve playback for {}: {}", track.title, e.0))?;
 
@@ -196,7 +207,16 @@ pub(crate) async fn download_album_job(state: &AppState, job: DownloadJob) -> Re
                     );
 
                     let lossless_payload = download_source
-                        .resolve_playback(&track.external_id, &Quality::Lossless)
+                        .resolve_playback(
+                            &track.external_id,
+                            &Quality::Lossless,
+                            Some(&DownloadTrackContext {
+                                artist_name: artist_name.to_string(),
+                                album_title: job.album_title.clone(),
+                                track_title: track.title.clone(),
+                                duration_secs: Some(track.duration_secs),
+                            }),
+                        )
                         .await
                         .map_err(|e| {
                             format!(
@@ -316,10 +336,31 @@ async fn download_playback_to_file(
     payload: &PlaybackInfo,
     path: &std::path::Path,
 ) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .map_err(|e| format!("failed to create parent directory: {e}"))?;
+    }
+
     use super::io::DownloadPayload;
     let io_payload = match payload {
         PlaybackInfo::DirectUrl(url) => DownloadPayload::DirectUrl(url.clone()),
         PlaybackInfo::SegmentUrls(urls) => DownloadPayload::DashSegmentUrls(urls.clone()),
+        PlaybackInfo::LocalFile(local_path) => {
+            tokio::fs::copy(local_path, path)
+                .await
+                .map_err(|e| format!("failed copying local file {}: {e}", local_path.display()))?;
+            return Ok(());
+        }
     };
     super::io::download_payload_to_file(http, &io_payload, path).await
+}
+
+fn metadata_provider_priority(provider_id: &str) -> u8 {
+    match provider_id {
+        "tidal" => 10,
+        "deezer" => 9,
+        "musicbrainz" => 1,
+        _ => 5,
+    }
 }

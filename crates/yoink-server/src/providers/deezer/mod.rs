@@ -465,3 +465,381 @@ fn format_fan_count(count: u64) -> String {
         count.to_string()
     }
 }
+
+// ── Tests ───────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── fan_count_to_popularity ─────────────────────────────────
+
+    #[test]
+    fn popularity_zero_fans() {
+        assert_eq!(fan_count_to_popularity(0), 0);
+    }
+
+    #[test]
+    fn popularity_hundred_fans() {
+        // log10(100) = 2, 2/8*100 = 25
+        assert_eq!(fan_count_to_popularity(100), 25);
+    }
+
+    #[test]
+    fn popularity_ten_thousand_fans() {
+        // log10(10_000) = 4, 4/8*100 = 50
+        assert_eq!(fan_count_to_popularity(10_000), 50);
+    }
+
+    #[test]
+    fn popularity_one_million_fans() {
+        // log10(1_000_000) = 6, 6/8*100 = 75
+        assert_eq!(fan_count_to_popularity(1_000_000), 75);
+    }
+
+    #[test]
+    fn popularity_hundred_million_fans() {
+        // log10(100_000_000) = 8, 8/8*100 = 100
+        assert_eq!(fan_count_to_popularity(100_000_000), 100);
+    }
+
+    #[test]
+    fn popularity_clamped_at_100() {
+        // Anything beyond 10^8 should still cap at 100.
+        assert_eq!(fan_count_to_popularity(u64::MAX), 100);
+    }
+
+    // ── map_record_type ────────────────────────────────────────
+
+    #[test]
+    fn record_type_album() {
+        assert_eq!(map_record_type("album"), "ALBUM");
+    }
+
+    #[test]
+    fn record_type_single() {
+        assert_eq!(map_record_type("single"), "SINGLE");
+    }
+
+    #[test]
+    fn record_type_ep() {
+        assert_eq!(map_record_type("ep"), "EP");
+    }
+
+    #[test]
+    fn record_type_compile() {
+        assert_eq!(map_record_type("compile"), "COMPILATION");
+    }
+
+    #[test]
+    fn record_type_unknown() {
+        assert_eq!(map_record_type("whatever"), "OTHER");
+    }
+
+    // ── extract_md5_from_picture_url ───────────────────────────
+
+    #[test]
+    fn extract_md5_real_url() {
+        let url = "https://cdn-images.dzcdn.net/images/artist/abcdef0123456789abcdef0123456789/250x250-000000-80-0-0.jpg";
+        assert_eq!(
+            extract_md5_from_picture_url(Some(url)),
+            Some("abcdef0123456789abcdef0123456789".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_md5_none_input() {
+        assert_eq!(extract_md5_from_picture_url(None), None);
+    }
+
+    #[test]
+    fn extract_md5_no_hex_segment() {
+        assert_eq!(
+            extract_md5_from_picture_url(Some("https://example.com/no-md5-here")),
+            None
+        );
+    }
+
+    #[test]
+    fn extract_md5_uppercase_hex() {
+        let url = "https://cdn-images.dzcdn.net/images/cover/ABCDEF0123456789ABCDEF0123456789/500x500-000000-80-0-0.jpg";
+        assert_eq!(
+            extract_md5_from_picture_url(Some(url)),
+            Some("ABCDEF0123456789ABCDEF0123456789".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_md5_bare_string_no_slashes() {
+        // A bare 32-char hex string is still found — split("/") yields the whole string.
+        assert_eq!(
+            extract_md5_from_picture_url(Some("abcdef0123456789abcdef0123456789")),
+            Some("abcdef0123456789abcdef0123456789".to_string())
+        );
+    }
+
+    // ── format_fan_count ───────────────────────────────────────
+
+    #[test]
+    fn format_fans_zero() {
+        assert_eq!(format_fan_count(0), "0");
+    }
+
+    #[test]
+    fn format_fans_small() {
+        assert_eq!(format_fan_count(999), "999");
+    }
+
+    #[test]
+    fn format_fans_thousands() {
+        assert_eq!(format_fan_count(1_500), "2K");
+    }
+
+    #[test]
+    fn format_fans_millions() {
+        assert_eq!(format_fan_count(2_500_000), "2.5M");
+    }
+
+    // ── DeezerProvider::api_url ────────────────────────────────
+
+    #[test]
+    fn api_url_no_params() {
+        let url = DeezerProvider::api_url("/search/artist", &[]);
+        assert_eq!(url, "https://api.deezer.com/search/artist");
+    }
+
+    #[test]
+    fn api_url_single_param() {
+        let url = DeezerProvider::api_url("/search/artist", &[("q", "daft punk")]);
+        assert_eq!(url, "https://api.deezer.com/search/artist?q=daft%20punk");
+    }
+
+    #[test]
+    fn api_url_special_chars() {
+        let url = DeezerProvider::api_url("/search/artist", &[("q", "björk & co")]);
+        // 'ö' is 0xC3 0xB6 in UTF-8, '&' is 0x26, space is 0x20
+        assert!(url.contains("q=bj%C3%B6rk%20%26%20co"));
+    }
+
+    #[test]
+    fn api_url_multiple_params() {
+        let url = DeezerProvider::api_url("/search/artist", &[("q", "test"), ("limit", "25")]);
+        assert_eq!(
+            url,
+            "https://api.deezer.com/search/artist?q=test&limit=25"
+        );
+    }
+
+    // ── validate_image_id ──────────────────────────────────────
+
+    #[test]
+    fn validate_bare_md5() {
+        let provider = DeezerProvider::new();
+        assert!(provider.validate_image_id("abcdef0123456789abcdef0123456789"));
+    }
+
+    #[test]
+    fn validate_artist_prefixed_md5() {
+        let provider = DeezerProvider::new();
+        assert!(provider.validate_image_id("artist:abcdef0123456789abcdef0123456789"));
+    }
+
+    #[test]
+    fn validate_too_short() {
+        let provider = DeezerProvider::new();
+        assert!(!provider.validate_image_id("abcdef"));
+    }
+
+    #[test]
+    fn validate_non_hex() {
+        let provider = DeezerProvider::new();
+        assert!(!provider.validate_image_id("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"));
+    }
+
+    #[test]
+    fn validate_artist_prefix_short_hash() {
+        let provider = DeezerProvider::new();
+        assert!(!provider.validate_image_id("artist:tooshort"));
+    }
+
+    // ── image_url ──────────────────────────────────────────────
+
+    #[test]
+    fn image_url_cover_small() {
+        let provider = DeezerProvider::new();
+        let url = provider.image_url("abcdef0123456789abcdef0123456789", 50);
+        assert_eq!(
+            url,
+            "https://cdn-images.dzcdn.net/images/cover/abcdef0123456789abcdef0123456789/56x56-000000-80-0-0.jpg"
+        );
+    }
+
+    #[test]
+    fn image_url_cover_large() {
+        let provider = DeezerProvider::new();
+        let url = provider.image_url("abcdef0123456789abcdef0123456789", 800);
+        assert_eq!(
+            url,
+            "https://cdn-images.dzcdn.net/images/cover/abcdef0123456789abcdef0123456789/1000x1000-000000-80-0-0.jpg"
+        );
+    }
+
+    #[test]
+    fn image_url_artist_prefix() {
+        let provider = DeezerProvider::new();
+        let url = provider.image_url("artist:abcdef0123456789abcdef0123456789", 200);
+        assert_eq!(
+            url,
+            "https://cdn-images.dzcdn.net/images/artist/abcdef0123456789abcdef0123456789/250x250-000000-80-0-0.jpg"
+        );
+    }
+
+    #[test]
+    fn image_url_exact_boundary_500() {
+        let provider = DeezerProvider::new();
+        let url = provider.image_url("abcdef0123456789abcdef0123456789", 500);
+        assert_eq!(
+            url,
+            "https://cdn-images.dzcdn.net/images/cover/abcdef0123456789abcdef0123456789/500x500-000000-80-0-0.jpg"
+        );
+    }
+
+    // ── JSON deserialization ───────────────────────────────────
+
+    #[test]
+    fn deserialize_error_body() {
+        let json = r#"{"error":{"type":"QuotaException","message":"Too many requests","code":4}}"#;
+        let err: DeezerErrorBody = serde_json::from_str(json).expect("should parse error body");
+        assert_eq!(err.error.error_type, "QuotaException");
+        assert_eq!(err.error.message, "Too many requests");
+        assert_eq!(err.error.code, 4);
+    }
+
+    #[test]
+    fn deserialize_artist_search_response() {
+        let json = r#"{
+            "data": [
+                {
+                    "id": 27,
+                    "name": "Daft Punk",
+                    "picture_medium": "https://cdn-images.dzcdn.net/images/artist/f2bc007e9133c946ac3c3907ddc5571b/250x250-000000-80-0-0.jpg",
+                    "picture_big": "https://cdn-images.dzcdn.net/images/artist/f2bc007e9133c946ac3c3907ddc5571b/500x500-000000-80-0-0.jpg",
+                    "nb_album": 32,
+                    "nb_fan": 4875548,
+                    "link": "https://www.deezer.com/artist/27"
+                }
+            ],
+            "total": 1,
+            "next": null
+        }"#;
+
+        let resp: DeezerList<DeezerArtist> =
+            serde_json::from_str(json).expect("should parse artist list");
+
+        assert_eq!(resp.data.len(), 1);
+        let artist = &resp.data[0];
+        assert_eq!(artist.id, 27);
+        assert_eq!(artist.name, "Daft Punk");
+        assert_eq!(artist.nb_album, Some(32));
+        assert_eq!(artist.nb_fan, Some(4875548));
+        assert!(artist.picture_big.is_some());
+        assert!(resp.next.is_none());
+    }
+
+    #[test]
+    fn deserialize_album_response() {
+        let json = r#"{
+            "data": [
+                {
+                    "id": 302127,
+                    "title": "Discovery",
+                    "record_type": "album",
+                    "release_date": "2001-03-07",
+                    "md5_image": "2e018122cb56986277102d2041a592c8",
+                    "explicit_lyrics": false
+                }
+            ],
+            "total": 1
+        }"#;
+
+        let resp: DeezerList<DeezerAlbum> =
+            serde_json::from_str(json).expect("should parse album list");
+
+        assert_eq!(resp.data.len(), 1);
+        let album = &resp.data[0];
+        assert_eq!(album.id, 302127);
+        assert_eq!(album.title, "Discovery");
+        assert_eq!(album.record_type.as_deref(), Some("album"));
+        assert_eq!(album.release_date.as_deref(), Some("2001-03-07"));
+        assert_eq!(
+            album.md5_image.as_deref(),
+            Some("2e018122cb56986277102d2041a592c8")
+        );
+        assert!(!album.explicit_lyrics);
+    }
+
+    #[test]
+    fn deserialize_track_response() {
+        let json = r#"{
+            "data": [
+                {
+                    "id": 3135556,
+                    "title": "One More Time",
+                    "title_version": "",
+                    "isrc": "GBDUW0000059",
+                    "duration": 320,
+                    "track_position": 1,
+                    "disk_number": 1,
+                    "explicit_lyrics": false
+                }
+            ],
+            "total": 1
+        }"#;
+
+        let resp: DeezerList<DeezerTrack> =
+            serde_json::from_str(json).expect("should parse track list");
+
+        assert_eq!(resp.data.len(), 1);
+        let track = &resp.data[0];
+        assert_eq!(track.id, 3135556);
+        assert_eq!(track.title, "One More Time");
+        assert_eq!(track.isrc.as_deref(), Some("GBDUW0000059"));
+        assert_eq!(track.duration, 320);
+        assert_eq!(track.track_position, Some(1));
+        assert_eq!(track.disk_number, Some(1));
+        assert!(!track.explicit_lyrics);
+    }
+
+    #[test]
+    fn deserialize_missing_optional_fields() {
+        // Deezer sometimes omits optional fields entirely.
+        let json = r#"{
+            "data": [
+                {
+                    "id": 999,
+                    "title": "Minimal Track",
+                    "duration": 180
+                }
+            ],
+            "total": 1
+        }"#;
+
+        let resp: DeezerList<DeezerTrack> =
+            serde_json::from_str(json).expect("should parse with missing optionals");
+
+        let track = &resp.data[0];
+        assert_eq!(track.id, 999);
+        assert!(track.title_version.is_none());
+        assert!(track.isrc.is_none());
+        assert_eq!(track.track_position, None);
+        assert_eq!(track.disk_number, None);
+        assert!(!track.explicit_lyrics); // default false
+    }
+
+    #[test]
+    fn error_body_does_not_match_normal_response() {
+        // A normal list response should NOT deserialize as DeezerErrorBody.
+        let json = r#"{"data":[],"total":0}"#;
+        assert!(serde_json::from_str::<DeezerErrorBody>(json).is_err());
+    }
+}

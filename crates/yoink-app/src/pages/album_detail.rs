@@ -11,7 +11,8 @@ use crate::components::toast::{dispatch_with_toast, dispatch_with_toast_loading}
 use crate::components::{ConfirmDialog, ErrorPanel, Sidebar};
 use crate::hooks::{set_page_title, use_sse_version};
 use crate::styles::{
-    BTN, BTN_DANGER, BTN_PRIMARY, GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, MUTED, btn_cls, cls,
+    BTN, BTN_DANGER, BTN_PRIMARY, BREADCRUMB_CURRENT, BREADCRUMB_LINK, BREADCRUMB_NAV,
+    BREADCRUMB_SEP, GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, HEADER_BAR, MUTED, btn_cls, cls,
 };
 
 // ── DTO ─────────────────────────────────────────────────────
@@ -97,8 +98,14 @@ pub fn AlbumDetailPage() -> impl IntoView {
             <div class="ml-[220px] max-md:ml-0 flex-1 min-h-screen">
                 <Transition fallback=move || view! {
                     <div>
-                        <div class="bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[16px] border-b border-black/[.06] dark:border-white/[.06] px-6 max-md:pl-14 py-3.5 flex items-center justify-between sticky top-0 z-40">
-                            <div class="h-5 w-36 bg-zinc-200 dark:bg-zinc-700 rounded animate-pulse"></div>
+                        <div class=HEADER_BAR>
+                            <nav class=BREADCRUMB_NAV aria-label="Breadcrumb">
+                                <a href="/artists" class=BREADCRUMB_LINK>"Artists"</a>
+                                <span class=BREADCRUMB_SEP><ChevronRight /></span>
+                                <div class="h-4 w-20 bg-zinc-200 dark:bg-zinc-700 rounded animate-pulse"></div>
+                                <span class=BREADCRUMB_SEP><ChevronRight /></span>
+                                <div class="h-4 w-28 bg-zinc-200 dark:bg-zinc-700 rounded animate-pulse"></div>
+                            </nav>
                         </div>
                         <div class="p-6 max-md:p-4">
                             // Skeleton hero card
@@ -152,15 +159,29 @@ pub fn AlbumDetailPage() -> impl IntoView {
                                 </div>
                             }.into_any(),
                             Ok(data) => match data.album {
-                                None => view! {
-                                    <div class="p-6">
-                                        <div class="text-zinc-500">"Album not found."</div>
-                                        <a href="/artists" class={cls(BTN, "mt-4 inline-flex items-center gap-1.5")}>
-                                            <ArrowLeft size=14 />
-                                            "All Artists"
-                                        </a>
-                                    </div>
-                                }.into_any(),
+                                None => {
+                                    let back_href = format!("/artists/{}", aid);
+                                    view! {
+                                        <div>
+                                            <div class=HEADER_BAR>
+                                                <nav class=BREADCRUMB_NAV aria-label="Breadcrumb">
+                                                    <a href="/artists" class=BREADCRUMB_LINK>"Artists"</a>
+                                                    <span class=BREADCRUMB_SEP><ChevronRight /></span>
+                                                    <a href=back_href class=BREADCRUMB_LINK>"Artist"</a>
+                                                    <span class=BREADCRUMB_SEP><ChevronRight /></span>
+                                                    <span class=BREADCRUMB_CURRENT>"Not Found"</span>
+                                                </nav>
+                                            </div>
+                                            <div class="p-6">
+                                                <div class="text-zinc-500">"Album not found."</div>
+                                                <a href="/artists" class={cls(BTN, "mt-4 inline-flex items-center gap-1.5")}>
+                                                    <ArrowLeft size=14 />
+                                                    "All Artists"
+                                                </a>
+                                            </div>
+                                        </div>
+                                    }.into_any()
+                                }
                                 Some(album) => {
                                     view! {
                                         <AlbumDetailContent
@@ -279,18 +300,16 @@ fn AlbumDetailContent(
 
     view! {
         // ── Sticky header with breadcrumb ───────────────────
-        <div class="bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[16px] border-b border-black/[.06] dark:border-white/[.06] px-6 max-md:pl-14 py-3.5 flex items-center justify-between sticky top-0 z-40">
-            <nav class="flex items-center gap-1.5 text-sm min-w-0" aria-label="Breadcrumb">
-                <a href=artist_link.clone() class="text-zinc-500 dark:text-zinc-400 hover:text-blue-500 dark:hover:text-blue-400 no-underline truncate max-w-[200px]">
+        <div class=HEADER_BAR>
+            <nav class=BREADCRUMB_NAV aria-label="Breadcrumb">
+                <a href="/artists" class=BREADCRUMB_LINK>"Artists"</a>
+                <span class=BREADCRUMB_SEP><ChevronRight /></span>
+                <a href=artist_link.clone() class=BREADCRUMB_LINK>
                     {artist_name.clone()}
                 </a>
-                <span class="text-zinc-400 dark:text-zinc-500 shrink-0"><ChevronRight size=14 /></span>
-                <span class="text-zinc-900 dark:text-zinc-100 font-semibold truncate">{album_title.clone()}</span>
+                <span class=BREADCRUMB_SEP><ChevronRight /></span>
+                <span class=BREADCRUMB_CURRENT>{album_title.clone()}</span>
             </nav>
-            <a href=artist_link.clone() class={cls(BTN, "px-2.5 py-0.5 text-xs no-underline inline-flex items-center gap-1.5 shrink-0")}>
-                <ArrowLeft size=14 />
-                "Back"
-            </a>
         </div>
 
         <div class="p-6 max-md:p-4">
@@ -532,27 +551,53 @@ fn AlbumDetailContent(
                     view! {
                         <div class={cls(GLASS_BODY, "p-0!")}>
                             <div class="divide-y divide-black/[.04] dark:divide-white/[.04]">
-                                {tracks.iter().map(|t| {
-                                    let num = t.track_number;
-                                    let title = t.title.clone();
-                                    let version = t.version.clone();
-                                    let dur = t.duration_display.clone();
-                                    view! {
-                                        <div class="flex items-center gap-3 px-5 py-2.5 transition-colors duration-100 hover:bg-blue-500/[.03] dark:hover:bg-blue-500/[.05]">
-                                            <span class="w-8 text-right text-xs tabular-nums text-zinc-400 dark:text-zinc-500 shrink-0">{num}</span>
-                                            <div class="flex-1 min-w-0 truncate">
-                                                <span class="text-sm text-zinc-800 dark:text-zinc-200">{title}</span>
-                                                {match version {
-                                                    Some(v) if !v.is_empty() => view! {
-                                                        <span class="text-xs text-zinc-400 dark:text-zinc-500 ml-1.5">{format!("({v})")}</span>
-                                                    }.into_any(),
-                                                    _ => view! { <span></span> }.into_any(),
-                                                }}
+                                {
+                                    let has_multiple_discs = tracks.iter().any(|t| t.disc_number > 1);
+                                    tracks.iter().map(|t| {
+                                        let num = t.track_number;
+                                        let disc = t.disc_number;
+                                        let title = t.title.clone();
+                                        let version = t.version.clone();
+                                        let dur = t.duration_display.clone();
+                                        let explicit = t.explicit;
+                                        let isrc = t.isrc.clone();
+                                        let track_num_display = if has_multiple_discs {
+                                            format!("{disc}-{num}")
+                                        } else {
+                                            num.to_string()
+                                        };
+                                        view! {
+                                            <div class="flex items-center gap-3 px-5 py-2.5 transition-colors duration-100 hover:bg-blue-500/[.03] dark:hover:bg-blue-500/[.05]">
+                                                <span class="w-8 text-right text-xs tabular-nums text-zinc-400 dark:text-zinc-500 shrink-0">{track_num_display}</span>
+                                                <div class="flex-1 min-w-0">
+                                                    <div class="flex items-center gap-1.5 truncate">
+                                                        <span class="text-sm text-zinc-800 dark:text-zinc-200 truncate">{title}</span>
+                                                        {match version {
+                                                            Some(v) if !v.is_empty() => view! {
+                                                                <span class="text-xs text-zinc-400 dark:text-zinc-500 shrink-0">{format!("({v})")}</span>
+                                                            }.into_any(),
+                                                            _ => view! { <span></span> }.into_any(),
+                                                        }}
+                                                        {if explicit {
+                                                            view! {
+                                                                <span class="inline-flex items-center justify-center px-1 py-px text-[9px] font-bold leading-none tracking-wide uppercase rounded bg-zinc-200 text-zinc-500 dark:bg-zinc-700 dark:text-zinc-400 shrink-0">"E"</span>
+                                                            }.into_any()
+                                                        } else {
+                                                            view! { <span></span> }.into_any()
+                                                        }}
+                                                    </div>
+                                                    {match isrc {
+                                                        Some(code) if !code.is_empty() => view! {
+                                                            <span class="block text-[10px] font-mono text-zinc-400/70 dark:text-zinc-600 leading-tight mt-0.5">{code}</span>
+                                                        }.into_any(),
+                                                        _ => view! { <span></span> }.into_any(),
+                                                    }}
+                                                </div>
+                                                <span class="text-xs tabular-nums text-zinc-400 dark:text-zinc-500 shrink-0">{dur}</span>
                                             </div>
-                                            <span class="text-xs tabular-nums text-zinc-400 dark:text-zinc-500 shrink-0">{dur}</span>
-                                        </div>
-                                    }
-                                }).collect_view()}
+                                        }
+                                    }).collect_view()
+                                }
                             </div>
                         </div>
                     }.into_any()

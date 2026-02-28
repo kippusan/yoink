@@ -1,5 +1,5 @@
 use leptos::prelude::*;
-use lucide_leptos::ArrowLeft;
+use lucide_leptos::{ArrowLeft, ChevronRight};
 
 use yoink_shared::{
     DownloadJob, MatchSuggestion, MonitoredAlbum, MonitoredArtist, ProviderLink, ServerAction,
@@ -14,7 +14,8 @@ use crate::components::toast::{dispatch_with_toast, dispatch_with_toast_loading}
 use crate::components::{ConfirmDialog, ErrorPanel, LinkProviderDialog, Sidebar};
 use crate::hooks::{set_page_title, use_sse_version};
 use crate::styles::{
-    BTN, BTN_DANGER, BTN_PRIMARY, EMPTY, GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, MUTED,
+    BTN, BTN_DANGER, BTN_PRIMARY, BREADCRUMB_CURRENT, BREADCRUMB_LINK, BREADCRUMB_NAV,
+    BREADCRUMB_SEP, EMPTY, GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, HEADER_BAR, MUTED,
     SELECT, btn_cls, cls,
 };
 
@@ -130,8 +131,12 @@ pub fn ArtistDetailPage() -> impl IntoView {
                 // Skeleton — shown only until first data arrives
                 <Show when=move || !has_loaded.get()>
                     <div>
-                        <div class="bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[16px] border-b border-black/[.06] dark:border-white/[.06] px-6 max-md:pl-14 py-3.5 flex items-center justify-between sticky top-0 z-40">
-                            <div class="h-5 w-36 bg-zinc-200 dark:bg-zinc-700 rounded animate-pulse"></div>
+                        <div class=HEADER_BAR>
+                            <nav class=BREADCRUMB_NAV aria-label="Breadcrumb">
+                                <a href="/artists" class=BREADCRUMB_LINK>"Artists"</a>
+                                <span class=BREADCRUMB_SEP><ChevronRight /></span>
+                                <div class="h-4 w-28 bg-zinc-200 dark:bg-zinc-700 rounded animate-pulse"></div>
+                            </nav>
                         </div>
                         <div class="p-6 max-md:p-4">
                             <div class="mb-5 bg-white/70 dark:bg-zinc-800/60 rounded-xl border border-black/[.06] dark:border-white/[.08] p-5">
@@ -186,12 +191,21 @@ pub fn ArtistDetailPage() -> impl IntoView {
                 </Show>
                 // Artist not found
                 <Show when=move || has_loaded.get() && artist_sig.get().is_none() && load_error.get().is_none()>
-                    <div class="p-6">
-                        <div class="text-zinc-500">"Artist not found."</div>
-                        <a href="/artists" class={cls(BTN, "mt-4 inline-flex items-center gap-1.5")}>
-                            <ArrowLeft size=14 />
-                            "All Artists"
-                        </a>
+                    <div>
+                        <div class=HEADER_BAR>
+                            <nav class=BREADCRUMB_NAV aria-label="Breadcrumb">
+                                <a href="/artists" class=BREADCRUMB_LINK>"Artists"</a>
+                                <span class=BREADCRUMB_SEP><ChevronRight /></span>
+                                <span class=BREADCRUMB_CURRENT>"Not Found"</span>
+                            </nav>
+                        </div>
+                        <div class="p-6">
+                            <div class="text-zinc-500">"Artist not found."</div>
+                            <a href="/artists" class={cls(BTN, "mt-4 inline-flex items-center gap-1.5")}>
+                                <ArrowLeft size=14 />
+                                "All Artists"
+                            </a>
+                        </div>
                     </div>
                 </Show>
                 // Main content — mounted once, patched in place via signals
@@ -238,17 +252,17 @@ fn ArtistDetailContent(
     let (album_sort, set_album_sort) = signal("type".to_string());
 
     view! {
-        // Header — reads artist signal reactively
+        // Header with breadcrumb — reads artist signal reactively
         {move || {
             let a = a();
             set_page_title(&a.name);
             view! {
-                <div class="bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[16px] border-b border-black/[.06] dark:border-white/[.06] px-6 max-md:pl-14 py-3.5 flex items-center justify-between sticky top-0 z-40">
-                    <h1 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 m-0">{a.name}</h1>
-                    <a href="/artists" class={cls(BTN, "px-2.5 py-0.5 text-xs no-underline inline-flex items-center gap-1.5")}>
-                        <ArrowLeft size=14 />
-                        "All Artists"
-                    </a>
+                <div class=HEADER_BAR>
+                    <nav class=BREADCRUMB_NAV aria-label="Breadcrumb">
+                        <a href="/artists" class=BREADCRUMB_LINK>"Artists"</a>
+                        <span class=BREADCRUMB_SEP><ChevronRight /></span>
+                        <span class=BREADCRUMB_CURRENT>{a.name}</span>
+                    </nav>
                 </div>
             }
         }}

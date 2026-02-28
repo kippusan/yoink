@@ -14,7 +14,8 @@ use crate::actions::dispatch_action;
 use crate::components::{ErrorPanel, Sidebar};
 use crate::hooks::{set_page_title, use_sse_version};
 use crate::styles::{
-    BTN_PRIMARY, EMPTY, GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, MUTED, SELECT, btn_cls, cls,
+    BTN_PRIMARY, BREADCRUMB_CURRENT, BREADCRUMB_NAV, EMPTY, GLASS, GLASS_BODY, GLASS_HEADER,
+    GLASS_TITLE, HEADER_BAR, MUTED, SELECT, btn_cls, cls,
 };
 
 // ── Page-specific Tailwind class constants ──────────────────
@@ -150,8 +151,10 @@ pub fn ArtistsPage() -> impl IntoView {
             <div class="ml-[220px] max-md:ml-0 flex-1 min-h-screen">
                 <Transition fallback=move || view! {
                     <div>
-                        <div class="bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[16px] border-b border-black/[.06] dark:border-white/[.06] px-6 max-md:pl-14 py-3.5 flex items-center justify-between sticky top-0 z-40">
-                            <h1 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 m-0">"Artists"</h1>
+                        <div class=HEADER_BAR>
+                            <nav class=BREADCRUMB_NAV aria-label="Breadcrumb">
+                                <span class=BREADCRUMB_CURRENT>"Artists"</span>
+                            </nav>
                         </div>
                         <div class="p-6 max-md:p-4">
                             // Skeleton search bar
@@ -235,8 +238,10 @@ fn ArtistsContent(
 
     view! {
         // Header
-        <div class="bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[16px] border-b border-black/[.06] dark:border-white/[.06] px-6 max-md:pl-14 py-3.5 flex items-center justify-between sticky top-0 z-40">
-            <h1 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 m-0">"Artists"</h1>
+        <div class=HEADER_BAR>
+            <nav class=BREADCRUMB_NAV aria-label="Breadcrumb">
+                <span class=BREADCRUMB_CURRENT>"Artists"</span>
+            </nav>
             <span class={cls(MUTED, "text-[13px]")}>{format!("{monitored_count} monitored")}</span>
         </div>
 

@@ -11,7 +11,7 @@ use musicbrainz_rs::{
     prelude::*,
 };
 use serde_json::Value;
-use tracing::warn;
+use tracing::{debug, warn};
 
 use super::{MetadataProvider, ProviderAlbum, ProviderArtist, ProviderError, ProviderTrack};
 
@@ -104,6 +104,77 @@ impl MusicBrainzProvider {
         });
 
         Ok(best)
+    }
+}
+
+impl MusicBrainzProvider {
+    /// Fetch the Wikipedia extract for a MusicBrainz artist.
+    /// Steps: fetch artist with URL rels → find Wikipedia/Wikidata link → get summary.
+    async fn fetch_wikipedia_extract(&self, mbid: &str) -> Option<String> {
+        // Fetch artist with URL relations to find Wikipedia link
+        let artist = MbArtist::fetch()
+            .id(mbid)
+            .with_url_relations()
+            .execute_with_client(&self.client)
+            .await
+            .ok()?;
+
+        // Look for a Wikipedia or Wikidata relation
+        let wiki_url = artist.relations.as_ref()?.iter().find_map(|rel| {
+            if let musicbrainz_rs::entity::relations::RelationContent::Url(url_entity) =
+                &rel.content
+            {
+                let url = &url_entity.resource;
+                if url.contains("wikipedia.org/wiki/") || url.contains("wikidata.org/wiki/") {
+                    return Some(url.clone());
+                }
+            }
+            None
+        })?;
+
+        // If it's a Wikipedia URL, extract the page title and fetch the summary
+        if wiki_url.contains("wikipedia.org/wiki/") {
+            // URL format: https://en.wikipedia.org/wiki/Page_Title
+            let parts: Vec<&str> = wiki_url.splitn(2, "/wiki/").collect();
+            if parts.len() != 2 {
+                return None;
+            }
+            let page_title = parts[1];
+            // Extract the language subdomain
+            let lang = wiki_url
+                .strip_prefix("https://")?
+                .split('.')
+                .next()?;
+
+            let api_url = format!(
+                "https://{lang}.wikipedia.org/api/rest_v1/page/summary/{page_title}"
+            );
+
+            let resp = self
+                .http
+                .get(&api_url)
+                .header("Accept", "application/json")
+                .timeout(Duration::from_secs(10))
+                .send()
+                .await
+                .ok()?;
+
+            if !resp.status().is_success() {
+                debug!(status = %resp.status(), "Wikipedia summary fetch failed");
+                return None;
+            }
+
+            #[derive(serde::Deserialize)]
+            struct WikiSummary {
+                extract: Option<String>,
+            }
+
+            let summary: WikiSummary = resp.json().await.ok()?;
+            return summary.extract.filter(|e| !e.is_empty());
+        }
+
+        // TODO: Wikidata → Wikipedia fallback
+        None
     }
 }
 
@@ -319,5 +390,9 @@ impl MetadataProvider for MusicBrainzProvider {
         }
 
         resp.bytes().await.ok().map(|b| b.to_vec())
+    }
+
+    async fn fetch_artist_bio(&self, external_artist_id: &str) -> Option<String> {
+        self.fetch_wikipedia_extract(external_artist_id).await
     }
 }

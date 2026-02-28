@@ -10,6 +10,7 @@ use yoink_shared::{
 use crate::components::toast::{dispatch_with_toast, dispatch_with_toast_loading};
 use crate::components::{ConfirmDialog, ErrorPanel, MobileMenuButton, Sidebar};
 use crate::hooks::{set_page_title, use_sse_version};
+use super::provider_icon_svg;
 use crate::styles::{
     BTN, BTN_DANGER, BTN_PRIMARY, BREADCRUMB_CURRENT, BREADCRUMB_LINK, BREADCRUMB_NAV,
     BREADCRUMB_SEP, GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, HEADER_BAR, MUTED, btn_cls, cls,
@@ -315,39 +316,38 @@ fn AlbumDetailContent(
         <div class="p-6 max-md:p-4">
             // ── Hero card ───────────────────────────────────
             <div class={cls(GLASS, "mb-5")}>
-                <div class={cls(GLASS_BODY, "p-0!")}>
-                    <div class="flex flex-col md:flex-row gap-0">
-                        // Cover art with glow — using d7-sleeve classes so the glow script picks it up
-                        <div class="d7-sleeve md:w-64 md:shrink-0 rounded-none border-0 md:rounded-l-xl md:rounded-r-none overflow-hidden" style="background:transparent;backdrop-filter:none">
-                            <div class="d7-sleeve-cover-wrap">
-                                {match cover_url.clone() {
-                                    Some(url) => view! {
-                                        <img class="d7-sleeve-cover" src=url alt="" />
-                                    }.into_any(),
-                                    None => view! {
-                                        <div class="d7-sleeve-fallback">{fallback_initial}</div>
-                                    }.into_any(),
-                                }}
-                            </div>
+                <div class={cls(GLASS_BODY, "p-5 md:p-6")}>
+                    // Top row: cover art + title/meta side by side
+                    <div class="flex gap-5 mb-4">
+                        // Cover art — compact square, no glow effects
+                        <div class="shrink-0 w-28 h-28 md:w-40 md:h-40 rounded-lg overflow-hidden bg-zinc-200 dark:bg-zinc-800">
+                            {match cover_url.clone() {
+                                Some(url) => view! {
+                                    <img class="w-full h-full object-cover" src=url alt="" />
+                                }.into_any(),
+                                None => view! {
+                                    <div class="w-full h-full flex items-center justify-center text-3xl font-bold text-zinc-400 dark:text-zinc-600">{fallback_initial}</div>
+                                }.into_any(),
+                            }}
                         </div>
 
-                        // Metadata & actions
-                        <div class="flex-1 min-w-0 p-5 md:p-6 flex flex-col justify-center">
+                        // Core identity: type, title, artist, date
+                        <div class="flex-1 min-w-0 flex flex-col justify-center">
                             // Album type + explicit
-                            <div class="flex items-center gap-2 mb-1.5">
-                                <span class="text-xs font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">{at}</span>
+                            <div class="flex items-center gap-2 mb-1">
+                                <span class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">{at}</span>
                                 {if is_explicit {
-                                    view! { <span class="pill text-[10px] px-1.5 py-0 bg-zinc-200/80 dark:bg-zinc-700/80 text-zinc-500 dark:text-zinc-400">"Explicit"</span> }.into_any()
+                                    view! { <span class="text-[10px] px-1.5 py-0 rounded bg-zinc-200/80 dark:bg-zinc-700/80 text-zinc-500 dark:text-zinc-400 font-medium">"Explicit"</span> }.into_any()
                                 } else {
                                     view! { <span></span> }.into_any()
                                 }}
                             </div>
 
-                            // Title
-                            <h1 class="text-2xl md:text-3xl font-bold text-zinc-900 dark:text-zinc-100 m-0 mb-1 leading-tight">{album_title.clone()}</h1>
+                            // Title — wraps on narrow screens
+                            <h1 class="text-xl md:text-2xl font-bold text-zinc-900 dark:text-zinc-100 m-0 mb-1.5 leading-snug break-words">{album_title.clone()}</h1>
 
-                            // Artist + date + duration
-                            <div class={cls(MUTED, "text-sm mb-4 flex flex-wrap items-center gap-1.5")}>
+                            // Artist · date · tracks
+                            <div class={cls(MUTED, "text-sm flex flex-wrap items-center gap-1.5")}>
                                 <a href=artist_link.clone() class="text-zinc-600 dark:text-zinc-300 hover:text-blue-500 dark:hover:text-blue-400 no-underline font-medium">
                                     {artist_name.clone()}
                                 </a>
@@ -357,22 +357,25 @@ fn AlbumDetailContent(
                                 <span>{format!("{track_count} tracks, {duration_display}")}</span>
                             </div>
 
-                            // Provider links
+                            // Provider links (inline under meta on wider screens)
                             {if !provider_links.is_empty() {
                                 view! {
-                                    <div class="flex flex-wrap items-center gap-1.5 mb-3">
-                                        <span class="text-xs text-zinc-400 dark:text-zinc-500">"Available on"</span>
+                                    <div class="flex flex-wrap items-center gap-1.5 mt-2">
+                                        <span class="text-[11px] text-zinc-400 dark:text-zinc-500">"Available on"</span>
                                         {provider_links.iter().map(|link| {
                                             let display = provider_display_name(&link.provider);
                                             let external_url = link.external_url.clone();
+                                            let icon_svg = provider_icon_svg(&link.provider);
                                             match external_url {
                                                 Some(url) => view! {
-                                                    <a href=url class="inline-flex items-center px-2 py-0.5 text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-500/[.08] border border-blue-500/20 rounded-md no-underline hover:bg-blue-500/15" target="_blank" rel="noreferrer">
+                                                    <a href=url class="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium text-blue-600 dark:text-blue-400 bg-blue-500/[.08] border border-blue-500/20 rounded-md no-underline hover:bg-blue-500/15" target="_blank" rel="noreferrer">
+                                                        <span class="shrink-0 [&>svg]:size-3 text-blue-500/60 dark:text-blue-400/60" inner_html=icon_svg></span>
                                                         {display}
                                                     </a>
                                                 }.into_any(),
                                                 None => view! {
-                                                    <span class="inline-flex items-center px-2 py-0.5 text-xs font-medium text-zinc-500 dark:text-zinc-400 bg-zinc-500/[.08] border border-zinc-500/20 rounded-md">
+                                                    <span class="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium text-zinc-500 dark:text-zinc-400 bg-zinc-500/[.08] border border-zinc-500/20 rounded-md">
+                                                        <span class="shrink-0 [&>svg]:size-3 text-zinc-400/60 dark:text-zinc-500/60" inner_html=icon_svg></span>
                                                         {display}
                                                     </span>
                                                 }.into_any(),
@@ -383,156 +386,157 @@ fn AlbumDetailContent(
                             } else {
                                 view! { <span></span> }.into_any()
                             }}
-
-                            {if !match_suggestions.is_empty() {
-                                view! {
-                                    <div class="mb-4 rounded-lg border border-amber-500/20 bg-amber-500/[.06] px-3 py-2.5">
-                                        <div class="text-[11px] uppercase tracking-wider text-amber-700 dark:text-amber-300 mb-2 font-semibold">
-                                            "Potential Matches"
-                                        </div>
-                                        <div class="flex flex-col gap-2">
-                                            {match_suggestions.iter().filter(|m| m.status == "pending").map(|m| {
-                                                let accept_id = m.id.clone();
-                                                let dismiss_id = m.id.clone();
-                                                let display_provider = provider_display_name(&m.right_provider);
-                                                let kind = if m.match_kind == "isrc_exact" { "ISRC" } else { "Fuzzy" };
-                                                let display_name = m
-                                                    .external_name
-                                                    .clone()
-                                                    .unwrap_or_else(|| "Unknown album match".to_string());
-                                                let explanation = m.explanation.clone().unwrap_or_default();
-                                                view! {
-                                                    <div class="flex flex-wrap items-center gap-2 text-xs text-zinc-700 dark:text-zinc-300">
-                                                        <span class="inline-flex items-center px-1.5 py-0.5 rounded-md bg-white/70 dark:bg-zinc-800/70 border border-black/[.06] dark:border-white/[.08]">
-                                                            {format!("{} {}%", kind, m.confidence)}
-                                                        </span>
-                                                        <span>{format!("{}: {}", display_provider, display_name)}</span>
-                                                        <span class="text-zinc-500 dark:text-zinc-400">{explanation}</span>
-                                                        <button
-                                                            type="button"
-                                                            class={cls(BTN_PRIMARY, "px-2 py-0.5 text-[11px]")}
-                                                            on:click=move |_| {
-                                                                dispatch_with_toast(
-                                                                    ServerAction::AcceptMatchSuggestion { suggestion_id: accept_id.clone() },
-                                                                    "Match accepted",
-                                                                );
-                                                            }
-                                                        >
-                                                            "Accept"
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            class={cls(BTN, "px-2 py-0.5 text-[11px]")}
-                                                            on:click=move |_| {
-                                                                dispatch_with_toast(
-                                                                    ServerAction::DismissMatchSuggestion { suggestion_id: dismiss_id.clone() },
-                                                                    "Match dismissed",
-                                                                );
-                                                            }
-                                                        >
-                                                            "Dismiss"
-                                                        </button>
-                                                    </div>
-                                                }
-                                            }).collect_view()}
-                                        </div>
-                                    </div>
-                                }.into_any()
-                            } else {
-                                view! { <span></span> }.into_any()
-                            }}
-
-                            // Status pills
-                            <div class="flex flex-wrap items-center gap-2 mb-4">
-                                {if is_wanted && !is_acquired {
-                                    view! { <span class="pill" style="background:rgba(245,158,11,.12);color:#f59e0b">"Wanted"</span> }.into_any()
-                                } else if is_acquired {
-                                    view! { <span class="pill" style="background:rgba(34,197,94,.12);color:#22c55e">"Acquired"</span> }.into_any()
-                                } else {
-                                    view! { <span class="pill">"Not Wanted"</span> }.into_any()
-                                }}
-                                {if is_monitored {
-                                    view! { <span class="pill" style="background:rgba(59,130,246,.12);color:#3b82f6">"Monitored"</span> }.into_any()
-                                } else {
-                                    view! { <span class="pill">"Unmonitored"</span> }.into_any()
-                                }}
-                                <span class=status_pill_class>{status_pill_text}</span>
-                                {match &job_quality {
-                                    Some(q) => view! { <span class="pill d7-pill-muted">{q.clone()}</span> }.into_any(),
-                                    None => view! { <span></span> }.into_any(),
-                                }}
-                            </div>
-
-                            // Error message if job failed
-                            {match &job_error {
-                                Some(err) => view! {
-                                    <div class="mb-4 text-sm text-red-600 dark:text-red-400 bg-red-500/[.06] dark:bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
-                                        {err.clone()}
-                                    </div>
-                                }.into_any(),
-                                None => view! { <span></span> }.into_any(),
-                            }}
-
-                            // Action buttons
-                            <div class="flex flex-wrap gap-1.5">
-                                {if can_retry {
-                                    let aid = album_id_retry.clone();
-                                    view! {
-                                        <button type="button"
-                                            class=move || btn_cls(BTN_PRIMARY, "px-3 py-1.5 text-xs", download_loading.get())
-                                            disabled=move || download_loading.get()
-                                            on:click={
-                                                let aid = aid.clone();
-                                                move |_| {
-                                                    dispatch_with_toast_loading(ServerAction::RetryDownload { album_id: aid.clone() }, "Download requeued", Some(download_loading));
-                                                }
-                                            }>
-                                            {move || if download_loading.get() { "Retrying\u{2026}" } else { "Retry Download" }}
-                                        </button>
-                                    }.into_any()
-                                } else if can_download {
-                                    let aid = album_id_retry2.clone();
-                                    view! {
-                                        <button type="button"
-                                            class=move || btn_cls(BTN_PRIMARY, "px-3 py-1.5 text-xs", download_loading.get())
-                                            disabled=move || download_loading.get()
-                                            on:click={
-                                                let aid = aid.clone();
-                                                move |_| {
-                                                    dispatch_with_toast_loading(ServerAction::RetryDownload { album_id: aid.clone() }, "Download started", Some(download_loading));
-                                                }
-                                            }>
-                                            {move || if download_loading.get() { "Starting\u{2026}" } else { "Download" }}
-                                        </button>
-                                    }.into_any()
-                                } else {
-                                    view! { <span></span> }.into_any()
-                                }}
-
-                                <button type="button" class={cls(BTN, "px-3 py-1.5 text-xs")} title=monitor_title
-                                    on:click={
-                                        let aid = album_id_monitor.clone();
-                                        move |_| {
-                                            let next = !is_monitored;
-                                            let msg = if next { "Album monitored" } else { "Album unmonitored" };
-                                            dispatch_with_toast(ServerAction::ToggleAlbumMonitor { album_id: aid.clone(), monitored: next }, msg);
-                                        }
-                                    }>{monitor_label}</button>
-
-                                {if is_acquired {
-                                    view! {
-                                        <button type="button" class={cls(BTN_DANGER, "px-3 py-1.5 text-xs")} title="Delete downloaded files"
-                                            on:click=move |_| {
-                                                show_remove_files.set(true);
-                                            }>
-                                            "Remove Files"
-                                        </button>
-                                    }.into_any()
-                                } else {
-                                    view! { <span></span> }.into_any()
-                                }}
-                            </div>
                         </div>
+                    </div>
+
+                    // Potential matches (full width below the top row)
+                    {if match_suggestions.iter().any(|m| m.status == "pending") {
+                        view! {
+                            <div class="mb-4 rounded-lg border border-amber-500/20 bg-amber-500/[.06] px-3 py-2.5">
+                                <div class="text-[11px] uppercase tracking-wider text-amber-700 dark:text-amber-300 mb-2 font-semibold">
+                                    "Potential Matches"
+                                </div>
+                                <div class="flex flex-col gap-2">
+                                    {match_suggestions.iter().filter(|m| m.status == "pending").map(|m| {
+                                        let accept_id = m.id.clone();
+                                        let dismiss_id = m.id.clone();
+                                        let display_provider = provider_display_name(&m.right_provider);
+                                        let kind = if m.match_kind == "isrc_exact" { "ISRC" } else { "Fuzzy" };
+                                        let display_name = m
+                                            .external_name
+                                            .clone()
+                                            .unwrap_or_else(|| "Unknown album match".to_string());
+                                        let explanation = m.explanation.clone().unwrap_or_default();
+                                        view! {
+                                            <div class="flex flex-wrap items-center gap-2 text-xs text-zinc-700 dark:text-zinc-300">
+                                                <span class="inline-flex items-center px-1.5 py-0.5 rounded-md bg-white/70 dark:bg-zinc-800/70 border border-black/[.06] dark:border-white/[.08]">
+                                                    {format!("{} {}%", kind, m.confidence)}
+                                                </span>
+                                                <span>{format!("{}: {}", display_provider, display_name)}</span>
+                                                <span class="text-zinc-500 dark:text-zinc-400">{explanation}</span>
+                                                <button
+                                                    type="button"
+                                                    class={cls(BTN_PRIMARY, "px-2 py-0.5 text-[11px]")}
+                                                    on:click=move |_| {
+                                                        dispatch_with_toast(
+                                                            ServerAction::AcceptMatchSuggestion { suggestion_id: accept_id.clone() },
+                                                            "Match accepted",
+                                                        );
+                                                    }
+                                                >
+                                                    "Accept"
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    class={cls(BTN, "px-2 py-0.5 text-[11px]")}
+                                                    on:click=move |_| {
+                                                        dispatch_with_toast(
+                                                            ServerAction::DismissMatchSuggestion { suggestion_id: dismiss_id.clone() },
+                                                            "Match dismissed",
+                                                        );
+                                                    }
+                                                >
+                                                    "Dismiss"
+                                                </button>
+                                            </div>
+                                        }
+                                    }).collect_view()}
+                                </div>
+                            </div>
+                        }.into_any()
+                    } else {
+                        view! { <span></span> }.into_any()
+                    }}
+
+                    // Status pills + actions row
+                    <div class="flex flex-wrap items-center gap-2 mb-3">
+                        {if is_wanted && !is_acquired {
+                            view! { <span class="pill" style="background:rgba(245,158,11,.12);color:#f59e0b">"Wanted"</span> }.into_any()
+                        } else if is_acquired {
+                            view! { <span class="pill" style="background:rgba(34,197,94,.12);color:#22c55e">"Acquired"</span> }.into_any()
+                        } else {
+                            view! { <span class="pill">"Not Wanted"</span> }.into_any()
+                        }}
+                        {if is_monitored {
+                            view! { <span class="pill" style="background:rgba(59,130,246,.12);color:#3b82f6">"Monitored"</span> }.into_any()
+                        } else {
+                            view! { <span class="pill">"Unmonitored"</span> }.into_any()
+                        }}
+                        <span class=status_pill_class>{status_pill_text}</span>
+                        {match &job_quality {
+                            Some(q) => view! { <span class="pill d7-pill-muted">{q.clone()}</span> }.into_any(),
+                            None => view! { <span></span> }.into_any(),
+                        }}
+                    </div>
+
+                    // Error message if job failed
+                    {match &job_error {
+                        Some(err) => view! {
+                            <div class="mb-3 text-sm text-red-600 dark:text-red-400 bg-red-500/[.06] dark:bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+                                {err.clone()}
+                            </div>
+                        }.into_any(),
+                        None => view! { <span></span> }.into_any(),
+                    }}
+
+                    // Action buttons
+                    <div class="flex flex-wrap gap-1.5">
+                        {if can_retry {
+                            let aid = album_id_retry.clone();
+                            view! {
+                                <button type="button"
+                                    class=move || btn_cls(BTN_PRIMARY, "px-3 py-1.5 text-xs", download_loading.get())
+                                    disabled=move || download_loading.get()
+                                    on:click={
+                                        let aid = aid.clone();
+                                        move |_| {
+                                            dispatch_with_toast_loading(ServerAction::RetryDownload { album_id: aid.clone() }, "Download requeued", Some(download_loading));
+                                        }
+                                    }>
+                                    {move || if download_loading.get() { "Retrying\u{2026}" } else { "Retry Download" }}
+                                </button>
+                            }.into_any()
+                        } else if can_download {
+                            let aid = album_id_retry2.clone();
+                            view! {
+                                <button type="button"
+                                    class=move || btn_cls(BTN_PRIMARY, "px-3 py-1.5 text-xs", download_loading.get())
+                                    disabled=move || download_loading.get()
+                                    on:click={
+                                        let aid = aid.clone();
+                                        move |_| {
+                                            dispatch_with_toast_loading(ServerAction::RetryDownload { album_id: aid.clone() }, "Download started", Some(download_loading));
+                                        }
+                                    }>
+                                    {move || if download_loading.get() { "Starting\u{2026}" } else { "Download" }}
+                                </button>
+                            }.into_any()
+                        } else {
+                            view! { <span></span> }.into_any()
+                        }}
+
+                        <button type="button" class={cls(BTN, "px-3 py-1.5 text-xs")} title=monitor_title
+                            on:click={
+                                let aid = album_id_monitor.clone();
+                                move |_| {
+                                    let next = !is_monitored;
+                                    let msg = if next { "Album monitored" } else { "Album unmonitored" };
+                                    dispatch_with_toast(ServerAction::ToggleAlbumMonitor { album_id: aid.clone(), monitored: next }, msg);
+                                }
+                            }>{monitor_label}</button>
+
+                        {if is_acquired {
+                            view! {
+                                <button type="button" class={cls(BTN_DANGER, "px-3 py-1.5 text-xs")} title="Delete downloaded files"
+                                    on:click=move |_| {
+                                        show_remove_files.set(true);
+                                    }>
+                                    "Remove Files"
+                                </button>
+                            }.into_any()
+                        } else {
+                            view! { <span></span> }.into_any()
+                        }}
                     </div>
                 </div>
             </div>

@@ -12,6 +12,7 @@ use leptoaster::{ToastBuilder, ToastLevel, ToastPosition, expect_toaster};
 use crate::actions::dispatch_action;
 use crate::components::toast::{dispatch_with_toast, dispatch_with_toast_loading};
 use crate::components::{ConfirmDialog, ErrorPanel, LinkProviderDialog, MobileMenuButton, Sidebar};
+use super::provider_icon_svg;
 use crate::hooks::{set_page_title, use_sse_version};
 use crate::styles::{
     BTN, BTN_DANGER, BTN_PRIMARY, BREADCRUMB_CURRENT, BREADCRUMB_LINK, BREADCRUMB_NAV,
@@ -284,6 +285,8 @@ fn ArtistDetailContent(
                 let artist_id_sync = a.id.clone();
                 let artist_id_monitor = a.id.clone();
 
+                let artist_id_for_links = a.id.clone();
+
                 view! {
                     <div class={cls(GLASS, "mb-5")}>
                         <div class={cls(GLASS_BODY, "flex flex-wrap items-center gap-5")}>
@@ -300,6 +303,68 @@ fn ArtistDetailContent(
                                 <div class={cls(MUTED, "text-[13px] mb-2 flex flex-wrap items-center gap-2")}>
                                     <span>{format!("{album_count} albums \u{00b7} {monitored_count} monitored \u{00b7} {acquired_count} acquired \u{00b7} {wanted_count} wanted")}</span>
                                 </div>
+
+                                // Linked providers — inline chips with icons
+                                {move || {
+                                    let links = provider_links.get();
+                                    let artist_id_for_links = artist_id_for_links.clone();
+                                    view! {
+                                        <div class="flex flex-wrap items-center gap-1.5 mb-2.5">
+                                            {links.iter().map(|link| {
+                                                let provider = link.provider.clone();
+                                                let display = provider_display_name(&link.provider);
+                                                let external_url = link.external_url.clone();
+                                                let external_id = link.external_id.clone();
+                                                let artist_id_unlink = artist_id_for_links.clone();
+                                                let icon_svg = provider_icon_svg(&link.provider);
+
+                                                view! {
+                                                    <div class="group inline-flex items-center gap-1.5 pl-2 pr-1 py-1 bg-white/50 dark:bg-zinc-800/50 border border-black/[.06] dark:border-white/[.08] rounded-lg text-xs transition-colors hover:border-black/10 dark:hover:border-white/12">
+                                                        <span class="shrink-0 [&>svg]:size-3.5 text-zinc-500 dark:text-zinc-400" inner_html=icon_svg></span>
+                                                        {match external_url {
+                                                            Some(url) => view! {
+                                                                <a href=url class="font-medium text-zinc-700 dark:text-zinc-300 hover:text-blue-500 dark:hover:text-blue-400 no-underline" target="_blank" rel="noreferrer">
+                                                                    {display}
+                                                                </a>
+                                                            }.into_any(),
+                                                            None => view! {
+                                                                <span class="font-medium text-zinc-700 dark:text-zinc-300">{display}</span>
+                                                            }.into_any(),
+                                                        }}
+                                                        <button type="button"
+                                                            class="text-[10px] text-zinc-400 dark:text-zinc-500 hover:text-red-500 dark:hover:text-red-400 bg-transparent border-none cursor-pointer p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                            title="Unlink this provider"
+                                                            on:click={
+                                                                let aid = artist_id_unlink.clone();
+                                                                let prov = provider.clone();
+                                                                let eid = external_id.clone();
+                                                                move |_| {
+                                                                    dispatch_with_toast(
+                                                                        ServerAction::UnlinkArtistProvider {
+                                                                            artist_id: aid.clone(),
+                                                                            provider: prov.clone(),
+                                                                            external_id: eid.clone(),
+                                                                        },
+                                                                        "Provider unlinked",
+                                                                    );
+                                                                }
+                                                            }>
+                                                            "\u{2715}"
+                                                        </button>
+                                                    </div>
+                                                }
+                                            }).collect_view()}
+                                            <button type="button"
+                                                class="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-zinc-400 dark:text-zinc-500 hover:text-blue-500 dark:hover:text-blue-400 bg-transparent border border-dashed border-zinc-300 dark:border-zinc-600 hover:border-blue-500/30 dark:hover:border-blue-500/30 rounded-lg cursor-pointer transition-colors"
+                                                on:click=move |_| {
+                                                    show_link_provider.set(true);
+                                                }>
+                                                "+ Link"
+                                            </button>
+                                        </div>
+                                    }
+                                }}
+
                                 <div class="flex flex-wrap gap-1.5">
                                     <button type="button"
                                         class=move || btn_cls(BTN, "px-2.5 py-0.5 text-xs", sync_loading.get())
@@ -343,6 +408,16 @@ fn ArtistDetailContent(
                                 </div>
                             </div>
                         </div>
+
+                        // Bio section
+                        {match a.bio.clone() {
+                            Some(bio) => view! {
+                                <div class="px-5 py-4 border-t border-black/[.06] dark:border-white/[.06]">
+                                    <ArtistBio bio=bio />
+                                </div>
+                            }.into_any(),
+                            None => view! { <span></span> }.into_any(),
+                        }}
                     </div>
                 }
             }}
@@ -493,81 +568,6 @@ fn ArtistDetailContent(
                             </div>
                         </div>
                     }.into_any()
-                }
-            }}
-
-            // Linked providers section — reactive
-            {move || {
-                let a = a();
-                let links = provider_links.get();
-                let artist_id_for_links = a.id.clone();
-
-                view! {
-                    <div class={cls(GLASS, "mb-5")}>
-                        <div class=GLASS_HEADER>
-                            <h2 class=GLASS_TITLE>"Linked Providers"</h2>
-                            <button type="button"
-                                class={cls(BTN, "px-2.5 py-0.5 text-xs")}
-                                on:click=move |_| {
-                                    show_link_provider.set(true);
-                                }>
-                                "+ Link Provider"
-                            </button>
-                        </div>
-                        <div class=GLASS_BODY>
-                            {if links.is_empty() {
-                                view! {
-                                    <div class="text-sm text-zinc-400 dark:text-zinc-600">"No additional providers linked."</div>
-                                }.into_any()
-                            } else {
-                                view! {
-                                    <div class="flex flex-wrap gap-2">
-                                        {links.iter().map(|link| {
-                                            let provider = link.provider.clone();
-                                            let display = provider_display_name(&link.provider);
-                                            let external_id = link.external_id.clone();
-                                            let external_url = link.external_url.clone();
-                                            let artist_id_unlink = artist_id_for_links.clone();
-
-                                            view! {
-                                                <div class="inline-flex items-center gap-2 px-3 py-1.5 bg-white/60 dark:bg-zinc-800/60 border border-black/[.06] dark:border-white/[.08] rounded-lg text-sm">
-                                                    <span class="font-medium text-zinc-700 dark:text-zinc-300">{display}</span>
-                                                    {match external_url {
-                                                        Some(url) => view! {
-                                                            <a href=url class="text-blue-500 hover:text-blue-400 text-xs no-underline" target="_blank" rel="noreferrer">
-                                                                "View"
-                                                            </a>
-                                                        }.into_any(),
-                                                        None => view! { <span></span> }.into_any(),
-                                                    }}
-                                                    <button type="button"
-                                                        class="text-xs text-red-500 hover:text-red-400 bg-transparent border-none cursor-pointer p-0"
-                                                        title="Unlink this provider"
-                                                        on:click={
-                                                            let aid = artist_id_unlink.clone();
-                                                            let prov = provider.clone();
-                                                            let eid = external_id.clone();
-                                                            move |_| {
-                                                                dispatch_with_toast(
-                                                                    ServerAction::UnlinkArtistProvider {
-                                                                        artist_id: aid.clone(),
-                                                                        provider: prov.clone(),
-                                                                        external_id: eid.clone(),
-                                                                    },
-                                                                    "Provider unlinked",
-                                                                );
-                                                            }
-                                                        }>
-                                                        "Unlink"
-                                                    </button>
-                                                </div>
-                                            }
-                                        }).collect_view()}
-                                    </div>
-                                }.into_any()
-                            }}
-                        </div>
-                    </div>
                 }
             }}
 
@@ -722,6 +722,43 @@ fn ArtistDetailContent(
 /// from the `albums` signal so that changes (e.g. toggling monitor) are
 /// reflected immediately without recreating the component — `<For>` keeps
 /// the same instance alive as long as the key (album ID) exists.
+/// Collapsible artist bio — shows first 3 lines with "Read more" toggle.
+#[component]
+fn ArtistBio(bio: String) -> impl IntoView {
+    let expanded = RwSignal::new(false);
+    let bio_clone = bio.clone();
+    let is_long = bio.len() > 280;
+
+    view! {
+        <div class="text-[13px] leading-relaxed text-zinc-600 dark:text-zinc-400">
+            <p
+                class=move || {
+                    if expanded.get() || !is_long {
+                        ""
+                    } else {
+                        "line-clamp-3"
+                    }
+                }
+            >
+                {bio_clone}
+            </p>
+            {if is_long {
+                view! {
+                    <button
+                        type="button"
+                        class="mt-1 text-[12px] font-medium text-blue-500 dark:text-blue-400 hover:text-blue-600 dark:hover:text-blue-300 bg-transparent border-none cursor-pointer p-0"
+                        on:click=move |_| expanded.update(|v| *v = !*v)
+                    >
+                        {move || if expanded.get() { "Show less" } else { "Read more" }}
+                    </button>
+                }.into_any()
+            } else {
+                view! { <span></span> }.into_any()
+            }}
+        </div>
+    }
+}
+
 #[component]
 fn AlbumSleeve(
     album: MonitoredAlbum,

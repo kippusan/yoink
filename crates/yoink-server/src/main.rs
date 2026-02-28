@@ -694,6 +694,36 @@ async fn main() {
     .expect("server error");
 }
 
+/// Fetch artist bio from linked metadata providers in background.
+fn spawn_fetch_artist_bio(state: &AppState, artist_id: String) {
+    let s = state.clone();
+    tokio::spawn(async move {
+        // Load provider links for this artist
+        let links = match db::load_artist_provider_links(&s.db, &artist_id).await {
+            Ok(l) => l,
+            Err(_) => return,
+        };
+
+        // Try each linked provider that supports bio fetching
+        for link in &links {
+            if let Some(provider) = s.registry.metadata_provider(&link.provider) {
+                if let Some(bio) = provider.fetch_artist_bio(&link.external_id).await {
+                    let _ = db::update_artist_bio(&s.db, &artist_id, Some(&bio)).await;
+                    // Update in-memory state
+                    {
+                        let mut artists = s.monitored_artists.write().await;
+                        if let Some(a) = artists.iter_mut().find(|a| a.id == artist_id) {
+                            a.bio = Some(bio);
+                        }
+                    }
+                    s.notify_sse();
+                    return;
+                }
+            }
+        }
+    });
+}
+
 fn spawn_recompute_artist_match_suggestions(state: &AppState, artist_id: String) {
     let s = state.clone();
     tokio::spawn(async move {
@@ -773,6 +803,18 @@ async fn dispatch_action_impl(
 
         ServerAction::SyncArtistAlbums { artist_id } => {
             let _ = services::sync_artist_albums(&state, &artist_id).await;
+            // Fetch bio if we don't have one yet
+            {
+                let artists = state.monitored_artists.read().await;
+                let has_bio = artists
+                    .iter()
+                    .find(|a| a.id == artist_id)
+                    .map(|a| a.bio.is_some())
+                    .unwrap_or(false);
+                if !has_bio {
+                    spawn_fetch_artist_bio(&state, artist_id.clone());
+                }
+            }
             spawn_recompute_artist_match_suggestions(&state, artist_id.clone());
             state.notify_sse();
         }
@@ -837,6 +879,7 @@ async fn dispatch_action_impl(
                     id: new_id.clone(),
                     name: name.clone(),
                     image_url: image_url.clone(),
+                    bio: None,
                     added_at: Utc::now(),
                 };
                 let _ = db::upsert_artist(&state.db, &artist).await;
@@ -861,6 +904,7 @@ async fn dispatch_action_impl(
             };
 
             let _ = services::sync_artist_albums(&state, &artist_id).await;
+            spawn_fetch_artist_bio(&state, artist_id.clone());
             spawn_recompute_artist_match_suggestions(&state, artist_id.clone());
             state.notify_sse();
         }
@@ -922,22 +966,26 @@ async fn dispatch_action_impl(
                         suggestion.right_provider.clone(),
                         suggestion.right_external_id.clone(),
                     ));
-                    let (target_provider, target_external_id) = if left_linked && !right_linked {
-                        (
-                            suggestion.right_provider.clone(),
-                            suggestion.right_external_id.clone(),
-                        )
-                    } else if right_linked && !left_linked {
-                        (
-                            suggestion.left_provider.clone(),
-                            suggestion.left_external_id.clone(),
-                        )
-                    } else {
-                        (
-                            suggestion.right_provider.clone(),
-                            suggestion.right_external_id.clone(),
-                        )
-                    };
+                    let (target_provider, target_external_id, target_url) =
+                        if left_linked && !right_linked {
+                            (
+                                suggestion.right_provider.clone(),
+                                suggestion.right_external_id.clone(),
+                                suggestion.external_url.clone(),
+                            )
+                        } else if right_linked && !left_linked {
+                            (
+                                suggestion.left_provider.clone(),
+                                suggestion.left_external_id.clone(),
+                                None, // external_url on the suggestion is for the right side
+                            )
+                        } else {
+                            (
+                                suggestion.right_provider.clone(),
+                                suggestion.right_external_id.clone(),
+                                suggestion.external_url.clone(),
+                            )
+                        };
 
                     let existing = db::find_album_by_provider_link(
                         &state.db,
@@ -961,8 +1009,8 @@ async fn dispatch_action_impl(
                         album_id: suggestion.scope_id.clone(),
                         provider: target_provider,
                         external_id: target_external_id,
-                        external_url: None,
-                        external_title: None,
+                        external_url: target_url,
+                        external_title: suggestion.external_name.clone(),
                         cover_ref: None,
                     };
                     let _ = db::upsert_album_provider_link(&state.db, &link).await;
@@ -984,22 +1032,26 @@ async fn dispatch_action_impl(
                         suggestion.right_provider.clone(),
                         suggestion.right_external_id.clone(),
                     ));
-                    let (target_provider, target_external_id) = if left_linked && !right_linked {
-                        (
-                            suggestion.right_provider.clone(),
-                            suggestion.right_external_id.clone(),
-                        )
-                    } else if right_linked && !left_linked {
-                        (
-                            suggestion.left_provider.clone(),
-                            suggestion.left_external_id.clone(),
-                        )
-                    } else {
-                        (
-                            suggestion.right_provider.clone(),
-                            suggestion.right_external_id.clone(),
-                        )
-                    };
+                    let (target_provider, target_external_id, target_url) =
+                        if left_linked && !right_linked {
+                            (
+                                suggestion.right_provider.clone(),
+                                suggestion.right_external_id.clone(),
+                                suggestion.external_url.clone(),
+                            )
+                        } else if right_linked && !left_linked {
+                            (
+                                suggestion.left_provider.clone(),
+                                suggestion.left_external_id.clone(),
+                                None,
+                            )
+                        } else {
+                            (
+                                suggestion.right_provider.clone(),
+                                suggestion.right_external_id.clone(),
+                                suggestion.external_url.clone(),
+                            )
+                        };
 
                     let existing = db::find_artist_by_provider_link(
                         &state.db,
@@ -1023,8 +1075,8 @@ async fn dispatch_action_impl(
                         artist_id: suggestion.scope_id.clone(),
                         provider: target_provider,
                         external_id: target_external_id,
-                        external_url: None,
-                        external_name: None,
+                        external_url: target_url,
+                        external_name: suggestion.external_name.clone(),
                         image_ref: None,
                     };
                     let _ = db::upsert_artist_provider_link(&state.db, &link).await;

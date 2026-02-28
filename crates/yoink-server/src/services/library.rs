@@ -873,6 +873,7 @@ async fn ensure_monitored_artist(
         id: new_id.clone(),
         name: artist.name.clone(),
         image_url,
+        bio: None,
         added_at: Utc::now(),
     };
     let _ = db::upsert_artist(&state.db, &monitored).await;

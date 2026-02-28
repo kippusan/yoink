@@ -16,6 +16,7 @@ serde_json = { workspace = true }
 # Client-only (behind "hydrate" feature)
 wasm-bindgen = { workspace = true, optional = true }
 web-sys = { workspace = true, optional = true }
+simpleicons-rs = "16.9.0"
 
 
 [features]

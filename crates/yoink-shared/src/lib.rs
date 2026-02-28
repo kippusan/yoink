@@ -53,6 +53,7 @@ pub struct MonitoredArtist {
     pub id: String, // UUID v7
     pub name: String,
     pub image_url: Option<String>, // resolved URL
+    pub bio: Option<String>,
     pub added_at: DateTime<Utc>,
 }
 

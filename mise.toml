@@ -1,3 +1,13 @@
 [tools]
 "cargo:cargo-leptos" = "latest"
 "cargo:sqlx-cli" = { version = "latest", features = "sqlite" }
+
+[tasks.lint-server]
+run = """
+cargo clippy --package yoink-server -- -D warnings
+"""
+
+[tasks.lint-client]
+run = """
+cargo clippy --package yoink-client -- -D warnings
+"""

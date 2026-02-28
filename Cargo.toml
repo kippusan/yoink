@@ -24,8 +24,8 @@ lucide-leptos = { version = "2", features = ["all-icons"] }
 axum = { version = "0.8", features = ["form", "json", "macros"] }
 governor = "0.8"
 base64 = "0.22"
-envconfig = "0.11"
-dotenvy = "0.15"
+better-config = { version = "0.2", features = ["env"] }
+serial_test = "3"
 lrclib-api-rs = "0.3"
 lofty = "0.22"
 reqwest = { version = "0.12", default-features = false, features = [
@@ -96,7 +96,3 @@ reload-port = 3001
 tailwind-input-file = "style/tailwind.css"
 bin-package = "yoink-server"
 lib-package = "yoink-client"
-bin-features = ["yoink-app/ssr"]
-lib-features = ["yoink-app/hydrate"]
-bin-default-features = false
-lib-default-features = false

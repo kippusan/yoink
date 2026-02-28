@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use envconfig::Envconfig;
+use better_config::{env, EnvConfig};
 
 use crate::config::DEFAULT_QUALITY;
 
@@ -12,78 +12,79 @@ const DEFAULT_LOG_FORMAT: &str = "pretty";
 const DEFAULT_SLSKD_BASE_URL: &str = "http://127.0.0.1:5030";
 const DEFAULT_SLSKD_DOWNLOADS_DIR: &str = "./development/slskd-data/downloads";
 
-#[derive(Debug, Clone, Envconfig)]
+#[derive(Debug)]
+#[env(EnvConfig)]
 pub(crate) struct AppConfig {
     /// Base URL for the Tidal hifi-api proxy.
     /// Legacy env var HIFI_API_BASE_URL is still supported.
-    #[envconfig(from = "TIDAL_API_BASE_URL", default = "")]
+    #[conf(from = "TIDAL_API_BASE_URL", default = "")]
     pub(crate) tidal_api_base_url: String,
 
     /// Legacy alias for TIDAL_API_BASE_URL.
-    #[envconfig(from = "HIFI_API_BASE_URL", default = "http://127.0.0.1:8000")]
+    #[conf(from = "HIFI_API_BASE_URL", default = "http://127.0.0.1:8000")]
     pub(crate) hifi_api_base_url: String,
 
     /// Whether the Tidal provider is enabled. Defaults to true.
-    #[envconfig(from = "TIDAL_ENABLED", default = "true")]
+    #[conf(from = "TIDAL_ENABLED", default = "true")]
     pub(crate) tidal_enabled: bool,
 
     /// Whether the MusicBrainz metadata provider is enabled. Defaults to true.
-    #[envconfig(from = "MUSICBRAINZ_ENABLED", default = "true")]
+    #[conf(from = "MUSICBRAINZ_ENABLED", default = "true")]
     pub(crate) musicbrainz_enabled: bool,
 
     /// Whether the Deezer metadata provider is enabled. Defaults to true.
-    #[envconfig(from = "DEEZER_ENABLED", default = "true")]
+    #[conf(from = "DEEZER_ENABLED", default = "true")]
     pub(crate) deezer_enabled: bool,
 
     /// Whether the SoulSeek download source is enabled. Defaults to false.
-    #[envconfig(from = "SOULSEEK_ENABLED", default = "false")]
+    #[conf(from = "SOULSEEK_ENABLED", default = "false")]
     pub(crate) soulseek_enabled: bool,
 
     /// Base URL for the slskd REST API.
-    #[envconfig(from = "SLSKD_BASE_URL", default = "http://127.0.0.1:5030")]
+    #[conf(from = "SLSKD_BASE_URL", default = "http://127.0.0.1:5030")]
     pub(crate) slskd_base_url: String,
 
     /// Optional slskd web username for JWT auth.
-    #[envconfig(from = "SLSKD_USERNAME", default = "")]
+    #[conf(from = "SLSKD_USERNAME", default = "")]
     pub(crate) slskd_username: String,
 
     /// Optional slskd web password for JWT auth.
-    #[envconfig(from = "SLSKD_PASSWORD", default = "")]
+    #[conf(from = "SLSKD_PASSWORD", default = "")]
     pub(crate) slskd_password: String,
 
     /// Local path to slskd downloads directory.
-    #[envconfig(
+    #[conf(
         from = "SLSKD_DOWNLOADS_DIR",
         default = "./development/slskd-data/downloads"
     )]
     pub(crate) slskd_downloads_dir: String,
 
-    #[envconfig(from = "MUSIC_ROOT", default = "./music")]
+    #[conf(from = "MUSIC_ROOT", default = "./music")]
     pub(crate) music_root: String,
 
-    #[envconfig(from = "DEFAULT_QUALITY", default = "LOSSLESS")]
+    #[conf(from = "DEFAULT_QUALITY", default = "LOSSLESS")]
     pub(crate) default_quality: String,
 
-    #[envconfig(from = "DATABASE_URL", default = "sqlite:./yoink.db?mode=rwc")]
+    #[conf(from = "DATABASE_URL", default = "sqlite:./yoink.db?mode=rwc")]
     pub(crate) database_url: String,
 
-    #[envconfig(from = "LEPTOS_SITE_ROOT", default = "target/site")]
+    #[conf(from = "LEPTOS_SITE_ROOT", default = "target/site")]
     pub(crate) leptos_site_root: String,
 
-    #[envconfig(from = "LOG_FORMAT", default = "pretty")]
+    #[conf(from = "LOG_FORMAT", default = "pretty")]
     pub(crate) log_format: String,
 
-    #[envconfig(from = "DOWNLOAD_LYRICS", default = "false")]
+    #[conf(from = "DOWNLOAD_LYRICS", default = "false")]
     pub(crate) download_lyrics: bool,
 
     /// Maximum number of tracks to download in parallel per album job.
-    #[envconfig(from = "DOWNLOAD_MAX_PARALLEL_TRACKS", default = "1")]
+    #[conf(from = "DOWNLOAD_MAX_PARALLEL_TRACKS", default = "1")]
     pub(crate) download_max_parallel_tracks: usize,
 }
 
 impl AppConfig {
-    pub(crate) fn from_env() -> Result<Self, envconfig::Error> {
-        let mut cfg = Self::init_from_env()?;
+    pub(crate) fn from_env() -> Result<Self, better_config::Error> {
+        let mut cfg = Self::builder().build()?;
         cfg.normalize();
         Ok(cfg)
     }
@@ -147,34 +148,52 @@ fn normalize_string_opt(value: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
+    use serial_test::serial;
 
-    #[test]
-    fn uses_defaults_for_empty_values() {
-        let mut env = HashMap::new();
-        env.insert("HIFI_API_BASE_URL".to_string(), "   ".to_string());
-        env.insert("MUSIC_ROOT".to_string(), "".to_string());
-        env.insert("DEFAULT_QUALITY".to_string(), "   ".to_string());
-
-        let mut cfg = AppConfig::init_from_hashmap(&env).expect("config parse");
-        cfg.normalize();
-
-        assert_eq!(cfg.hifi_api_base_url, DEFAULT_TIDAL_API_BASE_URL);
-        assert_eq!(cfg.music_root, DEFAULT_MUSIC_ROOT);
-        assert_eq!(cfg.default_quality, DEFAULT_QUALITY);
+    /// Helper: set env vars, run closure, then clean up.
+    fn with_env_vars<F: FnOnce()>(vars: &[(&str, &str)], f: F) {
+        for (k, v) in vars {
+            // SAFETY: tests using this helper are marked #[serial] so no
+            // concurrent env mutation can occur.
+            unsafe { std::env::set_var(k, v) };
+        }
+        f();
+        for (k, _) in vars {
+            unsafe { std::env::remove_var(k) };
+        }
     }
 
     #[test]
-    fn trims_base_url_trailing_slash() {
-        let mut env = HashMap::new();
-        env.insert(
-            "HIFI_API_BASE_URL".to_string(),
-            "http://localhost:8000///".to_string(),
+    #[serial]
+    fn uses_defaults_for_empty_values() {
+        with_env_vars(
+            &[
+                ("HIFI_API_BASE_URL", "   "),
+                ("MUSIC_ROOT", ""),
+                ("DEFAULT_QUALITY", "   "),
+            ],
+            || {
+                let mut cfg = AppConfig::builder().build().expect("config parse");
+                cfg.normalize();
+
+                assert_eq!(cfg.hifi_api_base_url, DEFAULT_TIDAL_API_BASE_URL);
+                assert_eq!(cfg.music_root, DEFAULT_MUSIC_ROOT);
+                assert_eq!(cfg.default_quality, DEFAULT_QUALITY);
+            },
         );
+    }
 
-        let mut cfg = AppConfig::init_from_hashmap(&env).expect("config parse");
-        cfg.normalize();
+    #[test]
+    #[serial]
+    fn trims_base_url_trailing_slash() {
+        with_env_vars(
+            &[("HIFI_API_BASE_URL", "http://localhost:8000///")],
+            || {
+                let mut cfg = AppConfig::builder().build().expect("config parse");
+                cfg.normalize();
 
-        assert_eq!(cfg.hifi_api_base_url, "http://localhost:8000");
+                assert_eq!(cfg.hifi_api_base_url, "http://localhost:8000");
+            },
+        );
     }
 }

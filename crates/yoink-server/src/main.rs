@@ -27,7 +27,7 @@ use crate::{
         soulseek::SoulSeekSource, tidal::TidalProvider,
     },
     routes::build_router,
-    services::{download_worker_loop, reconcile_library_files, recompute_artist_match_suggestions},
+    services::{download_worker_loop, recompute_artist_match_suggestions, reconcile_library_files},
     state::AppState,
 };
 
@@ -60,22 +60,8 @@ fn search_relevance_score(query: &str, name: &str) -> f64 {
     (jw + prefix_bonus + contains_bonus).min(1.0)
 }
 
-fn load_env_file_for_dev() {
-    match dotenvy::from_filename(".env") {
-        Ok(path) => {
-            eprintln!("Loaded environment from {}", path.display());
-        }
-        Err(dotenvy::Error::Io(err)) if err.kind() == std::io::ErrorKind::NotFound => {}
-        Err(err) => {
-            eprintln!("Warning: failed to load .env: {err}");
-        }
-    }
-}
-
 #[tokio::main]
 async fn main() {
-    load_env_file_for_dev();
-
     let app_config = AppConfig::from_env().unwrap_or_else(|err| {
         panic!("Failed to parse configuration from environment: {err}");
     });
@@ -281,8 +267,12 @@ async fn main() {
                         Ok((provider_tracks, _album_extra)) => {
                             for t in provider_tracks {
                                 let local_track_id = if let Ok(Some(track_id)) =
-                                    db::find_track_by_provider_link(&s.db, &link.provider, &t.external_id)
-                                        .await
+                                    db::find_track_by_provider_link(
+                                        &s.db,
+                                        &link.provider,
+                                        &t.external_id,
+                                    )
+                                    .await
                                 {
                                     track_id
                                 } else if let Some(ref isrc) = t.isrc {
@@ -402,11 +392,13 @@ async fn main() {
                     .iter()
                     .map(|l| (l.provider.clone(), l.external_id.clone()))
                     .collect();
-                let link_lookup: std::collections::HashMap<(String, String), db::ArtistProviderLink> =
-                    artist_links
-                        .into_iter()
-                        .map(|l| ((l.provider.clone(), l.external_id.clone()), l))
-                        .collect();
+                let link_lookup: std::collections::HashMap<
+                    (String, String),
+                    db::ArtistProviderLink,
+                > = artist_links
+                    .into_iter()
+                    .map(|l| ((l.provider.clone(), l.external_id.clone()), l))
+                    .collect();
 
                 let suggestions = db::load_match_suggestions_for_scope(&s.db, "artist", &artist_id)
                     .await
@@ -414,50 +406,45 @@ async fn main() {
                 Ok(suggestions
                     .into_iter()
                     .map(|m| {
-                        let left_linked =
-                            linked_pairs.contains(&(m.left_provider.clone(), m.left_external_id.clone()));
+                        let left_linked = linked_pairs
+                            .contains(&(m.left_provider.clone(), m.left_external_id.clone()));
                         let right_linked = linked_pairs
                             .contains(&(m.right_provider.clone(), m.right_external_id.clone()));
 
-                        let use_right = if left_linked
-                            && !right_linked
-                        {
+                        let use_right = if left_linked && !right_linked {
                             true
-                        } else if right_linked
-                            && !left_linked
-                        {
-                            false
                         } else {
-                            true
+                            !right_linked || left_linked
                         };
 
-                        let (provider, external_id, external_name, external_url, image_ref) = if use_right {
-                            (
-                                m.right_provider.clone(),
-                                m.right_external_id.clone(),
-                                m.external_name.clone(),
-                                m.external_url.clone(),
-                                m.image_ref.clone(),
-                            )
-                        } else if let Some(link) = link_lookup
-                            .get(&(m.left_provider.clone(), m.left_external_id.clone()))
-                        {
-                            (
-                                m.left_provider.clone(),
-                                m.left_external_id.clone(),
-                                link.external_name.clone(),
-                                link.external_url.clone(),
-                                link.image_ref.clone(),
-                            )
-                        } else {
-                            (
-                                m.left_provider.clone(),
-                                m.left_external_id.clone(),
-                                None,
-                                None,
-                                None,
-                            )
-                        };
+                        let (provider, external_id, external_name, external_url, image_ref) =
+                            if use_right {
+                                (
+                                    m.right_provider.clone(),
+                                    m.right_external_id.clone(),
+                                    m.external_name.clone(),
+                                    m.external_url.clone(),
+                                    m.image_ref.clone(),
+                                )
+                            } else if let Some(link) = link_lookup
+                                .get(&(m.left_provider.clone(), m.left_external_id.clone()))
+                            {
+                                (
+                                    m.left_provider.clone(),
+                                    m.left_external_id.clone(),
+                                    link.external_name.clone(),
+                                    link.external_url.clone(),
+                                    link.image_ref.clone(),
+                                )
+                            } else {
+                                (
+                                    m.left_provider.clone(),
+                                    m.left_external_id.clone(),
+                                    None,
+                                    None,
+                                    None,
+                                )
+                            };
 
                         let image_url = image_ref
                             .as_deref()
@@ -500,11 +487,13 @@ async fn main() {
                     .iter()
                     .map(|l| (l.provider.clone(), l.external_id.clone()))
                     .collect();
-                let link_lookup: std::collections::HashMap<(String, String), db::AlbumProviderLink> =
-                    album_links
-                        .into_iter()
-                        .map(|l| ((l.provider.clone(), l.external_id.clone()), l))
-                        .collect();
+                let link_lookup: std::collections::HashMap<
+                    (String, String),
+                    db::AlbumProviderLink,
+                > = album_links
+                    .into_iter()
+                    .map(|l| ((l.provider.clone(), l.external_id.clone()), l))
+                    .collect();
 
                 let suggestions = db::load_match_suggestions_for_scope(&s.db, "album", &album_id)
                     .await
@@ -512,50 +501,45 @@ async fn main() {
                 Ok(suggestions
                     .into_iter()
                     .map(|m| {
-                        let left_linked =
-                            linked_pairs.contains(&(m.left_provider.clone(), m.left_external_id.clone()));
+                        let left_linked = linked_pairs
+                            .contains(&(m.left_provider.clone(), m.left_external_id.clone()));
                         let right_linked = linked_pairs
                             .contains(&(m.right_provider.clone(), m.right_external_id.clone()));
 
-                        let use_right = if left_linked
-                            && !right_linked
-                        {
+                        let use_right = if left_linked && !right_linked {
                             true
-                        } else if right_linked
-                            && !left_linked
-                        {
-                            false
                         } else {
-                            true
+                            !right_linked || left_linked
                         };
 
-                        let (provider, external_id, external_name, external_url, image_ref) = if use_right {
-                            (
-                                m.right_provider.clone(),
-                                m.right_external_id.clone(),
-                                m.external_name.clone(),
-                                m.external_url.clone(),
-                                m.image_ref.clone(),
-                            )
-                        } else if let Some(link) = link_lookup
-                            .get(&(m.left_provider.clone(), m.left_external_id.clone()))
-                        {
-                            (
-                                m.left_provider.clone(),
-                                m.left_external_id.clone(),
-                                link.external_title.clone(),
-                                link.external_url.clone(),
-                                link.cover_ref.clone(),
-                            )
-                        } else {
-                            (
-                                m.left_provider.clone(),
-                                m.left_external_id.clone(),
-                                None,
-                                None,
-                                None,
-                            )
-                        };
+                        let (provider, external_id, external_name, external_url, image_ref) =
+                            if use_right {
+                                (
+                                    m.right_provider.clone(),
+                                    m.right_external_id.clone(),
+                                    m.external_name.clone(),
+                                    m.external_url.clone(),
+                                    m.image_ref.clone(),
+                                )
+                            } else if let Some(link) = link_lookup
+                                .get(&(m.left_provider.clone(), m.left_external_id.clone()))
+                            {
+                                (
+                                    m.left_provider.clone(),
+                                    m.left_external_id.clone(),
+                                    link.external_title.clone(),
+                                    link.external_url.clone(),
+                                    link.cover_ref.clone(),
+                                )
+                            } else {
+                                (
+                                    m.left_provider.clone(),
+                                    m.left_external_id.clone(),
+                                    None,
+                                    None,
+                                    None,
+                                )
+                            };
 
                         let image_url = image_ref
                             .as_deref()
@@ -906,27 +890,28 @@ async fn dispatch_action_impl(
 
             match suggestion.scope_type.as_str() {
                 "album" => {
-                    let album_links = db::load_album_provider_links(&state.db, &suggestion.scope_id)
-                        .await
-                        .map_err(|e| format!("failed loading album links: {e}"))?;
+                    let album_links =
+                        db::load_album_provider_links(&state.db, &suggestion.scope_id)
+                            .await
+                            .map_err(|e| format!("failed loading album links: {e}"))?;
                     let linked: std::collections::HashSet<(String, String)> = album_links
                         .iter()
                         .map(|l| (l.provider.clone(), l.external_id.clone()))
                         .collect();
-                    let left_linked =
-                        linked.contains(&(suggestion.left_provider.clone(), suggestion.left_external_id.clone()));
-                    let right_linked = linked
-                        .contains(&(suggestion.right_provider.clone(), suggestion.right_external_id.clone()));
-                    let (target_provider, target_external_id) = if left_linked
-                        && !right_linked
-                    {
+                    let left_linked = linked.contains(&(
+                        suggestion.left_provider.clone(),
+                        suggestion.left_external_id.clone(),
+                    ));
+                    let right_linked = linked.contains(&(
+                        suggestion.right_provider.clone(),
+                        suggestion.right_external_id.clone(),
+                    ));
+                    let (target_provider, target_external_id) = if left_linked && !right_linked {
                         (
                             suggestion.right_provider.clone(),
                             suggestion.right_external_id.clone(),
                         )
-                    } else if right_linked
-                        && !left_linked
-                    {
+                    } else if right_linked && !left_linked {
                         (
                             suggestion.left_provider.clone(),
                             suggestion.left_external_id.clone(),
@@ -975,20 +960,20 @@ async fn dispatch_action_impl(
                         .iter()
                         .map(|l| (l.provider.clone(), l.external_id.clone()))
                         .collect();
-                    let left_linked =
-                        linked.contains(&(suggestion.left_provider.clone(), suggestion.left_external_id.clone()));
-                    let right_linked = linked
-                        .contains(&(suggestion.right_provider.clone(), suggestion.right_external_id.clone()));
-                    let (target_provider, target_external_id) = if left_linked
-                        && !right_linked
-                    {
+                    let left_linked = linked.contains(&(
+                        suggestion.left_provider.clone(),
+                        suggestion.left_external_id.clone(),
+                    ));
+                    let right_linked = linked.contains(&(
+                        suggestion.right_provider.clone(),
+                        suggestion.right_external_id.clone(),
+                    ));
+                    let (target_provider, target_external_id) = if left_linked && !right_linked {
                         (
                             suggestion.right_provider.clone(),
                             suggestion.right_external_id.clone(),
                         )
-                    } else if right_linked
-                        && !left_linked
-                    {
+                    } else if right_linked && !left_linked {
                         (
                             suggestion.left_provider.clone(),
                             suggestion.left_external_id.clone(),

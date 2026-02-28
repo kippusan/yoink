@@ -7,3 +7,4 @@
 /yoink.db-wal
 .env*
 !.env.example
+.ant-colony/

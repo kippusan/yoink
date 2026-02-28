@@ -269,6 +269,8 @@ pub(crate) async fn merge_albums(
     state: &AppState,
     target_album_id: &str,
     source_album_id: &str,
+    result_title: Option<&str>,
+    result_cover_url: Option<&str>,
 ) -> Result<(), String> {
     if target_album_id == source_album_id {
         return Err("target and source albums must be different".to_string());
@@ -323,14 +325,17 @@ pub(crate) async fn merge_albums(
             target.monitored = target.monitored || source_flags.0;
             target.acquired = target.acquired || source_flags.1;
             update_wanted(target);
-            let _ = db::update_album_flags(
-                &state.db,
-                &target.id,
-                target.monitored,
-                target.acquired,
-                target.wanted,
-            )
-            .await;
+
+            // Apply user-chosen metadata overrides (title / cover).
+            if let Some(title) = result_title {
+                target.title = title.to_string();
+            }
+            if let Some(cover) = result_cover_url {
+                target.cover_url = Some(cover.to_string());
+            }
+
+            // Persist the full album state (flags + metadata overrides).
+            let _ = db::upsert_album(&state.db, target).await;
         }
         albums.retain(|a| a.id != source_album_id);
     }

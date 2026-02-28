@@ -11,7 +11,7 @@ mod ui;
 
 use std::{sync::Arc, time::Duration};
 
-use axum::routing::{get, get_service};
+use axum::routing::get;
 use tower::layer::Layer;
 use tower_http::normalize_path::NormalizePathLayer;
 use tower_http::services::ServeDir;
@@ -324,9 +324,10 @@ async fn main() {
                                     duration_secs: secs,
                                     duration_display: format!("{mins}:{rem:02}"),
                                     isrc: t.isrc,
+                                    explicit,
                                 };
 
-                                let _ = db::upsert_track(&s.db, &track_info, &album_id, explicit).await;
+                                let _ = db::upsert_track(&s.db, &track_info, &album_id).await;
                                 let _ = db::upsert_track_provider_link(
                                     &s.db,
                                     &local_track_id,
@@ -628,17 +629,18 @@ async fn main() {
         get(leptos_axum::render_app_to_stream_with_context(ctx, shell))
     };
 
+    // Static assets (JS/WASM bundles, public files) are served under specific
+    // paths. Everything else falls through to Leptos SSR so every client-side
+    // route works on reload without manually registering it in Axum.
     let app = build_router(state)
         .route(
             "/leptos/{*fn_name}",
             get(server_fn_handler.clone()).post(server_fn_handler),
         )
-        .route("/", leptos_handler())
-        .route("/artists", leptos_handler())
-        .route("/artists/{artist_id}", leptos_handler())
-        .route("/artists/{artist_id}/albums/{album_id}", leptos_handler())
-        .route("/wanted", leptos_handler())
-        .fallback_service(get_service(ServeDir::new(site_root)))
+        .nest_service("/pkg", ServeDir::new(format!("{}/pkg", site_root)))
+        .nest_service("/favicon.ico", ServeDir::new(format!("{}/favicon.ico", site_root)))
+        .nest_service("/yoink.svg", ServeDir::new(format!("{}/yoink.svg", site_root)))
+        .fallback(leptos_handler())
         .layer(
             TraceLayer::new_for_http()
                 .on_request(
@@ -1084,8 +1086,17 @@ async fn dispatch_action_impl(
         ServerAction::MergeAlbums {
             target_album_id,
             source_album_id,
+            result_title,
+            result_cover_url,
         } => {
-            services::merge_albums(&state, &target_album_id, &source_album_id).await?;
+            services::merge_albums(
+                &state,
+                &target_album_id,
+                &source_album_id,
+                result_title.as_deref(),
+                result_cover_url.as_deref(),
+            )
+            .await?;
 
             let artist_id = {
                 let albums = state.monitored_albums.read().await;

@@ -81,6 +81,7 @@ pub struct TrackInfo {
     pub duration_secs: u32,
     pub duration_display: String,
     pub isrc: Option<String>,
+    pub explicit: bool,
 }
 
 /// Provider link info for the UI
@@ -334,6 +335,10 @@ pub enum ServerAction {
     MergeAlbums {
         target_album_id: String,
         source_album_id: String,
+        /// If provided, override the surviving album's title.
+        result_title: Option<String>,
+        /// If provided, override the surviving album's cover URL.
+        result_cover_url: Option<String>,
     },
     RetagLibrary,
     ScanImportLibrary,

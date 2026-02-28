@@ -240,7 +240,7 @@ pub(crate) async fn load_tracks_for_album(
 ) -> Result<Vec<TrackInfo>, sqlx::Error> {
     let uuid = parse_uuid(album_id).unwrap_or_default();
     let rows = sqlx::query(
-        "SELECT id, title, disc_number, track_number, duration_secs, isrc
+        "SELECT id, title, version, disc_number, track_number, duration_secs, explicit, isrc
          FROM tracks WHERE album_id = $1
          ORDER BY disc_number, track_number",
     )
@@ -259,31 +259,31 @@ pub(crate) async fn load_tracks_for_album(
             TrackInfo {
                 id: Uuid::from_slice(&id).unwrap_or_default().to_string(),
                 title: r.get("title"),
-                version: None,
+                version: r.get("version"),
                 disc_number: r.get::<i32, _>("disc_number") as u32,
                 track_number: r.get::<i32, _>("track_number") as u32,
                 duration_secs: secs,
                 duration_display: format!("{mins}:{rem:02}"),
                 isrc: r.get("isrc"),
+                explicit: r.get::<i32, _>("explicit") != 0,
             }
         })
         .collect())
 }
 
-#[allow(dead_code)]
 pub(crate) async fn upsert_track(
     pool: &SqlitePool,
     track: &TrackInfo,
     album_id: &str,
-    explicit: bool,
 ) -> Result<(), sqlx::Error> {
     let uuid = parse_uuid(&track.id).unwrap_or_else(|_| new_uuid());
     let album_uuid = parse_uuid(album_id).unwrap_or_default();
     sqlx::query(
-        "INSERT INTO tracks (id, album_id, title, disc_number, track_number, duration_secs, explicit, isrc)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        "INSERT INTO tracks (id, album_id, title, version, disc_number, track_number, duration_secs, explicit, isrc)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          ON CONFLICT(id) DO UPDATE SET
            title = excluded.title,
+           version = excluded.version,
            disc_number = excluded.disc_number,
            track_number = excluded.track_number,
            duration_secs = excluded.duration_secs,
@@ -293,10 +293,11 @@ pub(crate) async fn upsert_track(
     .bind(uuid.as_bytes().as_slice())
     .bind(album_uuid.as_bytes().as_slice())
     .bind(&track.title)
+    .bind(&track.version)
     .bind(track.disc_number as i32)
     .bind(track.track_number as i32)
     .bind(track.duration_secs as i32)
-    .bind(explicit as i32)
+    .bind(track.explicit as i32)
     .bind(&track.isrc)
     .execute(pool)
     .await?;

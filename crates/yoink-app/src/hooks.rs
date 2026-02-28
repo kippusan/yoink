@@ -85,10 +85,15 @@ fn create_sse_signals() -> (ReadSignal<u64>, ReadSignal<SseStatus>) {
 fn setup_event_source(set_version: WriteSignal<u64>, set_status: WriteSignal<SseStatus>) {
     use wasm_bindgen::prelude::*;
 
-    // We use a simple recursive approach: connect(), and on error schedule
-    // a reconnect after 3 seconds.
+    // We use a simple recursive approach: connect(), and on error close
+    // the old EventSource and schedule a reconnect after 3 seconds.
     fn connect(set_version: WriteSignal<u64>, set_status: WriteSignal<SseStatus>) {
-        let es = web_sys::EventSource::new("/api/events").expect("EventSource::new failed");
+        use std::cell::Cell;
+        use std::rc::Rc;
+
+        let es = Rc::new(
+            web_sys::EventSource::new("/api/events").expect("EventSource::new failed"),
+        );
 
         // on open -> connected
         {
@@ -107,9 +112,6 @@ fn setup_event_source(set_version: WriteSignal<u64>, set_status: WriteSignal<Sse
         // visible flashing. We coalesce rapid-fire events into a single
         // version bump after a 300ms quiet period.
         {
-            use std::cell::Cell;
-            use std::rc::Rc;
-
             let pending_timer: Rc<Cell<Option<i32>>> = Rc::new(Cell::new(None));
             let cb = Closure::<dyn Fn(web_sys::Event)>::new(move |_: web_sys::Event| {
                 // Cancel any pending debounce timer
@@ -136,15 +138,17 @@ fn setup_event_source(set_version: WriteSignal<u64>, set_status: WriteSignal<Sse
             cb.forget();
         }
 
-        // on error -> set reconnecting, close this ES, schedule reconnect after 3s
+        // on error -> close this ES to stop the browser's auto-reconnect,
+        // set status to reconnecting, then schedule our own reconnect after 3s.
         {
+            let es_ref = es.clone();
             let cb = Closure::<dyn Fn(web_sys::Event)>::new(move |_: web_sys::Event| {
+                // Close the EventSource immediately to prevent the browser's
+                // built-in auto-reconnect from firing additional error events.
+                es_ref.close();
+
                 set_status.set(SseStatus::Reconnecting);
 
-                // The EventSource auto-closes on certain errors, but we close explicitly
-                // to be safe. We can't hold a reference to `es` here without Rc, so
-                // we rely on the browser's EventSource reconnect being disabled by
-                // our error handler. Instead, schedule our own reconnect.
                 let reconnect_cb = Closure::once_into_js(move || {
                     connect(set_version, set_status);
                 });
@@ -158,10 +162,9 @@ fn setup_event_source(set_version: WriteSignal<u64>, set_status: WriteSignal<Sse
             cb.forget();
         }
 
-        // Leak the EventSource intentionally — it lives for the app lifetime.
-        // The browser's built-in EventSource reconnect will also fire, but our
-        // error handler ensures we update status correctly.
-        std::mem::forget(es);
+        // The Rc<EventSource> is kept alive by the closures registered above
+        // (which are leaked via .forget()). It lives for the app lifetime or
+        // until the error handler closes it and a new one is created.
     }
 
     connect(set_version, set_status);

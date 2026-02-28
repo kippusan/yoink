@@ -1,0 +1,64 @@
+//! Server-side context for Leptos server functions (SSR only).
+
+use crate::{
+    DownloadJob, ImportConfirmation, ImportPreviewItem, ImportResultSummary, MatchSuggestion,
+    MonitoredAlbum, MonitoredArtist, ProviderLink, SearchArtistResult, ServerAction, TrackInfo,
+};
+
+type AsyncFnResult<T> =
+    std::pin::Pin<Box<dyn std::future::Future<Output = Result<T, String>> + Send>>;
+
+pub type SearchArtistsFn =
+    std::sync::Arc<dyn Fn(String) -> AsyncFnResult<Vec<SearchArtistResult>> + Send + Sync>;
+
+pub type SearchArtistsScopedFn =
+    std::sync::Arc<dyn Fn(String, String) -> AsyncFnResult<Vec<SearchArtistResult>> + Send + Sync>;
+
+pub type ListProvidersFn = std::sync::Arc<dyn Fn() -> Vec<String> + Send + Sync>;
+
+pub type FetchTracksFn =
+    std::sync::Arc<dyn Fn(String) -> AsyncFnResult<Vec<TrackInfo>> + Send + Sync>;
+
+pub type FetchArtistLinksFn =
+    std::sync::Arc<dyn Fn(String) -> AsyncFnResult<Vec<ProviderLink>> + Send + Sync>;
+
+pub type FetchAlbumLinksFn =
+    std::sync::Arc<dyn Fn(String) -> AsyncFnResult<Vec<ProviderLink>> + Send + Sync>;
+
+pub type FetchArtistMatchSuggestionsFn =
+    std::sync::Arc<dyn Fn(String) -> AsyncFnResult<Vec<MatchSuggestion>> + Send + Sync>;
+
+pub type FetchAlbumMatchSuggestionsFn =
+    std::sync::Arc<dyn Fn(String) -> AsyncFnResult<Vec<MatchSuggestion>> + Send + Sync>;
+
+pub type DispatchActionFn =
+    std::sync::Arc<dyn Fn(ServerAction) -> AsyncFnResult<()> + Send + Sync>;
+
+pub type PreviewImportFn =
+    std::sync::Arc<dyn Fn() -> AsyncFnResult<Vec<ImportPreviewItem>> + Send + Sync>;
+
+pub type ConfirmImportFn = std::sync::Arc<
+    dyn Fn(Vec<ImportConfirmation>) -> AsyncFnResult<ImportResultSummary> + Send + Sync,
+>;
+
+/// Holds the shared in-memory state that server functions need to read.
+///
+/// Provided via `leptos::context::provide_context` in main.rs and consumed via
+/// `use_context::<ServerContext>()` inside `#[server]` functions.
+#[derive(Clone)]
+pub struct ServerContext {
+    pub monitored_artists: std::sync::Arc<tokio::sync::RwLock<Vec<MonitoredArtist>>>,
+    pub monitored_albums: std::sync::Arc<tokio::sync::RwLock<Vec<MonitoredAlbum>>>,
+    pub download_jobs: std::sync::Arc<tokio::sync::RwLock<Vec<DownloadJob>>>,
+    pub search_artists: SearchArtistsFn,
+    pub search_artists_scoped: SearchArtistsScopedFn,
+    pub list_providers: ListProvidersFn,
+    pub fetch_tracks: FetchTracksFn,
+    pub fetch_artist_links: FetchArtistLinksFn,
+    pub fetch_album_links: FetchAlbumLinksFn,
+    pub fetch_artist_match_suggestions: FetchArtistMatchSuggestionsFn,
+    pub fetch_album_match_suggestions: FetchAlbumMatchSuggestionsFn,
+    pub dispatch_action: DispatchActionFn,
+    pub preview_import: PreviewImportFn,
+    pub confirm_import: ConfirmImportFn,
+}

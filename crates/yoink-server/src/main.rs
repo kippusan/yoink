@@ -927,6 +927,18 @@ async fn dispatch_action_impl(
                 image_ref,
             };
             let _ = db::upsert_artist_provider_link(&state.db, &link).await;
+            // Fetch bio if we don't have one yet
+            {
+                let artists = state.monitored_artists.read().await;
+                let has_bio = artists
+                    .iter()
+                    .find(|a| a.id == link.artist_id)
+                    .map(|a| a.bio.is_some())
+                    .unwrap_or(false);
+                if !has_bio {
+                    spawn_fetch_artist_bio(&state, link.artist_id.clone());
+                }
+            }
             spawn_recompute_artist_match_suggestions(&state, link.artist_id.clone());
             state.notify_sse();
         }

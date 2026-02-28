@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use better_config::{env, EnvConfig};
+use better_config::{EnvConfig, env};
 
 use crate::config::DEFAULT_QUALITY;
 
@@ -186,14 +186,11 @@ mod tests {
     #[test]
     #[serial]
     fn trims_base_url_trailing_slash() {
-        with_env_vars(
-            &[("HIFI_API_BASE_URL", "http://localhost:8000///")],
-            || {
-                let mut cfg = AppConfig::builder().build().expect("config parse");
-                cfg.normalize();
+        with_env_vars(&[("HIFI_API_BASE_URL", "http://localhost:8000///")], || {
+            let mut cfg = AppConfig::builder().build().expect("config parse");
+            cfg.normalize();
 
-                assert_eq!(cfg.hifi_api_base_url, "http://localhost:8000");
-            },
-        );
+            assert_eq!(cfg.hifi_api_base_url, "http://localhost:8000");
+        });
     }
 }

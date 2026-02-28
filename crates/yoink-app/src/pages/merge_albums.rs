@@ -9,7 +9,7 @@ use crate::components::toast::dispatch_with_toast;
 use crate::components::{ErrorPanel, MobileMenuButton, Sidebar};
 use crate::hooks::{set_page_title, use_sse_version};
 use crate::styles::{
-    BTN_DANGER, BTN_PRIMARY, BREADCRUMB_CURRENT, BREADCRUMB_LINK, BREADCRUMB_NAV, BREADCRUMB_SEP,
+    BREADCRUMB_CURRENT, BREADCRUMB_LINK, BREADCRUMB_NAV, BREADCRUMB_SEP, BTN_DANGER, BTN_PRIMARY,
     GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, HEADER_BAR, MUTED, SELECT, cls,
 };
 
@@ -81,13 +81,14 @@ pub async fn get_merge_albums_data(artist_id: String) -> Result<MergeAlbumsData,
         links_by_album.insert(album.id.clone(), links);
         tracks_by_album.insert(
             album.id.clone(),
-            (ctx.fetch_tracks)(album.id.clone()).await.unwrap_or_default(),
+            (ctx.fetch_tracks)(album.id.clone())
+                .await
+                .unwrap_or_default(),
         );
     }
 
     // Deduplicate by ordered album-pair (regardless of which suggestion triggered it).
-    let mut dedupe: std::collections::HashSet<(String, String)> =
-        std::collections::HashSet::new();
+    let mut dedupe: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
     // Collect suggestion IDs per album pair for dismiss support.
     let mut suggestion_ids_map: std::collections::HashMap<(String, String), Vec<String>> =
         std::collections::HashMap::new();
@@ -138,8 +139,12 @@ pub async fn get_merge_albums_data(artist_id: String) -> Result<MergeAlbumsData,
     let mut candidates = Vec::new();
 
     for key in &dedupe {
-        let Some(a) = album_by_id.get(&key.0).cloned() else { continue };
-        let Some(b) = album_by_id.get(&key.1).cloned() else { continue };
+        let Some(a) = album_by_id.get(&key.0).cloned() else {
+            continue;
+        };
+        let Some(b) = album_by_id.get(&key.1).cloned() else {
+            continue;
+        };
         let a_links = links_by_album.get(&a.id).cloned().unwrap_or_default();
         let b_links = links_by_album.get(&b.id).cloned().unwrap_or_default();
         let a_tracks = tracks_by_album.get(&a.id).cloned().unwrap_or_default();
@@ -211,7 +216,10 @@ fn build_merged_track_preview(target: &[TrackInfo], source: &[TrackInfo]) -> Vec
 }
 
 #[cfg(feature = "ssr")]
-fn build_merged_links_preview(target: &[ProviderLink], source: &[ProviderLink]) -> Vec<ProviderLink> {
+fn build_merged_links_preview(
+    target: &[ProviderLink],
+    source: &[ProviderLink],
+) -> Vec<ProviderLink> {
     let mut map: std::collections::HashMap<(String, String), ProviderLink> =
         std::collections::HashMap::new();
 
@@ -224,7 +232,11 @@ fn build_merged_links_preview(target: &[ProviderLink], source: &[ProviderLink]) 
     }
 
     let mut out: Vec<ProviderLink> = map.into_values().collect();
-    out.sort_by(|a, b| a.provider.cmp(&b.provider).then_with(|| a.external_id.cmp(&b.external_id)));
+    out.sort_by(|a, b| {
+        a.provider
+            .cmp(&b.provider)
+            .then_with(|| a.external_id.cmp(&b.external_id))
+    });
     out
 }
 
@@ -275,11 +287,7 @@ fn ProviderBadge(link: ProviderLink) -> impl IntoView {
 
 /// Compact album card used in the side-by-side comparison.
 #[component]
-fn AlbumCard(
-    album: MonitoredAlbum,
-    links: Vec<ProviderLink>,
-    track_count: usize,
-) -> impl IntoView {
+fn AlbumCard(album: MonitoredAlbum, links: Vec<ProviderLink>, track_count: usize) -> impl IntoView {
     view! {
         <div class="flex items-start gap-3 min-w-0">
             {match album.cover_url.clone() {

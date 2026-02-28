@@ -141,14 +141,10 @@ impl MusicBrainzProvider {
             }
             let page_title = parts[1];
             // Extract the language subdomain
-            let lang = wiki_url
-                .strip_prefix("https://")?
-                .split('.')
-                .next()?;
+            let lang = wiki_url.strip_prefix("https://")?.split('.').next()?;
 
-            let api_url = format!(
-                "https://{lang}.wikipedia.org/api/rest_v1/page/summary/{page_title}"
-            );
+            let api_url =
+                format!("https://{lang}.wikipedia.org/api/rest_v1/page/summary/{page_title}");
 
             let resp = self
                 .http

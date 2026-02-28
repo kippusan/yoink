@@ -9,15 +9,15 @@ use yoink_shared::{
 
 use leptoaster::{ToastBuilder, ToastLevel, ToastPosition, expect_toaster};
 
+use super::provider_icon_svg;
 use crate::actions::dispatch_action;
 use crate::components::toast::{dispatch_with_toast, dispatch_with_toast_loading};
 use crate::components::{ConfirmDialog, ErrorPanel, LinkProviderDialog, MobileMenuButton, Sidebar};
-use super::provider_icon_svg;
 use crate::hooks::{set_page_title, use_sse_version};
 use crate::styles::{
-    BTN, BTN_DANGER, BTN_PRIMARY, BREADCRUMB_CURRENT, BREADCRUMB_LINK, BREADCRUMB_NAV,
-    BREADCRUMB_SEP, EMPTY, GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, HEADER_BAR, MUTED,
-    SELECT, btn_cls, cls,
+    BREADCRUMB_CURRENT, BREADCRUMB_LINK, BREADCRUMB_NAV, BREADCRUMB_SEP, BTN, BTN_DANGER,
+    BTN_PRIMARY, EMPTY, GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, HEADER_BAR, MUTED, SELECT,
+    btn_cls, cls,
 };
 
 // ── DTO ─────────────────────────────────────────────────────

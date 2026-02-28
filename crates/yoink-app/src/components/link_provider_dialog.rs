@@ -33,9 +33,7 @@ pub async fn list_providers() -> Result<Vec<String>, ServerFnError> {
 }
 
 #[server(SearchAllProviders, "/leptos")]
-pub async fn search_all_providers(
-    query: String,
-) -> Result<Vec<SearchArtistResult>, ServerFnError> {
+pub async fn search_all_providers(query: String) -> Result<Vec<SearchArtistResult>, ServerFnError> {
     let ctx = use_context::<yoink_shared::ServerContext>()
         .ok_or_else(|| ServerFnError::new("ServerContext not available"))?;
 
@@ -290,7 +288,7 @@ pub fn LinkProviderDialog(
                                                 .into_iter()
                                                 .filter(|r| !is_linked(&r.provider, &r.external_id))
                                                 .filter(|r| {
-                                                    active_filter.as_ref().map_or(true, |f| &r.provider == f)
+                                                    active_filter.as_ref().is_none_or(|f| &r.provider == f)
                                                 })
                                                 .collect();
 

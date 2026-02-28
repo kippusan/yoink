@@ -7,13 +7,13 @@ use yoink_shared::{
     provider_display_name, status_class, status_label_text,
 };
 
+use super::provider_icon_svg;
 use crate::components::toast::{dispatch_with_toast, dispatch_with_toast_loading};
 use crate::components::{ConfirmDialog, ErrorPanel, MobileMenuButton, Sidebar};
 use crate::hooks::{set_page_title, use_sse_version};
-use super::provider_icon_svg;
 use crate::styles::{
-    BTN, BTN_DANGER, BTN_PRIMARY, BREADCRUMB_CURRENT, BREADCRUMB_LINK, BREADCRUMB_NAV,
-    BREADCRUMB_SEP, GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, HEADER_BAR, MUTED, btn_cls, cls,
+    BREADCRUMB_CURRENT, BREADCRUMB_LINK, BREADCRUMB_NAV, BREADCRUMB_SEP, BTN, BTN_DANGER,
+    BTN_PRIMARY, GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, HEADER_BAR, MUTED, btn_cls, cls,
 };
 
 // ── DTO ─────────────────────────────────────────────────────

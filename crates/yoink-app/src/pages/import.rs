@@ -9,8 +9,7 @@ use yoink_shared::{
 use crate::components::{ErrorPanel, MobileMenuButton, Sidebar};
 use crate::hooks::{set_page_title, use_sse_version};
 use crate::styles::{
-    BTN, BTN_PRIMARY, EMPTY, GLASS, GLASS_HEADER, GLASS_TITLE, HEADER_BAR, MUTED,
-    btn_cls, cls,
+    BTN, BTN_PRIMARY, EMPTY, GLASS, GLASS_HEADER, GLASS_TITLE, HEADER_BAR, MUTED, btn_cls, cls,
 };
 
 #[cfg(feature = "hydrate")]
@@ -24,7 +23,8 @@ const IMPORT_ROW_IMPORTED: &str = "flex items-center gap-3.5 px-5 py-3.5 border-
 const THUMB: &str = "size-12 rounded-lg object-cover shrink-0 bg-zinc-200 dark:bg-zinc-800 shadow-[0_2px_8px_rgba(0,0,0,.08)] dark:shadow-[0_2px_8px_rgba(0,0,0,.3)]";
 const THUMB_FALLBACK: &str = "size-12 rounded-lg inline-flex items-center justify-center bg-zinc-200 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-600 shrink-0";
 const STAT_MINI: &str = "text-center px-3 py-2";
-const STAT_MINI_LABEL: &str = "text-[11px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400";
+const STAT_MINI_LABEL: &str =
+    "text-[11px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400";
 const STAT_MINI_VALUE: &str = "text-lg font-bold text-zinc-900 dark:text-zinc-100";
 
 // ── Server functions ────────────────────────────────────────
@@ -33,9 +33,7 @@ const STAT_MINI_VALUE: &str = "text-lg font-bold text-zinc-900 dark:text-zinc-10
 pub async fn preview_import_library() -> Result<Vec<ImportPreviewItem>, ServerFnError> {
     let ctx = use_context::<yoink_shared::ServerContext>()
         .ok_or_else(|| ServerFnError::new("ServerContext not available"))?;
-    (ctx.preview_import)()
-        .await
-        .map_err(ServerFnError::new)
+    (ctx.preview_import)().await.map_err(ServerFnError::new)
 }
 
 #[server(
@@ -200,13 +198,10 @@ fn ImportContent(items: Vec<ImportPreviewItem>) -> impl IntoView {
                         let toaster = expect_toaster();
                         if summary.failed == 0 {
                             toaster.toast(
-                                ToastBuilder::new(format!(
-                                    "Imported {} albums",
-                                    summary.imported
-                                ))
-                                .with_level(ToastLevel::Success)
-                                .with_position(ToastPosition::BottomRight)
-                                .with_expiry(Some(4_000)),
+                                ToastBuilder::new(format!("Imported {} albums", summary.imported))
+                                    .with_level(ToastLevel::Success)
+                                    .with_position(ToastPosition::BottomRight)
+                                    .with_expiry(Some(4_000)),
                             );
                         } else {
                             toaster.toast(
@@ -400,21 +395,13 @@ fn ImportRow(item: ImportPreviewItem, selected: RwSignal<Option<usize>>) -> impl
 
     // Status indicator color
     let status_dot_class = match &match_status {
-        ImportMatchStatus::Matched => {
-            "size-2.5 rounded-full bg-green-500 shrink-0"
-        }
-        ImportMatchStatus::Partial => {
-            "size-2.5 rounded-full bg-amber-500 shrink-0"
-        }
-        ImportMatchStatus::Unmatched => {
-            "size-2.5 rounded-full bg-red-500 shrink-0"
-        }
+        ImportMatchStatus::Matched => "size-2.5 rounded-full bg-green-500 shrink-0",
+        ImportMatchStatus::Partial => "size-2.5 rounded-full bg-amber-500 shrink-0",
+        ImportMatchStatus::Unmatched => "size-2.5 rounded-full bg-red-500 shrink-0",
     };
 
-    let cover_url = candidates_stored.with_value(|c| {
-        c.first()
-            .and_then(|cand| cand.cover_url.clone())
-    });
+    let cover_url =
+        candidates_stored.with_value(|c| c.first().and_then(|cand| cand.cover_url.clone()));
 
     let audio_count = item.audio_file_count;
     let discovered_artist = item.discovered_artist.clone();
@@ -556,7 +543,8 @@ fn ImportRow(item: ImportPreviewItem, selected: RwSignal<Option<usize>>) -> impl
 // ── Candidate card constants ────────────────────────────────
 
 const CAND_BASE: &str = "flex items-center gap-2.5 px-3 py-2 rounded-lg border cursor-pointer transition-all duration-150";
-const CAND_SELECTED: &str = "bg-blue-500/[.06] border-blue-500/30 dark:bg-blue-500/[.08] dark:border-blue-500/40";
+const CAND_SELECTED: &str =
+    "bg-blue-500/[.06] border-blue-500/30 dark:bg-blue-500/[.08] dark:border-blue-500/40";
 const CAND_UNSELECTED: &str = "bg-white/40 border-black/[.06] dark:bg-zinc-800/40 dark:border-white/[.06] hover:border-blue-500/20 dark:hover:border-blue-500/30";
 const CAND_THUMB: &str = "size-8 rounded object-cover shrink-0 bg-zinc-200 dark:bg-zinc-700";
 const CAND_THUMB_FALLBACK: &str = "size-8 rounded inline-flex items-center justify-center bg-zinc-200 dark:bg-zinc-700 text-zinc-400 dark:text-zinc-500 shrink-0";

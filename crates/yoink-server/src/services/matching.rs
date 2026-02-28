@@ -71,7 +71,10 @@ async fn recompute_artist_level_suggestions(
             continue;
         };
 
-        let results = provider.search_artists(artist_name).await.unwrap_or_default();
+        let results = provider
+            .search_artists(artist_name)
+            .await
+            .unwrap_or_default();
         let Some((candidate, score)) = best_artist_candidate(artist_name, results, |candidate| {
             !existing_pairs.contains(&(provider_id.clone(), candidate.external_id.clone()))
         }) else {
@@ -140,7 +143,10 @@ async fn recompute_album_match_suggestions(
 
     let mut link_by_provider: HashMap<String, (String, String)> = HashMap::new();
     for l in &metadata_links {
-        link_by_provider.insert(l.provider.clone(), (l.provider.clone(), l.external_id.clone()));
+        link_by_provider.insert(
+            l.provider.clone(),
+            (l.provider.clone(), l.external_id.clone()),
+        );
     }
 
     let existing_pairs: HashSet<(String, String)> = metadata_links
@@ -284,7 +290,8 @@ async fn best_album_candidates(
             let candidate_title = normalize(&album.title);
             let mut score = strsim::jaro_winkler(&local_title, &candidate_title);
 
-            if let (Some(local_year), Some(candidate_date)) = (&local_year, album.release_date.as_deref())
+            if let (Some(local_year), Some(candidate_date)) =
+                (&local_year, album.release_date.as_deref())
                 && candidate_date.starts_with(local_year)
             {
                 score = (score + 0.08).min(1.0);

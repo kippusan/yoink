@@ -91,9 +91,8 @@ fn setup_event_source(set_version: WriteSignal<u64>, set_status: WriteSignal<Sse
         use std::cell::Cell;
         use std::rc::Rc;
 
-        let es = Rc::new(
-            web_sys::EventSource::new("/api/events").expect("EventSource::new failed"),
-        );
+        let es =
+            Rc::new(web_sys::EventSource::new("/api/events").expect("EventSource::new failed"));
 
         // on open -> connected
         {

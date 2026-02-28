@@ -14,7 +14,7 @@ use crate::actions::dispatch_action;
 use crate::components::{ErrorPanel, MobileMenuButton, Sidebar};
 use crate::hooks::{set_page_title, use_sse_version};
 use crate::styles::{
-    BTN_PRIMARY, BREADCRUMB_CURRENT, BREADCRUMB_NAV, EMPTY, GLASS, GLASS_BODY, GLASS_HEADER,
+    BREADCRUMB_CURRENT, BREADCRUMB_NAV, BTN_PRIMARY, EMPTY, GLASS, GLASS_BODY, GLASS_HEADER,
     GLASS_TITLE, HEADER_BAR, MUTED, SELECT, btn_cls, cls,
 };
 
@@ -624,5 +624,3 @@ fn ArtistCard(artist: MonitoredArtist, albums: Vec<MonitoredAlbum>) -> impl Into
         </a>
     }
 }
-
-

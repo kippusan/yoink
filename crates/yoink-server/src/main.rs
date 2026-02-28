@@ -577,6 +577,20 @@ async fn main() {
             Box::pin(async move { dispatch_action_impl(s, action).await })
         });
 
+    let preview_import_state = state.clone();
+    let preview_import_fn: yoink_shared::PreviewImportFn =
+        std::sync::Arc::new(move || {
+            let s = preview_import_state.clone();
+            Box::pin(async move { services::preview_import_library(&s).await })
+        });
+
+    let confirm_import_state = state.clone();
+    let confirm_import_fn: yoink_shared::ConfirmImportFn =
+        std::sync::Arc::new(move |items: Vec<yoink_shared::ImportConfirmation>| {
+            let s = confirm_import_state.clone();
+            Box::pin(async move { services::confirm_import_library(&s, items).await })
+        });
+
     let server_ctx = yoink_shared::ServerContext {
         monitored_artists: state.monitored_artists.clone(),
         monitored_albums: state.monitored_albums.clone(),
@@ -590,6 +604,8 @@ async fn main() {
         fetch_artist_match_suggestions: fetch_artist_match_suggestions_fn,
         fetch_album_match_suggestions: fetch_album_match_suggestions_fn,
         dispatch_action: dispatch_action_fn,
+        preview_import: preview_import_fn,
+        confirm_import: confirm_import_fn,
     };
 
     // Closure that injects ServerContext — used for both SSR rendering
@@ -1256,6 +1272,25 @@ async fn dispatch_action_impl(
                     }
                 }
             });
+        }
+
+        ServerAction::ConfirmImport { items } => {
+            let summary = services::confirm_import_library(&state, items).await?;
+            info!(
+                total = summary.total_selected,
+                imported = summary.imported,
+                artists_added = summary.artists_added,
+                failed = summary.failed,
+                "Confirmed import completed"
+            );
+            if !summary.errors.is_empty() {
+                return Err(format!(
+                    "Imported {}/{} albums. Errors: {}",
+                    summary.imported,
+                    summary.total_selected,
+                    summary.errors.join("; ")
+                ));
+            }
         }
     }
 

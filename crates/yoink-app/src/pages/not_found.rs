@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 use lucide_leptos::{House, SearchX};
 
-use crate::components::Sidebar;
+use crate::components::{MobileMenuButton, Sidebar};
 use crate::hooks::set_page_title;
 use crate::styles::{BTN_PRIMARY, MUTED, cls};
 
@@ -13,8 +13,8 @@ pub fn NotFoundPage() -> impl IntoView {
             <Sidebar active="" />
             <div class="ml-[220px] max-md:ml-0 flex-1 min-h-screen">
                 // Header
-                <div class="bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[16px] border-b border-black/[.06] dark:border-white/[.06] px-6 max-md:pl-14 py-3.5 flex items-center justify-between sticky top-0 z-40">
-                    <h1 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 m-0">"Not Found"</h1>
+                <div class="bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[16px] border-b border-black/[.06] dark:border-white/[.06] px-6 py-3.5 flex items-center justify-between sticky top-0 z-40">
+                    <div class="flex items-center gap-2"><MobileMenuButton /><h1 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 m-0">"Not Found"</h1></div>
                 </div>
 
                 // Content

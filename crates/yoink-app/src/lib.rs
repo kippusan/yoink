@@ -45,6 +45,7 @@ pub fn App() -> impl IntoView {
                 <Route path=path!("/artists/:id/merge-albums") view=pages::merge_albums::MergeAlbumsPage />
                 <Route path=path!("/artists/:artist_id/albums/:album_id") view=pages::album_detail::AlbumDetailPage />
                 <Route path=path!("/wanted") view=pages::wanted::WantedPage />
+                <Route path=path!("/import") view=pages::import::ImportPage />
             </Routes>
         </Router>
     }
@@ -107,6 +108,10 @@ fn KeyboardShortcuts() -> impl IntoView {
                         }
                         "w" => {
                             navigate("/wanted", Default::default());
+                            return;
+                        }
+                        "i" => {
+                            navigate("/import", Default::default());
                             return;
                         }
                         _ => {

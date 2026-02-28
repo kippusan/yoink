@@ -8,10 +8,10 @@ use yoink_shared::{
 };
 
 use crate::components::toast::{dispatch_with_toast, dispatch_with_toast_loading};
-use crate::components::{ConfirmDialog, ErrorPanel, Sidebar};
+use crate::components::{ConfirmDialog, ErrorPanel, MobileMenuButton, Sidebar};
 use crate::hooks::{set_page_title, use_sse_version};
 use crate::styles::{
-    BTN, BTN_DANGER, BTN_PRIMARY, EMPTY, GLASS, GLASS_HEADER, GLASS_TITLE, MUTED, btn_cls, cls,
+    BTN, BTN_DANGER, EMPTY, GLASS, GLASS_HEADER, GLASS_TITLE, MUTED, btn_cls, cls,
 };
 
 // ── Page-specific Tailwind class constants ──────────────────
@@ -64,8 +64,8 @@ pub fn DashboardPage() -> impl IntoView {
             <div class="ml-[220px] max-md:ml-0 flex-1 min-h-screen">
                 <Transition fallback=move || view! {
                     <div>
-                        <div class="bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[16px] border-b border-black/[.06] dark:border-white/[.06] px-6 max-md:pl-14 py-3.5 flex items-center justify-between sticky top-0 z-40">
-                            <h1 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 m-0">"Dashboard"</h1>
+                        <div class="bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[16px] border-b border-black/[.06] dark:border-white/[.06] px-6 py-3.5 flex items-center justify-between sticky top-0 z-40">
+                            <div class="flex items-center gap-2"><MobileMenuButton /><h1 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 m-0">"Dashboard"</h1></div>
                         </div>
                         // Skeleton stat cards
                         <div class="p-6 max-md:p-4">
@@ -154,13 +154,12 @@ fn DashboardContent(data: DashboardData) -> impl IntoView {
     let show_clear_completed = RwSignal::new(false);
 
     // Loading state signals for header buttons
-    let scan_loading = RwSignal::new(false);
     let retag_loading = RwSignal::new(false);
 
     view! {
         // Header bar
-        <div class="bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[16px] border-b border-black/[.06] dark:border-white/[.06] px-6 max-md:pl-14 py-3.5 flex items-center justify-between sticky top-0 z-40">
-            <h1 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 m-0">"Dashboard"</h1>
+        <div class="bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[16px] border-b border-black/[.06] dark:border-white/[.06] px-6 py-3.5 flex items-center justify-between sticky top-0 z-40">
+            <div class="flex items-center gap-2"><MobileMenuButton /><h1 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 m-0">"Dashboard"</h1></div>
         </div>
 
         // Content
@@ -205,14 +204,6 @@ fn DashboardContent(data: DashboardData) -> impl IntoView {
                 <div class=GLASS_HEADER>
                     <h2 class=GLASS_TITLE>"Recent Activity"</h2>
                     <div class="flex flex-wrap items-center gap-2">
-                        <button type="button"
-                            class=move || btn_cls(BTN_PRIMARY, "px-2.5 py-0.5 text-xs", scan_loading.get())
-                            disabled=move || scan_loading.get()
-                            on:click=move |_| {
-                                dispatch_with_toast_loading(ServerAction::ScanImportLibrary, "Library scan started", Some(scan_loading));
-                            }>
-                            {move || if scan_loading.get() { "Scanning\u{2026}" } else { "Scan Drive + Import" }}
-                        </button>
                         <button type="button"
                             class=move || btn_cls(BTN, "px-2.5 py-0.5 text-xs", retag_loading.get())
                             disabled=move || retag_loading.get()

@@ -4,6 +4,11 @@ use chrono::Utc;
 use tokio::fs;
 use tracing::info;
 
+use yoink_shared::{
+    ImportAlbumCandidate, ImportConfirmation, ImportMatchStatus, ImportPreviewItem,
+    ImportResultSummary,
+};
+
 use crate::{
     db,
     models::{MonitoredAlbum, MonitoredArtist},
@@ -408,6 +413,355 @@ pub(crate) async fn scan_and_import_library(state: &AppState) -> Result<ScanImpo
     })
 }
 
+/// Preview what a library scan would import, returning match candidates for
+/// each discovered local album folder. This is the Lidarr-style "manual import"
+/// preview: the user can review, override, and confirm before anything is written.
+pub(crate) async fn preview_import_library(
+    state: &AppState,
+) -> Result<Vec<ImportPreviewItem>, String> {
+    let discovered = discover_local_albums(state).await?;
+    if discovered.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let artists = state.monitored_artists.read().await.clone();
+    let albums = state.monitored_albums.read().await.clone();
+    let artist_names_lower: HashMap<String, (String, String)> = artists
+        .iter()
+        .map(|a| (normalize_text(&a.name), (a.id.clone(), a.name.clone())))
+        .collect();
+
+    let mut items = Vec::new();
+    for local in &discovered {
+        let item_id = format!(
+            "{:x}",
+            md5_hash(&format!("{}/{}", local.artist_name, local.album_title))
+        );
+        let relative_path = if let Some(year) = &local.year {
+            format!("{}/{} ({})", local.artist_name, local.album_title, year)
+        } else {
+            format!("{}/{}", local.artist_name, local.album_title)
+        };
+
+        // Count audio files
+        let album_dir = build_local_album_path(state, &local.artist_name, &local.album_title, local.year.as_deref());
+        let audio_count = count_audio_files(&album_dir).await;
+
+        let needle = normalize_text(&local.artist_name);
+        let mut candidates = Vec::new();
+        let mut match_status = ImportMatchStatus::Unmatched;
+
+        // Check if this folder is already imported
+        let mut already_imported = false;
+
+        // Try to match against existing monitored artists
+        if let Some((artist_id, artist_name)) = artist_names_lower.get(&needle) {
+            let target_title = normalize_text(&local.album_title);
+
+            // Look through monitored albums for this artist
+            for album in albums.iter().filter(|a| a.artist_id == *artist_id) {
+                let album_title_norm = normalize_text(&album.title);
+                let album_year = album.release_date.as_deref().and_then(parse_release_year);
+
+                let title_match = album_title_norm == target_title;
+                let year_match = match (&local.year, &album_year) {
+                    (Some(ly), Some(ay)) => ly == ay,
+                    (None, _) | (_, None) => true, // no year to compare = don't penalize
+                };
+
+                if title_match && year_match {
+                    let confidence = if local.year.is_some() && album_year.is_some() {
+                        100
+                    } else {
+                        85
+                    };
+                    candidates.push(ImportAlbumCandidate {
+                        album_id: Some(album.id.clone()),
+                        artist_id: artist_id.clone(),
+                        artist_name: artist_name.clone(),
+                        album_title: album.title.clone(),
+                        release_date: album.release_date.clone(),
+                        cover_url: album.cover_url.clone(),
+                        album_type: album.album_type.clone(),
+                        explicit: album.explicit,
+                        monitored: album.monitored,
+                        acquired: album.acquired,
+                        confidence,
+                    });
+                    if album.acquired {
+                        already_imported = true;
+                    }
+                } else if title_match {
+                    // Title matches but year doesn't
+                    candidates.push(ImportAlbumCandidate {
+                        album_id: Some(album.id.clone()),
+                        artist_id: artist_id.clone(),
+                        artist_name: artist_name.clone(),
+                        album_title: album.title.clone(),
+                        release_date: album.release_date.clone(),
+                        cover_url: album.cover_url.clone(),
+                        album_type: album.album_type.clone(),
+                        explicit: album.explicit,
+                        monitored: album.monitored,
+                        acquired: album.acquired,
+                        confidence: 70,
+                    });
+                } else {
+                    // Fuzzy title match
+                    let sim = strsim::jaro_winkler(&target_title, &album_title_norm);
+                    if sim > 0.85 {
+                        let confidence = (sim * 80.0) as u8;
+                        candidates.push(ImportAlbumCandidate {
+                            album_id: Some(album.id.clone()),
+                            artist_id: artist_id.clone(),
+                            artist_name: artist_name.clone(),
+                            album_title: album.title.clone(),
+                            release_date: album.release_date.clone(),
+                            cover_url: album.cover_url.clone(),
+                            album_type: album.album_type.clone(),
+                            explicit: album.explicit,
+                            monitored: album.monitored,
+                            acquired: album.acquired,
+                            confidence,
+                        });
+                    }
+                }
+            }
+
+            // If no album match but artist matched, add a "new album" candidate
+            if candidates.is_empty() {
+                candidates.push(ImportAlbumCandidate {
+                    album_id: None,
+                    artist_id: artist_id.clone(),
+                    artist_name: artist_name.clone(),
+                    album_title: local.album_title.clone(),
+                    release_date: local.year.clone(),
+                    cover_url: None,
+                    album_type: None,
+                    explicit: false,
+                    monitored: false,
+                    acquired: false,
+                    confidence: 50,
+                });
+                match_status = ImportMatchStatus::Partial;
+            }
+        }
+
+        // Sort candidates by confidence descending
+        candidates.sort_by(|a, b| b.confidence.cmp(&a.confidence));
+
+        // Determine match status
+        if !candidates.is_empty() && match_status != ImportMatchStatus::Partial {
+            if candidates[0].confidence >= 85 {
+                match_status = ImportMatchStatus::Matched;
+            } else {
+                match_status = ImportMatchStatus::Partial;
+            }
+        }
+
+        let selected_candidate = if !candidates.is_empty() && !already_imported {
+            Some(0)
+        } else {
+            None
+        };
+
+        items.push(ImportPreviewItem {
+            id: item_id,
+            relative_path,
+            discovered_artist: local.artist_name.clone(),
+            discovered_album: local.album_title.clone(),
+            discovered_year: local.year.clone(),
+            match_status,
+            candidates,
+            selected_candidate,
+            already_imported,
+            audio_file_count: audio_count,
+        });
+    }
+
+    // Sort: unmatched first, then partial, then matched, then already imported
+    items.sort_by(|a, b| {
+        let rank = |item: &ImportPreviewItem| -> u8 {
+            if item.already_imported {
+                return 3;
+            }
+            match item.match_status {
+                ImportMatchStatus::Unmatched => 0,
+                ImportMatchStatus::Partial => 1,
+                ImportMatchStatus::Matched => 2,
+            }
+        };
+        rank(a)
+            .cmp(&rank(b))
+            .then_with(|| a.discovered_artist.cmp(&b.discovered_artist))
+            .then_with(|| a.discovered_album.cmp(&b.discovered_album))
+    });
+
+    Ok(items)
+}
+
+/// Execute a confirmed import: for each user-confirmed item, ensure the artist
+/// exists, sync their albums, and mark the matched album as acquired.
+pub(crate) async fn confirm_import_library(
+    state: &AppState,
+    items: Vec<ImportConfirmation>,
+) -> Result<ImportResultSummary, String> {
+    let mut imported = 0usize;
+    let mut artists_added = 0usize;
+    let mut failed = 0usize;
+    let mut errors = Vec::new();
+    let mut synced_artists = HashSet::new();
+
+    for item in &items {
+        // Step 1: Resolve artist
+        let (artist_id, added_artist) = if let Some(ref aid) = item.artist_id {
+            // User selected an existing artist
+            (aid.clone(), false)
+        } else {
+            // Need to find or create the artist
+            match ensure_monitored_artist(state, &item.artist_name).await {
+                Ok(Some((id, added))) => (id, added),
+                Ok(None) => {
+                    errors.push(format!(
+                        "Could not find artist '{}' for album '{}'",
+                        item.artist_name, item.album_title
+                    ));
+                    failed += 1;
+                    continue;
+                }
+                Err(err) => {
+                    errors.push(format!(
+                        "Error resolving artist '{}': {}",
+                        item.artist_name, err
+                    ));
+                    failed += 1;
+                    continue;
+                }
+            }
+        };
+
+        if added_artist {
+            artists_added += 1;
+        }
+
+        // Step 2: Sync albums if not done yet
+        if !synced_artists.contains(&artist_id) {
+            if sync_artist_albums(state, &artist_id).await.is_ok() {
+                synced_artists.insert(artist_id.clone());
+            }
+        }
+
+        // Step 3: If a specific album_id was selected, mark it directly
+        if let Some(ref album_id) = item.album_id {
+            let mut albums = state.monitored_albums.write().await;
+            if let Some(album) = albums.iter_mut().find(|a| a.id == *album_id) {
+                let mut changed = false;
+                if !album.monitored {
+                    album.monitored = true;
+                    changed = true;
+                }
+                if !album.acquired {
+                    album.acquired = true;
+                    changed = true;
+                }
+                update_wanted(album);
+                if changed {
+                    let _ = db::update_album_flags(
+                        &state.db,
+                        &album.id,
+                        album.monitored,
+                        album.acquired,
+                        album.wanted,
+                    )
+                    .await;
+                    imported += 1;
+                }
+            } else {
+                errors.push(format!(
+                    "Album ID '{}' not found for '{}'",
+                    album_id, item.album_title
+                ));
+                failed += 1;
+            }
+        } else {
+            // Step 4: Fuzzy match by title + year
+            if import_local_album(state, &artist_id, &item.album_title, item.year.as_deref())
+                .await?
+            {
+                imported += 1;
+            } else {
+                errors.push(format!(
+                    "Could not match album '{}' by '{}' to any known album",
+                    item.album_title, item.artist_name
+                ));
+                failed += 1;
+            }
+        }
+    }
+
+    if imported > 0 {
+        state.notify_sse();
+    }
+
+    Ok(ImportResultSummary {
+        total_selected: items.len(),
+        imported,
+        artists_added,
+        failed,
+        errors,
+    })
+}
+
+fn build_local_album_path(
+    state: &AppState,
+    artist_name: &str,
+    album_title: &str,
+    year: Option<&str>,
+) -> std::path::PathBuf {
+    let folder = if let Some(y) = year {
+        format!("{} ({})", album_title, y)
+    } else {
+        album_title.to_string()
+    };
+    state
+        .music_root
+        .join(artist_name)
+        .join(folder)
+}
+
+async fn count_audio_files(path: &std::path::Path) -> usize {
+    let mut count = 0;
+    if let Ok(mut entries) = fs::read_dir(path).await {
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            if entry
+                .path()
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|ext| {
+                    ext.eq_ignore_ascii_case("flac")
+                        || ext.eq_ignore_ascii_case("m4a")
+                        || ext.eq_ignore_ascii_case("mp4")
+                        || ext.eq_ignore_ascii_case("mp3")
+                        || ext.eq_ignore_ascii_case("ogg")
+                        || ext.eq_ignore_ascii_case("opus")
+                })
+                .unwrap_or(false)
+            {
+                count += 1;
+            }
+        }
+    }
+    count
+}
+
+/// Simple string hash for generating stable IDs from paths.
+fn md5_hash(input: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    input.hash(&mut hasher);
+    hasher.finish()
+}
+
 #[derive(Debug, Clone)]
 struct LocalAlbumDir {
     artist_name: String,
@@ -630,9 +984,11 @@ async fn album_dir_has_downloaded_audio(path: &std::path::Path) -> bool {
 
 fn split_album_folder_name(name: &str) -> (String, Option<String>) {
     if let Some((title, tail)) = name.rsplit_once(" (") {
-        let year = tail.trim_end_matches(')').trim();
-        if year.len() == 4 && year.chars().all(|c| c.is_ascii_digit()) {
-            return (title.trim().to_string(), Some(year.to_string()));
+        let inner = tail.trim_end_matches(')').trim();
+        // Accept "2025" or "2025-05-02" style dates — extract the year part
+        let year_str = inner.split('-').next().unwrap_or("");
+        if year_str.len() == 4 && year_str.chars().all(|c| c.is_ascii_digit()) {
+            return (title.trim().to_string(), Some(year_str.to_string()));
         }
     }
     (name.trim().to_string(), None)

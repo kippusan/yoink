@@ -11,7 +11,7 @@ use yoink_shared::{
 use leptoaster::{ToastBuilder, ToastLevel, ToastPosition, expect_toaster};
 
 use crate::actions::dispatch_action;
-use crate::components::{ErrorPanel, Sidebar};
+use crate::components::{ErrorPanel, MobileMenuButton, Sidebar};
 use crate::hooks::{set_page_title, use_sse_version};
 use crate::styles::{
     BTN_PRIMARY, BREADCRUMB_CURRENT, BREADCRUMB_NAV, EMPTY, GLASS, GLASS_BODY, GLASS_HEADER,
@@ -86,9 +86,13 @@ pub fn ArtistsPage() -> impl IntoView {
     let version = use_sse_version();
     let data = Resource::new(move || version.get(), |_| get_artists_data());
 
+    // Read ?q= from URL query params (works with SPA navigation)
+    let url_query = leptos_router::hooks::use_query_map();
+    let initial_q = url_query.read_untracked().get("q").unwrap_or_default();
+
     // Search state with debounce
-    let (query, set_query) = signal(String::new());
-    let (debounced_query, set_debounced_query) = signal(String::new());
+    let (query, set_query) = signal(initial_q.clone());
+    let (debounced_query, set_debounced_query) = signal(initial_q);
 
     // Debounce: wait 300ms after last keystroke before updating debounced_query
     #[cfg(feature = "hydrate")]
@@ -152,7 +156,7 @@ pub fn ArtistsPage() -> impl IntoView {
                 <Transition fallback=move || view! {
                     <div>
                         <div class=HEADER_BAR>
-                            <nav class=BREADCRUMB_NAV aria-label="Breadcrumb">
+                            <nav class=BREADCRUMB_NAV aria-label="Breadcrumb"><MobileMenuButton />
                                 <span class=BREADCRUMB_CURRENT>"Artists"</span>
                             </nav>
                         </div>
@@ -239,7 +243,7 @@ fn ArtistsContent(
     view! {
         // Header
         <div class=HEADER_BAR>
-            <nav class=BREADCRUMB_NAV aria-label="Breadcrumb">
+            <nav class=BREADCRUMB_NAV aria-label="Breadcrumb"><MobileMenuButton />
                 <span class=BREADCRUMB_CURRENT>"Artists"</span>
             </nav>
             <span class={cls(MUTED, "text-[13px]")}>{format!("{monitored_count} monitored")}</span>
@@ -620,3 +624,5 @@ fn ArtistCard(artist: MonitoredArtist, albums: Vec<MonitoredAlbum>) -> impl Into
         </a>
     }
 }
+
+

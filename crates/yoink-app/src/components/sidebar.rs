@@ -1,5 +1,27 @@
 use leptos::prelude::*;
-use lucide_leptos::{Heart, House, Menu, MicVocal, SunMoon, X};
+use lucide_leptos::{FolderDown, Heart, House, Menu, MicVocal, SunMoon, X};
+
+// ── Mobile menu context ─────────────────────────────────────
+
+#[derive(Clone, Copy)]
+struct MobileMenuOpen(RwSignal<bool>);
+
+/// Button that opens the mobile sidebar drawer.
+/// Place this inside header bars. Hidden on desktop (md+).
+#[component]
+pub fn MobileMenuButton() -> impl IntoView {
+    let open = expect_context::<MobileMenuOpen>().0;
+
+    view! {
+        <button type="button"
+            class="md:hidden inline-flex items-center justify-center size-9 rounded-lg bg-white/60 dark:bg-zinc-800/60 backdrop-blur-[12px] border border-black/[.08] dark:border-white/10 text-zinc-600 dark:text-zinc-300 cursor-pointer transition-all duration-150 hover:bg-white/85 dark:hover:bg-zinc-800/85 hover:text-zinc-900 dark:hover:text-white [&_svg]:size-5 shrink-0 mr-1"
+            on:click=move |_| open.set(true)
+            aria-label="Open menu"
+        >
+            <Menu />
+        </button>
+    }
+}
 
 // ── Tailwind class constants ────────────────────────────────
 
@@ -46,6 +68,7 @@ fn SidebarNav(
     dashboard_class: &'static str,
     artists_class: &'static str,
     wanted_class: &'static str,
+    import_class: &'static str,
     theme_label: Signal<&'static str>,
     on_toggle: impl Fn(leptos::ev::MouseEvent) + 'static + Clone + Send + Sync,
     #[prop(optional)] on_nav_click: Option<Box<dyn Fn() + Send + Sync>>,
@@ -59,8 +82,6 @@ fn SidebarNav(
             }
         });
     };
-    // let nav_click2 = nav_click.clone();
-    // let nav_click3 = nav_click.clone();
 
     view! {
         <div class="px-4 pt-5 pb-3 flex items-center gap-2.5 border-b border-white/[.06]">
@@ -79,6 +100,10 @@ fn SidebarNav(
             <a href="/wanted" class=wanted_class on:click=nav_click>
                 <Heart />
                 "Wanted"
+            </a>
+            <a href="/import" class=import_class on:click=nav_click>
+                <FolderDown />
+                "Import"
             </a>
         </nav>
         <div class="px-4 py-3 border-t border-white/[.06]">
@@ -110,6 +135,11 @@ pub fn Sidebar(#[prop(into)] active: String) -> impl IntoView {
         NAV_BASE
     };
     let wanted_class = if active == "wanted" {
+        NAV_ACTIVE
+    } else {
+        NAV_BASE
+    };
+    let import_class = if active == "import" {
         NAV_ACTIVE
     } else {
         NAV_BASE
@@ -185,8 +215,9 @@ pub fn Sidebar(#[prop(into)] active: String) -> impl IntoView {
         }
     };
 
-    // Mobile drawer state
+    // Mobile drawer state — provided via context so MobileMenuButton can access it
     let mobile_open = RwSignal::new(false);
+    provide_context(MobileMenuOpen(mobile_open));
 
     let close_drawer = move || mobile_open.set(false);
 
@@ -212,19 +243,13 @@ pub fn Sidebar(#[prop(into)] active: String) -> impl IntoView {
                 dashboard_class=dashboard_class
                 artists_class=artists_class
                 wanted_class=wanted_class
+                import_class=import_class
                 theme_label=theme_label
                 on_toggle=on_toggle
             />
         </aside>
 
-        // ── Mobile hamburger button (shown only on mobile) ──
-        <button type="button"
-            class="fixed top-3 left-3 z-[60] md:hidden inline-flex items-center justify-center size-10 rounded-lg bg-[rgba(10,10,15,.85)] backdrop-blur-[12px] border border-white/[.08] text-zinc-300 cursor-pointer transition-all duration-150 hover:bg-[rgba(10,10,15,.95)] hover:text-white [&_svg]:size-5"
-            on:click=move |_| mobile_open.set(true)
-            aria-label="Open menu"
-        >
-            <Menu />
-        </button>
+
 
         // ── Mobile drawer overlay ───────────────────────────
         <Show when=move || mobile_open.get()>
@@ -251,6 +276,7 @@ pub fn Sidebar(#[prop(into)] active: String) -> impl IntoView {
                     dashboard_class=dashboard_class
                     artists_class=artists_class
                     wanted_class=wanted_class
+                    import_class=import_class
                     theme_label=theme_label
                     on_toggle=on_toggle
                     on_nav_click=Box::new(close_drawer)

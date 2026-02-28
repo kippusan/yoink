@@ -269,6 +269,121 @@ pub fn status_class(status: &DownloadStatus) -> &'static str {
     }
 }
 
+// ── Import preview types ────────────────────────────────────
+
+/// Match quality for a discovered local album during import preview.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ImportMatchStatus {
+    /// Exact match found (artist + album title + year all agree).
+    Matched,
+    /// Artist matched but album only partially matched (fuzzy title or missing year).
+    Partial,
+    /// No match found in any provider.
+    Unmatched,
+}
+
+impl ImportMatchStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Matched => "matched",
+            Self::Partial => "partial",
+            Self::Unmatched => "unmatched",
+        }
+    }
+
+    pub fn css_class(&self) -> &'static str {
+        match self {
+            Self::Matched => "pill status-completed",
+            Self::Partial => "pill status-resolving",
+            Self::Unmatched => "pill status-failed",
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Matched => "Matched",
+            Self::Partial => "Partial Match",
+            Self::Unmatched => "Unmatched",
+        }
+    }
+}
+
+/// A candidate album match for a discovered local folder.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImportAlbumCandidate {
+    /// Internal album ID (if already exists in the DB).
+    pub album_id: Option<String>,
+    /// Artist internal ID.
+    pub artist_id: String,
+    pub artist_name: String,
+    pub album_title: String,
+    pub release_date: Option<String>,
+    pub cover_url: Option<String>,
+    /// Album type: "Album", "EP", "Single", etc.
+    pub album_type: Option<String>,
+    /// Whether the album is marked explicit.
+    pub explicit: bool,
+    /// Whether this album is already monitored.
+    pub monitored: bool,
+    /// Whether this album is already acquired.
+    pub acquired: bool,
+    /// Confidence score 0–100.
+    pub confidence: u8,
+}
+
+/// A discovered local album directory with match candidates.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImportPreviewItem {
+    /// Unique key for this item (hash of path).
+    pub id: String,
+    /// Relative path from music root: "Artist Name/Album Title (Year)"
+    pub relative_path: String,
+    /// Parsed artist folder name.
+    pub discovered_artist: String,
+    /// Parsed album title (without year suffix).
+    pub discovered_album: String,
+    /// Parsed year from folder name, if any.
+    pub discovered_year: Option<String>,
+    /// Overall match quality.
+    pub match_status: ImportMatchStatus,
+    /// Ordered list of candidate matches (best first). May be empty for unmatched.
+    pub candidates: Vec<ImportAlbumCandidate>,
+    /// Index of the selected candidate (user can change this). None = skip.
+    pub selected_candidate: Option<usize>,
+    /// Whether this item is already imported (album.acquired == true).
+    pub already_imported: bool,
+    /// Number of audio files found in this folder.
+    pub audio_file_count: usize,
+}
+
+/// User-confirmed import selection for a single item.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImportConfirmation {
+    /// The `ImportPreviewItem.id` this confirmation belongs to.
+    pub preview_id: String,
+    /// Artist name to use (may be from a candidate or user-typed).
+    pub artist_name: String,
+    /// Album title to use.
+    pub album_title: String,
+    /// Year hint.
+    pub year: Option<String>,
+    /// If a candidate was chosen, its artist_id.
+    pub artist_id: Option<String>,
+    /// If a candidate was chosen, its album_id.
+    pub album_id: Option<String>,
+}
+
+/// Summary of a confirmed import run.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImportResultSummary {
+    pub total_selected: usize,
+    pub imported: usize,
+    pub artists_added: usize,
+    pub failed: usize,
+    pub errors: Vec<String>,
+}
+
 // ── Actions (shared between server and WASM client) ─────────
 
 /// A user-initiated action that the server can execute.
@@ -342,6 +457,9 @@ pub enum ServerAction {
     },
     RetagLibrary,
     ScanImportLibrary,
+    ConfirmImport {
+        items: Vec<ImportConfirmation>,
+    },
 }
 
 // ── Server-side context for Leptos server functions ─────────
@@ -390,6 +508,15 @@ pub type FetchAlbumMatchSuggestionsFn =
 pub type DispatchActionFn = std::sync::Arc<dyn Fn(ServerAction) -> AsyncFnResult<()> + Send + Sync>;
 
 #[cfg(feature = "ssr")]
+pub type PreviewImportFn =
+    std::sync::Arc<dyn Fn() -> AsyncFnResult<Vec<ImportPreviewItem>> + Send + Sync>;
+
+#[cfg(feature = "ssr")]
+pub type ConfirmImportFn = std::sync::Arc<
+    dyn Fn(Vec<ImportConfirmation>) -> AsyncFnResult<ImportResultSummary> + Send + Sync,
+>;
+
+#[cfg(feature = "ssr")]
 #[derive(Clone)]
 pub struct ServerContext {
     pub monitored_artists: std::sync::Arc<tokio::sync::RwLock<Vec<MonitoredArtist>>>,
@@ -404,4 +531,6 @@ pub struct ServerContext {
     pub fetch_artist_match_suggestions: FetchArtistMatchSuggestionsFn,
     pub fetch_album_match_suggestions: FetchAlbumMatchSuggestionsFn,
     pub dispatch_action: DispatchActionFn,
+    pub preview_import: PreviewImportFn,
+    pub confirm_import: ConfirmImportFn,
 }

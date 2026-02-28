@@ -9,7 +9,7 @@ use yoink_shared::{
 };
 
 use crate::components::toast::dispatch_with_toast;
-use crate::components::{ErrorPanel, Sidebar};
+use crate::components::{ErrorPanel, MobileMenuButton, Sidebar};
 use crate::hooks::{set_page_title, use_sse_version};
 use crate::styles::{
     BTN, BTN_DANGER, BTN_PRIMARY, EMPTY, GLASS, GLASS_HEADER, GLASS_TITLE, MUTED, btn_cls, cls,
@@ -76,8 +76,8 @@ pub fn WantedPage() -> impl IntoView {
             <div class="ml-[220px] max-md:ml-0 flex-1 min-h-screen">
                 <Transition fallback=move || view! {
                     <div>
-                        <div class="bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[16px] border-b border-black/[.06] dark:border-white/[.06] px-6 max-md:pl-14 py-3.5 flex items-center justify-between sticky top-0 z-40">
-                            <h1 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 m-0">"Wanted"</h1>
+                        <div class="bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[16px] border-b border-black/[.06] dark:border-white/[.06] px-6 py-3.5 flex items-center justify-between sticky top-0 z-40">
+                            <div class="flex items-center gap-2"><MobileMenuButton /><h1 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 m-0">"Wanted"</h1></div>
                         </div>
                         <div class="p-6 max-md:p-4">
                             <div class="bg-white/70 dark:bg-zinc-800/60 rounded-xl border border-black/[.06] dark:border-white/[.08] overflow-hidden">
@@ -184,8 +184,8 @@ fn WantedContent(data: WantedData) -> impl IntoView {
 
     view! {
         // Header bar
-        <div class="bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[16px] border-b border-black/[.06] dark:border-white/[.06] px-6 max-md:pl-14 py-3.5 flex items-center justify-between sticky top-0 z-40">
-            <h1 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 m-0">"Wanted"</h1>
+        <div class="bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[16px] border-b border-black/[.06] dark:border-white/[.06] px-6 py-3.5 flex items-center justify-between sticky top-0 z-40">
+            <div class="flex items-center gap-2"><MobileMenuButton /><h1 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 m-0">"Wanted"</h1></div>
             <span class={cls(MUTED, "text-[13px]")}>{total_str.clone()}</span>
         </div>
 

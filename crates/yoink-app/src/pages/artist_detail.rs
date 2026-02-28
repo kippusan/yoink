@@ -11,7 +11,7 @@ use leptoaster::{ToastBuilder, ToastLevel, ToastPosition, expect_toaster};
 
 use crate::actions::dispatch_action;
 use crate::components::toast::{dispatch_with_toast, dispatch_with_toast_loading};
-use crate::components::{ConfirmDialog, ErrorPanel, LinkProviderDialog, Sidebar};
+use crate::components::{ConfirmDialog, ErrorPanel, LinkProviderDialog, MobileMenuButton, Sidebar};
 use crate::hooks::{set_page_title, use_sse_version};
 use crate::styles::{
     BTN, BTN_DANGER, BTN_PRIMARY, BREADCRUMB_CURRENT, BREADCRUMB_LINK, BREADCRUMB_NAV,
@@ -132,7 +132,7 @@ pub fn ArtistDetailPage() -> impl IntoView {
                 <Show when=move || !has_loaded.get()>
                     <div>
                         <div class=HEADER_BAR>
-                            <nav class=BREADCRUMB_NAV aria-label="Breadcrumb">
+                            <nav class=BREADCRUMB_NAV aria-label="Breadcrumb"><MobileMenuButton />
                                 <a href="/artists" class=BREADCRUMB_LINK>"Artists"</a>
                                 <span class=BREADCRUMB_SEP><ChevronRight /></span>
                                 <div class="h-4 w-28 bg-zinc-200 dark:bg-zinc-700 rounded animate-pulse"></div>
@@ -193,7 +193,7 @@ pub fn ArtistDetailPage() -> impl IntoView {
                 <Show when=move || has_loaded.get() && artist_sig.get().is_none() && load_error.get().is_none()>
                     <div>
                         <div class=HEADER_BAR>
-                            <nav class=BREADCRUMB_NAV aria-label="Breadcrumb">
+                            <nav class=BREADCRUMB_NAV aria-label="Breadcrumb"><MobileMenuButton />
                                 <a href="/artists" class=BREADCRUMB_LINK>"Artists"</a>
                                 <span class=BREADCRUMB_SEP><ChevronRight /></span>
                                 <span class=BREADCRUMB_CURRENT>"Not Found"</span>
@@ -258,7 +258,7 @@ fn ArtistDetailContent(
             set_page_title(&a.name);
             view! {
                 <div class=HEADER_BAR>
-                    <nav class=BREADCRUMB_NAV aria-label="Breadcrumb">
+                    <nav class=BREADCRUMB_NAV aria-label="Breadcrumb"><MobileMenuButton />
                         <a href="/artists" class=BREADCRUMB_LINK>"Artists"</a>
                         <span class=BREADCRUMB_SEP><ChevronRight /></span>
                         <span class=BREADCRUMB_CURRENT>{a.name}</span>

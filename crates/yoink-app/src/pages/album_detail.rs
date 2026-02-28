@@ -8,7 +8,7 @@ use yoink_shared::{
 };
 
 use crate::components::toast::{dispatch_with_toast, dispatch_with_toast_loading};
-use crate::components::{ConfirmDialog, ErrorPanel, Sidebar};
+use crate::components::{ConfirmDialog, ErrorPanel, MobileMenuButton, Sidebar};
 use crate::hooks::{set_page_title, use_sse_version};
 use crate::styles::{
     BTN, BTN_DANGER, BTN_PRIMARY, BREADCRUMB_CURRENT, BREADCRUMB_LINK, BREADCRUMB_NAV,
@@ -99,7 +99,7 @@ pub fn AlbumDetailPage() -> impl IntoView {
                 <Transition fallback=move || view! {
                     <div>
                         <div class=HEADER_BAR>
-                            <nav class=BREADCRUMB_NAV aria-label="Breadcrumb">
+                            <nav class=BREADCRUMB_NAV aria-label="Breadcrumb"><MobileMenuButton />
                                 <a href="/artists" class=BREADCRUMB_LINK>"Artists"</a>
                                 <span class=BREADCRUMB_SEP><ChevronRight /></span>
                                 <div class="h-4 w-20 bg-zinc-200 dark:bg-zinc-700 rounded animate-pulse"></div>
@@ -164,7 +164,7 @@ pub fn AlbumDetailPage() -> impl IntoView {
                                     view! {
                                         <div>
                                             <div class=HEADER_BAR>
-                                                <nav class=BREADCRUMB_NAV aria-label="Breadcrumb">
+                                                <nav class=BREADCRUMB_NAV aria-label="Breadcrumb"><MobileMenuButton />
                                                     <a href="/artists" class=BREADCRUMB_LINK>"Artists"</a>
                                                     <span class=BREADCRUMB_SEP><ChevronRight /></span>
                                                     <a href=back_href class=BREADCRUMB_LINK>"Artist"</a>
@@ -301,7 +301,7 @@ fn AlbumDetailContent(
     view! {
         // ── Sticky header with breadcrumb ───────────────────
         <div class=HEADER_BAR>
-            <nav class=BREADCRUMB_NAV aria-label="Breadcrumb">
+            <nav class=BREADCRUMB_NAV aria-label="Breadcrumb"><MobileMenuButton />
                 <a href="/artists" class=BREADCRUMB_LINK>"Artists"</a>
                 <span class=BREADCRUMB_SEP><ChevronRight /></span>
                 <a href=artist_link.clone() class=BREADCRUMB_LINK>

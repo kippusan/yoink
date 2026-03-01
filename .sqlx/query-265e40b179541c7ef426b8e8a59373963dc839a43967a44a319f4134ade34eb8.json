@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO tracks (id, album_id, title, version, disc_number, track_number, duration_secs, explicit, isrc)\n         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)\n         ON CONFLICT(id) DO UPDATE SET\n           title = excluded.title,\n           version = excluded.version,\n           disc_number = excluded.disc_number,\n           track_number = excluded.track_number,\n           duration_secs = excluded.duration_secs,\n           explicit = excluded.explicit,\n           isrc = excluded.isrc",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 9
+    },
+    "nullable": []
+  },
+  "hash": "265e40b179541c7ef426b8e8a59373963dc839a43967a44a319f4134ade34eb8"
+}

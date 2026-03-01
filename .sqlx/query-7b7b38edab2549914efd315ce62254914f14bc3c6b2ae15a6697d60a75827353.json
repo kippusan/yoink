@@ -1,0 +1,62 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT\n            id as \"id!: Uuid\",\n            title, version, disc_number, track_number, duration_secs,\n            explicit as \"explicit!: bool\",\n            isrc\n         FROM tracks WHERE album_id = $1\n         ORDER BY disc_number, track_number",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: Uuid",
+        "ordinal": 0,
+        "type_info": "Blob"
+      },
+      {
+        "name": "title",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "version",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "disc_number",
+        "ordinal": 3,
+        "type_info": "Integer"
+      },
+      {
+        "name": "track_number",
+        "ordinal": 4,
+        "type_info": "Integer"
+      },
+      {
+        "name": "duration_secs",
+        "ordinal": 5,
+        "type_info": "Integer"
+      },
+      {
+        "name": "explicit!: bool",
+        "ordinal": 6,
+        "type_info": "Integer"
+      },
+      {
+        "name": "isrc",
+        "ordinal": 7,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      false,
+      true,
+      false,
+      false,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "7b7b38edab2549914efd315ce62254914f14bc3c6b2ae15a6697d60a75827353"
+}

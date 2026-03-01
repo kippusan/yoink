@@ -5,7 +5,6 @@ mod match_suggestions;
 mod provider_links;
 mod tracks;
 
-use chrono::{DateTime, Utc};
 use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};
 use tracing::info;
 
@@ -50,12 +49,6 @@ pub(crate) async fn open(url: &str) -> Result<SqlitePool, sqlx::Error> {
 }
 
 // ── Shared helpers ──────────────────────────────────────────────────
-
-fn parse_dt(s: String) -> DateTime<Utc> {
-    DateTime::parse_from_rfc3339(&s)
-        .map(|dt| dt.with_timezone(&Utc))
-        .unwrap_or_else(|_| Utc::now())
-}
 
 fn parse_status(s: &str) -> crate::models::DownloadStatus {
     use crate::models::DownloadStatus;

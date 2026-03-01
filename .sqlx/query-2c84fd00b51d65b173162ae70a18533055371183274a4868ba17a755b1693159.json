@@ -1,0 +1,44 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT id as \"id!: Uuid\", name, image_url, bio, added_at as \"added_at!: chrono::DateTime<chrono::Utc>\"\n           FROM artists ORDER BY name COLLATE NOCASE",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: Uuid",
+        "ordinal": 0,
+        "type_info": "Blob"
+      },
+      {
+        "name": "name",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "image_url",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "bio",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "added_at!: chrono::DateTime<chrono::Utc>",
+        "ordinal": 4,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "hash": "2c84fd00b51d65b173162ae70a18533055371183274a4868ba17a755b1693159"
+}

@@ -1,0 +1,80 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT\n            id as \"id!: Uuid\",\n            artist_id as \"artist_id!: Uuid\",\n            title, album_type, release_date, cover_url,\n            explicit as \"explicit!: bool\",\n            monitored as \"monitored!: bool\",\n            acquired as \"acquired!: bool\",\n            wanted as \"wanted!: bool\",\n            added_at as \"added_at!: chrono::DateTime<chrono::Utc>\"\n         FROM albums ORDER BY release_date DESC",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: Uuid",
+        "ordinal": 0,
+        "type_info": "Blob"
+      },
+      {
+        "name": "artist_id!: Uuid",
+        "ordinal": 1,
+        "type_info": "Blob"
+      },
+      {
+        "name": "title",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "album_type",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "release_date",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "cover_url",
+        "ordinal": 5,
+        "type_info": "Text"
+      },
+      {
+        "name": "explicit!: bool",
+        "ordinal": 6,
+        "type_info": "Integer"
+      },
+      {
+        "name": "monitored!: bool",
+        "ordinal": 7,
+        "type_info": "Integer"
+      },
+      {
+        "name": "acquired!: bool",
+        "ordinal": 8,
+        "type_info": "Integer"
+      },
+      {
+        "name": "wanted!: bool",
+        "ordinal": 9,
+        "type_info": "Integer"
+      },
+      {
+        "name": "added_at!: chrono::DateTime<chrono::Utc>",
+        "ordinal": 10,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "81632b3772688f337cf63cb19d96a84d25a23478d0b98cdbc1e622b37815e1f5"
+}

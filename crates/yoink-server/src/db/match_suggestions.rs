@@ -1,9 +1,7 @@
 use chrono::{DateTime, Utc};
-use serde_json::json;
-use sqlx::{Row, SqlitePool};
+use sqlx::SqlitePool;
+use sqlx::types::Json;
 use uuid::Uuid;
-
-use super::parse_dt;
 
 #[derive(Debug, Clone)]
 pub(crate) struct MatchSuggestion {
@@ -30,11 +28,67 @@ pub(crate) struct MatchSuggestion {
     pub(crate) updated_at: DateTime<Utc>,
 }
 
+/// DB row — matches column types exactly for `query_as!`.
+struct SuggestionRow {
+    id: Uuid,
+    scope_type: String,
+    scope_id: Uuid,
+    left_provider: String,
+    left_external_id: String,
+    right_provider: String,
+    right_external_id: String,
+    match_kind: String,
+    confidence: i64,
+    explanation: Option<String>,
+    external_name: Option<String>,
+    external_url: Option<String>,
+    image_ref: Option<String>,
+    disambiguation: Option<String>,
+    artist_type: Option<String>,
+    country: Option<String>,
+    tags_json: Json<Vec<String>>,
+    popularity: Option<i64>,
+    status: String,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+}
+
+impl From<SuggestionRow> for MatchSuggestion {
+    fn from(r: SuggestionRow) -> Self {
+        Self {
+            id: r.id,
+            scope_type: r.scope_type,
+            scope_id: r.scope_id,
+            left_provider: r.left_provider,
+            left_external_id: r.left_external_id,
+            right_provider: r.right_provider,
+            right_external_id: r.right_external_id,
+            match_kind: r.match_kind,
+            confidence: r.confidence as u8,
+            explanation: r.explanation,
+            external_name: r.external_name,
+            external_url: r.external_url,
+            image_ref: r.image_ref,
+            disambiguation: r.disambiguation,
+            artist_type: r.artist_type,
+            country: r.country,
+            tags: r.tags_json.0,
+            popularity: r.popularity.map(|v| v as u8),
+            status: r.status,
+            created_at: r.created_at,
+            updated_at: r.updated_at,
+        }
+    }
+}
+
 pub(crate) async fn upsert_match_suggestion(
     pool: &SqlitePool,
-    suggestion: &MatchSuggestion,
+    s: &MatchSuggestion,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query(
+    let confidence = i32::from(s.confidence);
+    let tags_json = Json(&s.tags);
+    let popularity = s.popularity.map(i32::from);
+    sqlx::query!(
         "INSERT INTO match_suggestions (
             id, scope_type, scope_id,
             left_provider, left_external_id,
@@ -70,28 +124,14 @@ pub(crate) async fn upsert_match_suggestion(
             popularity = excluded.popularity,
             updated_at = excluded.updated_at
          WHERE match_suggestions.status != 'dismissed' AND match_suggestions.status != 'accepted'",
+        s.id, s.scope_type, s.scope_id,
+        s.left_provider, s.left_external_id,
+        s.right_provider, s.right_external_id,
+        s.match_kind, confidence, s.explanation,
+        s.external_name, s.external_url, s.image_ref,
+        s.disambiguation, s.artist_type, s.country, tags_json, popularity,
+        s.status, s.created_at, s.updated_at,
     )
-    .bind(suggestion.id.as_bytes().as_slice())
-    .bind(&suggestion.scope_type)
-    .bind(suggestion.scope_id.as_bytes().as_slice())
-    .bind(&suggestion.left_provider)
-    .bind(&suggestion.left_external_id)
-    .bind(&suggestion.right_provider)
-    .bind(&suggestion.right_external_id)
-    .bind(&suggestion.match_kind)
-    .bind(i32::from(suggestion.confidence))
-    .bind(&suggestion.explanation)
-    .bind(&suggestion.external_name)
-    .bind(&suggestion.external_url)
-    .bind(&suggestion.image_ref)
-    .bind(&suggestion.disambiguation)
-    .bind(&suggestion.artist_type)
-    .bind(&suggestion.country)
-    .bind(json!(suggestion.tags).to_string())
-    .bind(suggestion.popularity.map(i32::from))
-    .bind(&suggestion.status)
-    .bind(suggestion.created_at.to_rfc3339())
-    .bind(suggestion.updated_at.to_rfc3339())
     .execute(pool)
     .await?;
     Ok(())
@@ -102,12 +142,11 @@ pub(crate) async fn clear_pending_match_suggestions(
     scope_type: &str,
     scope_id: Uuid,
 ) -> Result<u64, sqlx::Error> {
-    let result = sqlx::query(
+    let result = sqlx::query!(
         "DELETE FROM match_suggestions
          WHERE scope_type = $1 AND scope_id = $2 AND status = 'pending'",
+        scope_type, scope_id,
     )
-    .bind(scope_type)
-    .bind(scope_id.as_bytes().as_slice())
     .execute(pool)
     .await?;
     Ok(result.rows_affected())
@@ -118,50 +157,59 @@ pub(crate) async fn load_match_suggestions_for_scope(
     scope_type: &str,
     scope_id: Uuid,
 ) -> Result<Vec<MatchSuggestion>, sqlx::Error> {
-    let rows = sqlx::query(
-        "SELECT
-            id, scope_type, scope_id,
+    let rows = sqlx::query_as!(
+        SuggestionRow,
+        r#"SELECT
+            id as "id!: Uuid",
+            scope_type, scope_id as "scope_id!: Uuid",
             left_provider, left_external_id,
             right_provider, right_external_id,
             match_kind, confidence, explanation,
             external_name, external_url, image_ref,
-            disambiguation, artist_type, country, tags_json, popularity,
+            disambiguation, artist_type, country,
+            COALESCE(tags_json, '[]') as "tags_json!: Json<Vec<String>>",
+            popularity,
             status,
-            created_at, updated_at
+            created_at as "created_at!: chrono::DateTime<chrono::Utc>",
+            updated_at as "updated_at!: chrono::DateTime<chrono::Utc>"
          FROM match_suggestions
          WHERE scope_type = $1 AND scope_id = $2
-         ORDER BY status ASC, confidence DESC, created_at DESC",
+         ORDER BY status ASC, confidence DESC, created_at DESC"#,
+        scope_type, scope_id,
     )
-    .bind(scope_type)
-    .bind(scope_id.as_bytes().as_slice())
     .fetch_all(pool)
     .await?;
 
-    Ok(rows.into_iter().map(row_to_suggestion).collect())
+    Ok(rows.into_iter().map(MatchSuggestion::from).collect())
 }
 
 pub(crate) async fn load_match_suggestion_by_id(
     pool: &SqlitePool,
     suggestion_id: Uuid,
 ) -> Result<Option<MatchSuggestion>, sqlx::Error> {
-    let row = sqlx::query(
-        "SELECT
-            id, scope_type, scope_id,
+    let row = sqlx::query_as!(
+        SuggestionRow,
+        r#"SELECT
+            id as "id!: Uuid",
+            scope_type, scope_id as "scope_id!: Uuid",
             left_provider, left_external_id,
             right_provider, right_external_id,
             match_kind, confidence, explanation,
             external_name, external_url, image_ref,
-            disambiguation, artist_type, country, tags_json, popularity,
+            disambiguation, artist_type, country,
+            COALESCE(tags_json, '[]') as "tags_json!: Json<Vec<String>>",
+            popularity,
             status,
-            created_at, updated_at
+            created_at as "created_at!: chrono::DateTime<chrono::Utc>",
+            updated_at as "updated_at!: chrono::DateTime<chrono::Utc>"
          FROM match_suggestions
-         WHERE id = $1",
+         WHERE id = $1"#,
+        suggestion_id,
     )
-    .bind(suggestion_id.as_bytes().as_slice())
     .fetch_optional(pool)
     .await?;
 
-    Ok(row.map(row_to_suggestion))
+    Ok(row.map(MatchSuggestion::from))
 }
 
 pub(crate) async fn set_match_suggestion_status(
@@ -169,48 +217,14 @@ pub(crate) async fn set_match_suggestion_status(
     suggestion_id: Uuid,
     status: &str,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query(
+    let now = Utc::now();
+    sqlx::query!(
         "UPDATE match_suggestions
          SET status = $1, updated_at = $2
          WHERE id = $3",
+        status, now, suggestion_id,
     )
-    .bind(status)
-    .bind(Utc::now().to_rfc3339())
-    .bind(suggestion_id.as_bytes().as_slice())
     .execute(pool)
     .await?;
     Ok(())
-}
-
-// ── Helper ──────────────────────────────────────────────────────────
-
-fn row_to_suggestion(r: sqlx::sqlite::SqliteRow) -> MatchSuggestion {
-    let id: Vec<u8> = r.get("id");
-    let scope_id: Vec<u8> = r.get("scope_id");
-    MatchSuggestion {
-        id: Uuid::from_slice(&id).unwrap_or_default(),
-        scope_type: r.get("scope_type"),
-        scope_id: Uuid::from_slice(&scope_id).unwrap_or_default(),
-        left_provider: r.get("left_provider"),
-        left_external_id: r.get("left_external_id"),
-        right_provider: r.get("right_provider"),
-        right_external_id: r.get("right_external_id"),
-        match_kind: r.get("match_kind"),
-        confidence: r.get::<i32, _>("confidence") as u8,
-        explanation: r.get("explanation"),
-        external_name: r.get("external_name"),
-        external_url: r.get("external_url"),
-        image_ref: r.get("image_ref"),
-        disambiguation: r.get("disambiguation"),
-        artist_type: r.get("artist_type"),
-        country: r.get("country"),
-        tags: r
-            .get::<Option<String>, _>("tags_json")
-            .and_then(|v| serde_json::from_str::<Vec<String>>(&v).ok())
-            .unwrap_or_default(),
-        popularity: r.get::<Option<i32>, _>("popularity").map(|v| v as u8),
-        status: r.get("status"),
-        created_at: parse_dt(r.get::<String, _>("created_at")),
-        updated_at: parse_dt(r.get::<String, _>("updated_at")),
-    }
 }

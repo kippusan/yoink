@@ -288,6 +288,7 @@ impl MetadataProvider for MusicBrainzProvider {
         let full_release = MbRelease::fetch()
             .id(&release.id)
             .with_recordings()
+            .with_artist_credits()
             .execute_with_client(&self.client)
             .await
             .map_err(|e| ProviderError(format!("MusicBrainz fetch release: {e}")))?;
@@ -321,6 +322,28 @@ impl MetadataProvider for MusicBrainzProvider {
                             extra.insert("isrc".to_string(), Value::String(isrc_val.clone()));
                         }
 
+                        // Build display-ready artist string from credits (prefer track, fall back to recording)
+                        let artists = track
+                            .artist_credit
+                            .as_ref()
+                            .or_else(|| {
+                                track
+                                    .recording
+                                    .as_ref()
+                                    .and_then(|r| r.artist_credit.as_ref())
+                            })
+                            .map(|credits| {
+                                let mut s = String::new();
+                                for ac in credits {
+                                    s.push_str(&ac.name);
+                                    if let Some(ref jp) = ac.joinphrase {
+                                        s.push_str(jp);
+                                    }
+                                }
+                                s.trim().to_string()
+                            })
+                            .filter(|s| !s.is_empty());
+
                         tracks.push(ProviderTrack {
                             external_id: track.id.clone(),
                             title: track.title.clone(),
@@ -329,6 +352,8 @@ impl MetadataProvider for MusicBrainzProvider {
                             disc_number: Some(disc_number),
                             duration_secs,
                             isrc,
+                            artists,
+                            explicit: false,
                             extra,
                         });
                     }

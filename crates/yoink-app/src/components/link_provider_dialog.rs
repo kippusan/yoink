@@ -300,7 +300,7 @@ pub fn LinkProviderDialog(
                                                 view! {
                                                     <div>
                                                         {visible.into_iter().map(|result| {
-                                                            let aid = artist_id.with_value(|id| id.clone());
+                                                            let aid = artist_id.with_value(|id| *id);
                                                             view! { <LinkResultRow result=result artist_id=aid session_linked=session_linked /> }
                                                         }).collect_view()}
                                                     </div>
@@ -412,7 +412,6 @@ fn LinkResultRow(
                 class=BTN_LINK
                 disabled=move || linking.get()
                 on:click={
-                    let artist_id = artist_id.clone();
                     let provider = provider.clone();
                     let external_id = external_id.clone();
                     let external_url = external_url.clone();
@@ -420,7 +419,6 @@ fn LinkResultRow(
                     let image_ref_val = image_ref_val.clone();
                     move |_| {
                         linking.set(true);
-                        let artist_id = artist_id.clone();
                         let provider = provider.clone();
                         let external_id = external_id.clone();
                         let external_url = external_url.clone();

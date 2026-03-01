@@ -10,6 +10,36 @@ use std::path::PathBuf;
 use async_trait::async_trait;
 use serde_json::Value;
 
+// ── Shared helpers ──────────────────────────────────────────────────
+
+/// Extract a display-ready artist string from a provider extra map.
+/// Looks for "artists" or "artist" keys containing arrays of objects with "name".
+pub(crate) fn extract_artist_display(extra: &HashMap<String, Value>) -> Option<String> {
+    for key in ["artists", "artist"] {
+        match extra.get(key) {
+            Some(Value::Array(items)) if !items.is_empty() => {
+                let names: Vec<&str> = items
+                    .iter()
+                    .filter_map(|v| match v {
+                        Value::String(s) => Some(s.as_str()),
+                        Value::Object(obj) => obj
+                            .get("name")
+                            .or_else(|| obj.get("title"))
+                            .and_then(|n| n.as_str()),
+                        _ => None,
+                    })
+                    .collect();
+                if !names.is_empty() {
+                    return Some(names.join("; "));
+                }
+            }
+            Some(Value::String(s)) if !s.is_empty() => return Some(s.clone()),
+            _ => {}
+        }
+    }
+    None
+}
+
 // ── Provider error ──────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
@@ -76,6 +106,10 @@ pub(crate) struct ProviderTrack {
     pub disc_number: Option<u32>,
     pub duration_secs: u32,
     pub isrc: Option<String>,
+    /// Display-ready track artist string (e.g. "Artist A feat. Artist B").
+    pub artists: Option<String>,
+    /// Whether the track is marked explicit.
+    pub explicit: bool,
     /// Provider-specific extra metadata (for tagging).
     pub extra: HashMap<String, Value>,
 }

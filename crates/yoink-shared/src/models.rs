@@ -75,6 +75,10 @@ pub struct TrackInfo {
     pub duration_display: String,
     pub isrc: Option<String>,
     pub explicit: bool,
+    /// Track-level artist string (may differ from album artist for features/collabs).
+    pub track_artist: Option<String>,
+    /// Local file path relative to the music root (populated for acquired albums).
+    pub file_path: Option<String>,
 }
 
 /// Provider link info for the UI.

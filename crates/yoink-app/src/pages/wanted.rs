@@ -332,7 +332,10 @@ fn WantedContent(data: WantedData) -> impl IntoView {
 
 /// A single wanted album row.
 #[component]
-fn WantedRow(album: MonitoredAlbum, latest_jobs: HashMap<yoink_shared::Uuid, DownloadJob>) -> impl IntoView {
+fn WantedRow(
+    album: MonitoredAlbum,
+    latest_jobs: HashMap<yoink_shared::Uuid, DownloadJob>,
+) -> impl IntoView {
     let album_title = album.title.clone();
     let release_date = album
         .release_date
@@ -375,11 +378,10 @@ fn WantedRow(album: MonitoredAlbum, latest_jobs: HashMap<yoink_shared::Uuid, Dow
     let explicit_label = if is_explicit { " [E]" } else { "" };
     let meta_text = format!("{release_date}{explicit_label}");
 
-    let album_id_val = album.id;
-    let album_id_attr = album.id.to_string();
+    let album_id = album.id;
 
     view! {
-        <div class=WANTED_CARD data-album-id=album_id_attr>
+        <div class=WANTED_CARD data-album-id=album_id.to_string()>
             // Cover thumbnail
             {match cover_url {
                 Some(url) => view! {
@@ -405,23 +407,21 @@ fn WantedRow(album: MonitoredAlbum, latest_jobs: HashMap<yoink_shared::Uuid, Dow
             // Actions
             <div class="flex gap-1.5 shrink-0 items-center">
                 {if is_failed {
-                    let aid = album_id_val.clone();
                     view! {
                         <button type="button" class={cls(BTN_DANGER, "px-2.5 py-0.5 text-xs")}
                             on:click=move |_| {
                                 dispatch_with_toast(
-                                    ServerAction::RetryDownload { album_id: aid.clone() },
+                                    ServerAction::RetryDownload { album_id },
                                     "Download queued for retry",
                                 );
                             }>"Retry"</button>
                     }.into_any()
                 } else if is_queueable {
-                    let aid = album_id_val.clone();
                     view! {
                         <button type="button" class={cls(BTN, "px-2.5 py-0.5 text-xs")}
                             on:click=move |_| {
                                 dispatch_with_toast(
-                                    ServerAction::RetryDownload { album_id: aid.clone() },
+                                    ServerAction::RetryDownload { album_id },
                                     "Download queued",
                                 );
                             }>"Download"</button>
@@ -430,12 +430,11 @@ fn WantedRow(album: MonitoredAlbum, latest_jobs: HashMap<yoink_shared::Uuid, Dow
                     view! { <span></span> }.into_any()
                 }}
                 {
-                    let aid = album_id_val.clone();
                     view! {
                         <button type="button" class=ICON_BTN title="Unmonitor" aria-label="Unmonitor album"
                             on:click=move |_| {
                                 dispatch_with_toast(
-                                    ServerAction::ToggleAlbumMonitor { album_id: aid.clone(), monitored: false },
+                                    ServerAction::ToggleAlbumMonitor { album_id, monitored: false },
                                     "Album unmonitored",
                                 );
                             }>

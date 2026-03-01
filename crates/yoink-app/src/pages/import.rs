@@ -178,8 +178,8 @@ fn ImportContent(items: Vec<ImportPreviewItem>) -> impl IntoView {
                         artist_name: candidate.artist_name.clone(),
                         album_title: candidate.album_title.clone(),
                         year: candidate.release_date.clone(),
-                        artist_id: Some(candidate.artist_id.clone()),
-                        album_id: candidate.album_id.clone(),
+                        artist_id: Some(candidate.artist_id),
+                        album_id: candidate.album_id,
                     })
                 })
                 .collect()

@@ -293,8 +293,6 @@ fn JobRow(
     let updated = job.updated_at.format("%Y-%m-%d %H:%M").to_string();
     let is_queued = matches!(job.status, DownloadStatus::Queued);
     let is_failed = matches!(job.status, DownloadStatus::Failed);
-    let job_id_val = job.id.clone();
-    let album_id_retry = job.album_id.clone();
     let error_msg = job.error.clone().unwrap_or_default();
 
     view! {
@@ -317,14 +315,14 @@ fn JobRow(
                     view! {
                         <button type="button" class={cls(BTN_DANGER, "px-2.5 py-0.5 text-xs")}
                             on:click=move |_| {
-                                dispatch_with_toast(ServerAction::CancelDownload { job_id: job_id_val.clone() }, "Download cancelled");
+                                dispatch_with_toast(ServerAction::CancelDownload { job_id: job.id }, "Download cancelled");
                             }>"Cancel"</button>
                     }.into_any()
                 } else if is_failed {
                     view! {
                         <button type="button" class={cls(BTN, "px-2.5 py-0.5 text-xs")}
                             on:click=move |_| {
-                                dispatch_with_toast(ServerAction::RetryDownload { album_id: album_id_retry.clone() }, "Download queued for retry");
+                                dispatch_with_toast(ServerAction::RetryDownload { album_id: job.album_id }, "Download queued for retry");
                             }>"Retry"</button>
                     }.into_any()
                 } else {

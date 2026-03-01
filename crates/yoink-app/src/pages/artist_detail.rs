@@ -288,10 +288,7 @@ fn ArtistDetailContent(
                     .map(|c| c.to_uppercase().to_string())
                     .unwrap_or_else(|| "?".to_string());
 
-                let artist_id_sync = a.id.clone();
-                let artist_id_monitor = a.id.clone();
-
-                let artist_id_for_links = a.id.clone();
+                let artist_id = a.id;
 
                 view! {
                     <div class={cls(GLASS, "mb-5")}>
@@ -313,7 +310,7 @@ fn ArtistDetailContent(
                                 // Linked providers — inline chips with icons
                                 {move || {
                                     let links = provider_links.get();
-                                    let artist_id_for_links = artist_id_for_links.clone();
+
                                     view! {
                                         <div class="flex flex-wrap items-center gap-1.5 mb-2.5">
                                             {links.iter().map(|link| {
@@ -321,7 +318,6 @@ fn ArtistDetailContent(
                                                 let display = provider_display_name(&link.provider);
                                                 let external_url = link.external_url.clone();
                                                 let external_id = link.external_id.clone();
-                                                let artist_id_unlink = artist_id_for_links.clone();
                                                 let icon_svg = provider_icon_svg(&link.provider);
 
                                                 view! {
@@ -341,13 +337,13 @@ fn ArtistDetailContent(
                                                             class="text-[10px] text-zinc-400 dark:text-zinc-500 hover:text-red-500 dark:hover:text-red-400 bg-transparent border-none cursor-pointer p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
                                                             title="Unlink this provider"
                                                             on:click={
-                                                                let aid = artist_id_unlink.clone();
+
                                                                 let prov = provider.clone();
                                                                 let eid = external_id.clone();
                                                                 move |_| {
                                                                     dispatch_with_toast(
                                                                         ServerAction::UnlinkArtistProvider {
-                                                                            artist_id: aid.clone(),
+                                                                            artist_id,
                                                                             provider: prov.clone(),
                                                                             external_id: eid.clone(),
                                                                         },
@@ -376,17 +372,16 @@ fn ArtistDetailContent(
                                         class=move || btn_cls(BTN, "px-2.5 py-0.5 text-xs", sync_loading.get())
                                         disabled=move || sync_loading.get()
                                         on:click={
-                                            let aid = artist_id_sync.clone();
+
                                             move |_| {
-                                                dispatch_with_toast_loading(ServerAction::SyncArtistAlbums { artist_id: aid.clone() }, "Album sync started", Some(sync_loading));
+                                                dispatch_with_toast_loading(ServerAction::SyncArtistAlbums { artist_id }, "Album sync started", Some(sync_loading));
                                             }
                                         }>
                                         {move || if sync_loading.get() { "Syncing\u{2026}" } else { "Sync Albums" }}
                                     </button>
                                     <a
                                         href={
-                                            let aid = artist_id_sync.clone();
-                                            format!("/artists/{}/merge-albums", aid)
+                                            format!("/artists/{}/merge-albums", artist_id)
                                         }
                                         class={cls(BTN, "px-2.5 py-0.5 text-xs no-underline inline-flex items-center")}
                                     >
@@ -396,9 +391,8 @@ fn ArtistDetailContent(
                                         class=move || btn_cls(BTN_PRIMARY, "px-2.5 py-0.5 text-xs", monitor_all_loading.get())
                                         disabled=move || monitor_all_loading.get()
                                         on:click={
-                                            let aid = artist_id_monitor.clone();
                                             move |_| {
-                                                dispatch_with_toast_loading(ServerAction::BulkMonitor { artist_id: aid.clone(), monitored: true }, "All albums monitored", Some(monitor_all_loading));
+                                                dispatch_with_toast_loading(ServerAction::BulkMonitor { artist_id, monitored: true }, "All albums monitored", Some(monitor_all_loading));
                                             }
                                         }>
                                         {move || if monitor_all_loading.get() { "Monitoring\u{2026}" } else { "Monitor All" }}
@@ -448,10 +442,10 @@ fn ArtistDetailContent(
                                     type="button"
                                     class={cls(BTN, "px-2.5 py-0.5 text-xs")}
                                     on:click={
-                                        let aid = a.id.clone();
+
                                         move |_| {
                                             dispatch_with_toast(
-                                                ServerAction::RefreshMatchSuggestions { artist_id: aid.clone() },
+                                                ServerAction::RefreshMatchSuggestions { artist_id: a.id },
                                                 "Match suggestions refreshed",
                                             );
                                         }
@@ -463,8 +457,7 @@ fn ArtistDetailContent(
                             <div class=GLASS_BODY>
                                 <div class="flex flex-col gap-2">
                                     {pending.into_iter().map(|m| {
-                                        let accept_id = m.id.clone();
-                                        let dismiss_id = m.id.clone();
+                                        let suggestion_id = m.id;
                                         let right = provider_display_name(&m.right_provider);
                                         let kind = if m.match_kind == "isrc_exact" { "ISRC" } else { "Fuzzy" };
                                         let name = m
@@ -547,7 +540,7 @@ fn ArtistDetailContent(
                                                         class={cls(BTN_PRIMARY, "px-2 py-0.5 text-xs")}
                                                         on:click=move |_| {
                                                             dispatch_with_toast(
-                                                                ServerAction::AcceptMatchSuggestion { suggestion_id: accept_id.clone() },
+                                                                ServerAction::AcceptMatchSuggestion { suggestion_id },
                                                                 "Match accepted",
                                                             );
                                                         }
@@ -559,7 +552,7 @@ fn ArtistDetailContent(
                                                         class={cls(BTN, "px-2 py-0.5 text-xs")}
                                                         on:click=move |_| {
                                                             dispatch_with_toast(
-                                                                ServerAction::DismissMatchSuggestion { suggestion_id: dismiss_id.clone() },
+                                                                ServerAction::DismissMatchSuggestion { suggestion_id },
                                                                 "Match dismissed",
                                                             );
                                                         }
@@ -706,7 +699,7 @@ fn ArtistDetailContent(
                                 <div class="d7-album-grid">
                                     <For
                                         each=move || sorted_albums.get()
-                                        key=|album| album.id.clone()
+                                        key=|album| album.id
                                         let:album
                                     >
                                         <AlbumSleeve album=album albums=albums jobs=jobs artist_id=artist />
@@ -797,11 +790,11 @@ fn AlbumSleeve(
     // the UI reflects the change without needing to recreate the component.
     // We use a Memo so the flags are computed once per change and can be read
     // cheaply from multiple reactive closures (Memo is Copy).
-    let aid_flags = album_id.clone();
+
     let flags = Memo::new(move |_| {
         let all = albums.get();
         all.iter()
-            .find(|a| a.id == aid_flags)
+            .find(|a| a.id == album_id)
             .map(|a| (a.monitored, a.wanted, a.acquired))
             .unwrap_or((false, false, false))
     });
@@ -810,11 +803,10 @@ fn AlbumSleeve(
     let is_acquired = move || flags.get().2;
 
     // Reactively derive job status from the jobs signal
-    let album_id_for_job = album.id.clone();
     let job_info = move || {
         let all_jobs = jobs.get();
         let latest = build_latest_jobs(all_jobs);
-        latest.get(&album_id_for_job).cloned()
+        latest.get(&album_id).cloned()
     };
 
     let fallback_initial = album_title
@@ -822,9 +814,6 @@ fn AlbumSleeve(
         .next()
         .map(|c| c.to_uppercase().to_string())
         .unwrap_or_else(|| "?".to_string());
-
-    let album_id_action = album_id.clone();
-    let album_id_remove = album_id.clone();
 
     view! {
         // ── Album card (grid cell) ──────────────────────────
@@ -890,21 +879,19 @@ fn AlbumSleeve(
                     let acquired = is_acquired();
                     let monitor_title = if monitored { "Unmonitor album" } else { "Monitor album" };
                     let monitor_label = if monitored { "Unmonitor" } else { "Monitor" };
-                    let aid_m = album_id_action.clone();
-                    let aid_r = album_id_remove.clone();
+
                     view! {
                         <div class="d7-sleeve-actions">
                             <button type="button" class={cls(BTN, "d7-sleeve-action-btn")} title=monitor_title
                                 on:click=move |_| {
                                     let next = !monitored;
                                     let msg = if next { "Album monitored" } else { "Album unmonitored" };
-                                    dispatch_with_toast(ServerAction::ToggleAlbumMonitor { album_id: aid_m.clone(), monitored: next }, msg);
+                                    dispatch_with_toast(ServerAction::ToggleAlbumMonitor { album_id, monitored: next }, msg);
                                 }>{monitor_label}</button>
                             {if acquired {
                                 view! {
                                     <button type="button" class={cls(BTN_DANGER, "d7-sleeve-action-btn")} title="Delete downloaded files"
                                         on:click={
-                                            let _aid = aid_r.clone();
                                             move |_| {
                                                 show_remove_files.set(true);
                                             }
@@ -930,10 +917,9 @@ fn AlbumSleeve(
             danger=true
             checkbox_label="Also unmonitor this album"
             on_confirm={
-                let aid = album_id.clone();
                 move |unmonitor: bool| {
                     let msg = if unmonitor { "Album files removed and unmonitored" } else { "Album files removed" };
-                    dispatch_with_toast(ServerAction::RemoveAlbumFiles { album_id: aid.clone(), unmonitor }, msg);
+                    dispatch_with_toast(ServerAction::RemoveAlbumFiles { album_id, unmonitor }, msg);
                 }
             }
         />

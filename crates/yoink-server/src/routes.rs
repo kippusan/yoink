@@ -108,11 +108,9 @@ async fn album_tracks(
                             duration_secs: secs,
                             duration_display: format!("{}:{:02}", mins, rem),
                             isrc: t.isrc,
-                            explicit: t
-                                .extra
-                                .get("explicit")
-                                .and_then(|v| v.as_bool())
-                                .unwrap_or(false),
+                            explicit: t.explicit,
+                            track_artist: t.artists,
+                            file_path: None,
                         }
                     })
                     .collect();

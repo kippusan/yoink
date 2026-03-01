@@ -156,7 +156,9 @@ fn build_fetch_tracks_fn(state: &AppState) -> yoink_shared::FetchTracksFn {
                 .await
                 .map_err(|e| format!("Failed to load tracks: {e}"))?;
 
-            if !tracks.is_empty() {
+            let needs_artist_backfill =
+                !tracks.is_empty() && tracks.iter().all(|t| t.track_artist.is_none());
+            if !tracks.is_empty() && !needs_artist_backfill {
                 return Ok(tracks);
             }
 
@@ -203,12 +205,6 @@ fn build_fetch_tracks_fn(state: &AppState) -> yoink_shared::FetchTracksFn {
                                 .unwrap_or_else(Uuid::now_v7)
                             };
 
-                            let explicit = t
-                                .extra
-                                .get("explicit")
-                                .and_then(|v| v.as_bool())
-                                .unwrap_or(false);
-
                             let secs = t.duration_secs;
                             let mins = secs / 60;
                             let rem = secs % 60;
@@ -221,7 +217,9 @@ fn build_fetch_tracks_fn(state: &AppState) -> yoink_shared::FetchTracksFn {
                                 duration_secs: secs,
                                 duration_display: format!("{mins}:{rem:02}"),
                                 isrc: t.isrc,
-                                explicit,
+                                explicit: t.explicit,
+                                track_artist: t.artists,
+                                file_path: None,
                             };
 
                             let _ = db::upsert_track(&s.db, &track_info, album_id).await;

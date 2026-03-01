@@ -86,6 +86,13 @@ struct DeezerTrack {
     disk_number: Option<u32>,
     #[serde(default)]
     explicit_lyrics: bool,
+    #[serde(default)]
+    artist: Option<DeezerTrackArtist>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct DeezerTrackArtist {
+    name: String,
 }
 
 // ── DeezerProvider ──────────────────────────────────────────────────
@@ -337,10 +344,7 @@ impl MetadataProvider for DeezerProvider {
         let provider_tracks = tracks
             .into_iter()
             .map(|t| {
-                let mut extra = HashMap::new();
-                if t.explicit_lyrics {
-                    extra.insert("explicit".to_string(), Value::Bool(true));
-                }
+                let extra = HashMap::new();
 
                 ProviderTrack {
                     external_id: t.id.to_string(),
@@ -350,6 +354,8 @@ impl MetadataProvider for DeezerProvider {
                     disc_number: t.disk_number,
                     duration_secs: t.duration,
                     isrc: t.isrc.filter(|s| !s.is_empty()),
+                    artists: t.artist.map(|a| a.name),
+                    explicit: t.explicit_lyrics,
                     extra,
                 }
             })

@@ -126,7 +126,6 @@ pub(crate) async fn preview_import_library(
         let needle = normalize_text(&local.artist_name);
         let mut candidates = Vec::new();
         let mut match_status = ImportMatchStatus::Unmatched;
-        let mut already_imported = false;
 
         if let Some((artist_id, artist_name)) = artist_names_lower.get(&needle) {
             let target_title = normalize_text(&local.album_title);
@@ -160,9 +159,6 @@ pub(crate) async fn preview_import_library(
                         acquired: album.acquired,
                         confidence,
                     });
-                    if album.acquired {
-                        already_imported = true;
-                    }
                 } else if title_match {
                     candidates.push(ImportAlbumCandidate {
                         album_id: Some(album.id),
@@ -225,6 +221,13 @@ pub(crate) async fn preview_import_library(
                 match_status = ImportMatchStatus::Partial;
             }
         }
+
+        // A folder is "already imported" when its best match is already acquired.
+        // One folder = one album on disk. If the top candidate is acquired, it's done.
+        let already_imported = candidates
+            .first()
+            .map(|c| c.acquired)
+            .unwrap_or(false);
 
         let selected_candidate = if !candidates.is_empty() && !already_imported {
             Some(0)
@@ -317,27 +320,22 @@ pub(crate) async fn confirm_import_library(
         if let Some(album_id) = item.album_id {
             let mut albums = state.monitored_albums.write().await;
             if let Some(album) = albums.iter_mut().find(|a| a.id == album_id) {
-                let mut changed = false;
                 if !album.monitored {
                     album.monitored = true;
-                    changed = true;
                 }
                 if !album.acquired {
                     album.acquired = true;
-                    changed = true;
                 }
                 update_wanted(album);
-                if changed {
-                    let _ = db::update_album_flags(
-                        &state.db,
-                        album.id,
-                        album.monitored,
-                        album.acquired,
-                        album.wanted,
-                    )
-                    .await;
-                    imported += 1;
-                }
+                let _ = db::update_album_flags(
+                    &state.db,
+                    album.id,
+                    album.monitored,
+                    album.acquired,
+                    album.wanted,
+                )
+                .await;
+                imported += 1;
             } else {
                 errors.push(format!(
                     "Album ID '{}' not found for '{}'",
@@ -358,9 +356,9 @@ pub(crate) async fn confirm_import_library(
         }
     }
 
-    if imported > 0 {
-        state.notify_sse();
-    }
+    // Always notify SSE so the import page refreshes after confirm,
+    // even when all selected albums were already acquired.
+    state.notify_sse();
 
     Ok(ImportResultSummary {
         total_selected: items.len(),
@@ -516,6 +514,8 @@ async fn import_local_album(
     let target_title = normalize_text(album_title);
     let mut albums = state.monitored_albums.write().await;
 
+    let hint_year = year_hint.and_then(parse_release_year);
+
     let mut matched_index = None;
     for (idx, album) in albums.iter().enumerate() {
         if album.artist_id != artist_id {
@@ -524,9 +524,9 @@ async fn import_local_album(
         if normalize_text(&album.title) != target_title {
             continue;
         }
-        if let Some(year) = year_hint {
+        if let Some(ref year) = hint_year {
             let album_year = album.release_date.as_deref().and_then(parse_release_year);
-            if album_year != Some(year.to_string()) {
+            if album_year.as_ref() != Some(year) {
                 continue;
             }
         }

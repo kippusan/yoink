@@ -12,6 +12,7 @@ leptoaster = "0.2"
 lucide-leptos = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+futures = "0.3"
 
 # Client-only (behind "hydrate" feature)
 wasm-bindgen = { workspace = true, optional = true }

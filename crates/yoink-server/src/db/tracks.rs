@@ -13,6 +13,8 @@ struct TrackRow {
     duration_secs: Option<i64>,
     explicit: bool,
     isrc: Option<String>,
+    track_artist: Option<String>,
+    file_path: Option<String>,
 }
 
 impl From<TrackRow> for TrackInfo {
@@ -30,6 +32,8 @@ impl From<TrackRow> for TrackInfo {
             duration_display: format!("{mins}:{rem:02}"),
             isrc: r.isrc,
             explicit: r.explicit,
+            track_artist: r.track_artist,
+            file_path: r.file_path,
         }
     }
 }
@@ -44,7 +48,7 @@ pub(crate) async fn load_tracks_for_album(
             id as "id!: Uuid",
             title, version, disc_number, track_number, duration_secs,
             explicit as "explicit!: bool",
-            isrc
+            isrc, track_artist, file_path
          FROM tracks WHERE album_id = $1
          ORDER BY disc_number, track_number"#,
         album_id,
@@ -64,8 +68,8 @@ pub(crate) async fn upsert_track(
     let tnum = track.track_number as i32;
     let dur = track.duration_secs as i32;
     sqlx::query!(
-        "INSERT INTO tracks (id, album_id, title, version, disc_number, track_number, duration_secs, explicit, isrc)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        "INSERT INTO tracks (id, album_id, title, version, disc_number, track_number, duration_secs, explicit, isrc, track_artist, file_path)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          ON CONFLICT(id) DO UPDATE SET
            title = excluded.title,
            version = excluded.version,
@@ -73,8 +77,11 @@ pub(crate) async fn upsert_track(
            track_number = excluded.track_number,
            duration_secs = excluded.duration_secs,
            explicit = excluded.explicit,
-           isrc = excluded.isrc",
+           isrc = excluded.isrc,
+           track_artist = COALESCE(excluded.track_artist, tracks.track_artist),
+           file_path = COALESCE(excluded.file_path, tracks.file_path)",
         track.id, album_id, track.title, track.version, disc, tnum, dur, track.explicit, track.isrc,
+        track.track_artist, track.file_path,
     )
     .execute(pool)
     .await?;

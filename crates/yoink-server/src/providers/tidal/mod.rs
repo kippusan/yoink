@@ -171,6 +171,12 @@ impl MetadataProvider for TidalProvider {
                     HifiAlbumItem::Item { item } => item,
                     HifiAlbumItem::Track(t) => t,
                 };
+                let artists = super::extract_artist_display(&track.extra);
+                let explicit = track
+                    .extra
+                    .get("explicit")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
                 ProviderTrack {
                     external_id: track.id.to_string(),
                     title: track.title,
@@ -179,6 +185,8 @@ impl MetadataProvider for TidalProvider {
                     disc_number: None, // extracted later from extra
                     duration_secs: track.duration.unwrap_or(0),
                     isrc: None,
+                    artists,
+                    explicit,
                     extra: track.extra,
                 }
             })

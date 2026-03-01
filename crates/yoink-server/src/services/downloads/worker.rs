@@ -446,6 +446,51 @@ async fn process_track_download(
         );
     }
 
+    // Persist track with artist and file path info
+    let relative_path = final_path
+        .strip_prefix(&state.music_root)
+        .unwrap_or(&final_path)
+        .to_string_lossy()
+        .to_string();
+    let explicit = track.explicit;
+    let local_track_id =
+        if let Ok(Some(id)) = db::find_track_by_provider_link(&state.db, &metadata_provider_id, &track.external_id).await {
+            id
+        } else if let Some(ref isrc) = track.isrc {
+            db::find_track_by_album_isrc(&state.db, job.album_id, isrc)
+                .await
+                .ok()
+                .flatten()
+                .unwrap_or_else(uuid::Uuid::now_v7)
+        } else {
+            db::find_track_by_album_position(&state.db, job.album_id, disc_number.unwrap_or(1), track_number)
+                .await
+                .ok()
+                .flatten()
+                .unwrap_or_else(uuid::Uuid::now_v7)
+        };
+    let track_info = yoink_shared::TrackInfo {
+        id: local_track_id,
+        title: track.title.clone(),
+        version: track.version.clone(),
+        disc_number: disc_number.unwrap_or(1),
+        track_number,
+        duration_secs: track.duration_secs,
+        duration_display: String::new(),
+        isrc: track.isrc.clone(),
+        explicit,
+        track_artist: Some(track_artist.clone()),
+        file_path: Some(relative_path),
+    };
+    let _ = db::upsert_track(&state.db, &track_info, job.album_id).await;
+    let _ = db::upsert_track_provider_link(
+        &state.db,
+        local_track_id,
+        &metadata_provider_id,
+        &track.external_id,
+    )
+    .await;
+
     Ok(())
 }
 

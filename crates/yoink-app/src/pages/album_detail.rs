@@ -41,35 +41,40 @@ pub async fn get_album_detail(album_id: String) -> Result<AlbumDetailData, Serve
         .parse()
         .map_err(|_| ServerFnError::new("invalid album UUID"))?;
 
-    let albums = ctx.monitored_albums.read().await;
-    let album = albums.iter().find(|a| a.id == album_uuid).cloned();
-    drop(albums);
-
-    let artist = if let Some(ref a) = album {
-        let artists = ctx.monitored_artists.read().await;
-        artists.iter().find(|ar| ar.id == a.artist_id).cloned()
-    } else {
-        None
+    let (album, artist) = {
+        let albums = ctx.monitored_albums.read().await;
+        let album = albums.iter().find(|a| a.id == album_uuid).cloned();
+        let artist_id = album.as_ref().map(|a| a.artist_id);
+        drop(albums);
+        let artist = if let Some(aid) = artist_id {
+            let artists = ctx.monitored_artists.read().await;
+            artists.iter().find(|ar| ar.id == aid).cloned()
+        } else {
+            None
+        };
+        (album, artist)
     };
 
-    let tracks = (ctx.fetch_tracks)(album_uuid).await.unwrap_or_default();
+    // Fetch tracks, links, and suggestions concurrently (all are independent)
+    let (tracks, jobs, provider_links, match_suggestions) = if album.is_some() {
+        let tracks_fut = (ctx.fetch_tracks)(album_uuid);
+        let links_fut = (ctx.fetch_album_links)(album_uuid);
+        let suggestions_fut = (ctx.fetch_album_match_suggestions)(album_uuid);
 
-    let jobs = ctx.download_jobs.read().await.clone();
+        let (tracks_res, links_res, suggestions_res) =
+            futures::future::join3(tracks_fut, links_fut, suggestions_fut).await;
 
-    let provider_links = if album.is_some() {
-        (ctx.fetch_album_links)(album_uuid)
-            .await
-            .unwrap_or_default()
+        let jobs = ctx.download_jobs.read().await.clone();
+
+        (
+            tracks_res.unwrap_or_default(),
+            jobs,
+            links_res.unwrap_or_default(),
+            suggestions_res.unwrap_or_default(),
+        )
     } else {
-        Vec::new()
-    };
-
-    let match_suggestions = if album.is_some() {
-        (ctx.fetch_album_match_suggestions)(album_uuid)
-            .await
-            .unwrap_or_default()
-    } else {
-        Vec::new()
+        let jobs = ctx.download_jobs.read().await.clone();
+        (Vec::new(), jobs, Vec::new(), Vec::new())
     };
 
     Ok(AlbumDetailData {
@@ -223,10 +228,7 @@ fn AlbumDetailContent(
 ) -> impl IntoView {
     set_page_title(&album.title);
 
-    let album_id_retry = album.id.clone();
-    let album_id_retry2 = album.id.clone();
-    let album_id_monitor = album.id.clone();
-    let album_id_remove_confirm = album.id.clone();
+    let album_id = album.id;
     let album_title = album.title.clone();
     let release_date = album
         .release_date
@@ -402,8 +404,7 @@ fn AlbumDetailContent(
                                 </div>
                                 <div class="flex flex-col gap-2">
                                     {match_suggestions.iter().filter(|m| m.status == "pending").map(|m| {
-                                        let accept_id = m.id.clone();
-                                        let dismiss_id = m.id.clone();
+                                        let suggestion_id = m.id;
                                         let display_provider = provider_display_name(&m.right_provider);
                                         let kind = if m.match_kind == "isrc_exact" { "ISRC" } else { "Fuzzy" };
                                         let display_name = m
@@ -423,7 +424,7 @@ fn AlbumDetailContent(
                                                     class={cls(BTN_PRIMARY, "px-2 py-0.5 text-[11px]")}
                                                     on:click=move |_| {
                                                         dispatch_with_toast(
-                                                            ServerAction::AcceptMatchSuggestion { suggestion_id: accept_id.clone() },
+                                                            ServerAction::AcceptMatchSuggestion { suggestion_id },
                                                             "Match accepted",
                                                         );
                                                     }
@@ -435,7 +436,7 @@ fn AlbumDetailContent(
                                                     class={cls(BTN, "px-2 py-0.5 text-[11px]")}
                                                     on:click=move |_| {
                                                         dispatch_with_toast(
-                                                            ServerAction::DismissMatchSuggestion { suggestion_id: dismiss_id.clone() },
+                                                            ServerAction::DismissMatchSuggestion { suggestion_id },
                                                             "Match dismissed",
                                                         );
                                                     }
@@ -486,30 +487,26 @@ fn AlbumDetailContent(
                     // Action buttons
                     <div class="flex flex-wrap gap-1.5">
                         {if can_retry {
-                            let aid = album_id_retry.clone();
                             view! {
                                 <button type="button"
                                     class=move || btn_cls(BTN_PRIMARY, "px-3 py-1.5 text-xs", download_loading.get())
                                     disabled=move || download_loading.get()
                                     on:click={
-                                        let aid = aid.clone();
                                         move |_| {
-                                            dispatch_with_toast_loading(ServerAction::RetryDownload { album_id: aid.clone() }, "Download requeued", Some(download_loading));
+                                            dispatch_with_toast_loading(ServerAction::RetryDownload { album_id }, "Download requeued", Some(download_loading));
                                         }
                                     }>
                                     {move || if download_loading.get() { "Retrying\u{2026}" } else { "Retry Download" }}
                                 </button>
                             }.into_any()
                         } else if can_download {
-                            let aid = album_id_retry2.clone();
                             view! {
                                 <button type="button"
                                     class=move || btn_cls(BTN_PRIMARY, "px-3 py-1.5 text-xs", download_loading.get())
                                     disabled=move || download_loading.get()
                                     on:click={
-                                        let aid = aid.clone();
                                         move |_| {
-                                            dispatch_with_toast_loading(ServerAction::RetryDownload { album_id: aid.clone() }, "Download started", Some(download_loading));
+                                            dispatch_with_toast_loading(ServerAction::RetryDownload { album_id }, "Download started", Some(download_loading));
                                         }
                                     }>
                                     {move || if download_loading.get() { "Starting\u{2026}" } else { "Download" }}
@@ -521,11 +518,10 @@ fn AlbumDetailContent(
 
                         <button type="button" class={cls(BTN, "px-3 py-1.5 text-xs")} title=monitor_title
                             on:click={
-                                let aid = album_id_monitor.clone();
                                 move |_| {
                                     let next = !is_monitored;
                                     let msg = if next { "Album monitored" } else { "Album unmonitored" };
-                                    dispatch_with_toast(ServerAction::ToggleAlbumMonitor { album_id: aid.clone(), monitored: next }, msg);
+                                    dispatch_with_toast(ServerAction::ToggleAlbumMonitor { album_id, monitored: next }, msg);
                                 }
                             }>{monitor_label}</button>
 
@@ -545,6 +541,56 @@ fn AlbumDetailContent(
                 </div>
             </div>
 
+            // ── Contributing artists ─────────────────────────
+            {
+                let mut all_artists = std::collections::BTreeSet::<String>::new();
+                for t in &tracks {
+                    if let Some(ref ta) = t.track_artist {
+                        // Split on common joinphrases: ";", ",", " & ", " feat. ", " ft. ", " featuring ", " with ", " x "
+                        let re_split: Vec<&str> = ta
+                            .split(';')
+                            .flat_map(|s| s.split(','))
+                            .flat_map(|s| s.split(" & "))
+                            .flat_map(|s| s.split(" feat. "))
+                            .flat_map(|s| s.split(" ft. "))
+                            .flat_map(|s| s.split(" featuring "))
+                            .flat_map(|s| s.split(" with "))
+                            .collect();
+                        for name in re_split {
+                            let trimmed = name.trim();
+                            if !trimmed.is_empty() {
+                                all_artists.insert(trimmed.to_string());
+                            }
+                        }
+                    }
+                }
+                // Remove the primary album artist so only additional artists show
+                all_artists.remove(&artist_name);
+                if !all_artists.is_empty() {
+                    let artists_list: Vec<String> = all_artists.into_iter().collect();
+                    view! {
+                        <div class={cls(GLASS, "mb-5")}>
+                            <div class=GLASS_HEADER>
+                                <h2 class=GLASS_TITLE>"Contributing Artists"</h2>
+                            </div>
+                            <div class={cls(GLASS_BODY, "px-5 py-3")}>
+                                <div class="flex flex-wrap gap-1.5">
+                                    {artists_list.into_iter().map(|name| {
+                                        view! {
+                                            <span class="inline-flex items-center px-2 py-1 text-xs font-medium text-zinc-600 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 border border-black/[.06] dark:border-white/[.08] rounded-md">
+                                                {name}
+                                            </span>
+                                        }
+                                    }).collect_view()}
+                                </div>
+                            </div>
+                        </div>
+                    }.into_any()
+                } else {
+                    view! { <span></span> }.into_any()
+                }
+            }
+
             // ── Tracklist card ───────────────────────────────
             <div class=GLASS>
                 <div class=GLASS_HEADER>
@@ -556,6 +602,8 @@ fn AlbumDetailContent(
                         <div class="text-center py-10 px-4 text-zinc-400 dark:text-zinc-600 text-sm">"No tracks available."</div>
                     }.into_any()
                 } else {
+                    let has_any_artist = tracks.iter().any(|t| t.track_artist.is_some());
+                    let has_any_path = tracks.iter().any(|t| t.file_path.is_some());
                     view! {
                         <div class={cls(GLASS_BODY, "p-0!")}>
                             <div class="divide-y divide-black/[.04] dark:divide-white/[.04]">
@@ -569,16 +617,22 @@ fn AlbumDetailContent(
                                         let dur = t.duration_display.clone();
                                         let explicit = t.explicit;
                                         let isrc = t.isrc.clone();
+                                        let track_artist = t.track_artist.clone();
+                                        let file_path = t.file_path.clone();
                                         let track_num_display = if has_multiple_discs {
                                             format!("{disc}-{num}")
                                         } else {
                                             num.to_string()
                                         };
+                                        // Show track artist only if it differs from the album artist
+                                        let show_track_artist = has_any_artist && track_artist.as_deref()
+                                            .map(|ta| ta != artist_name)
+                                            .unwrap_or(false);
                                         view! {
                                             <div class="flex items-center gap-3 px-5 py-2.5 transition-colors duration-100 hover:bg-blue-500/[.03] dark:hover:bg-blue-500/[.05]">
                                                 <span class="w-8 text-right text-xs tabular-nums text-zinc-400 dark:text-zinc-500 shrink-0">{track_num_display}</span>
                                                 <div class="flex-1 min-w-0">
-                                                    <div class="flex items-center gap-1.5 truncate">
+                                                    <div class="flex items-center gap-1.5 flex-wrap">
                                                         <span class="text-sm text-zinc-800 dark:text-zinc-200 truncate">{title}</span>
                                                         {match version {
                                                             Some(v) if !v.is_empty() => view! {
@@ -594,12 +648,46 @@ fn AlbumDetailContent(
                                                             view! { <span></span> }.into_any()
                                                         }}
                                                     </div>
-                                                    {match isrc {
-                                                        Some(code) if !code.is_empty() => view! {
-                                                            <span class="block text-[10px] font-mono text-zinc-400/70 dark:text-zinc-600 leading-tight mt-0.5">{code}</span>
-                                                        }.into_any(),
-                                                        _ => view! { <span></span> }.into_any(),
+                                                    // Track artist (if different from album artist)
+                                                    {if show_track_artist {
+                                                        view! {
+                                                            <span class="block text-[11px] text-zinc-500 dark:text-zinc-400 leading-tight mt-0.5 truncate">
+                                                                {track_artist.unwrap_or_default()}
+                                                            </span>
+                                                        }.into_any()
+                                                    } else {
+                                                        view! { <span></span> }.into_any()
                                                     }}
+                                                    // ISRC + file path metadata line
+                                                    {
+                                                        let has_isrc = isrc.as_ref().map(|c| !c.is_empty()).unwrap_or(false);
+                                                        let has_path = has_any_path && file_path.is_some();
+                                                        if has_isrc || has_path {
+                                                            view! {
+                                                                <div class="flex items-center gap-2 mt-0.5 flex-wrap">
+                                                                    {match isrc {
+                                                                        Some(code) if !code.is_empty() => view! {
+                                                                            <span class="text-[10px] font-mono text-zinc-400/70 dark:text-zinc-600 leading-tight">{code}</span>
+                                                                        }.into_any(),
+                                                                        _ => view! { <span></span> }.into_any(),
+                                                                    }}
+                                                                    {match file_path {
+                                                                        Some(path) => {
+                                                                            let path2 = path.clone();
+                                                                            view! {
+                                                                                <span class="text-[10px] font-mono text-zinc-400/50 dark:text-zinc-600/80 leading-tight truncate max-w-[400px]" title=path2>
+                                                                                    {path}
+                                                                                </span>
+                                                                            }.into_any()
+                                                                        }
+                                                                        None => view! { <span></span> }.into_any(),
+                                                                    }}
+                                                                </div>
+                                                            }.into_any()
+                                                        } else {
+                                                            view! { <span></span> }.into_any()
+                                                        }
+                                                    }
                                                 </div>
                                                 <span class="text-xs tabular-nums text-zinc-400 dark:text-zinc-500 shrink-0">{dur}</span>
                                             </div>
@@ -622,10 +710,9 @@ fn AlbumDetailContent(
             danger=true
             checkbox_label="Also unmonitor this album"
             on_confirm={
-                let aid = album_id_remove_confirm.clone();
                 move |unmonitor: bool| {
                     let msg = if unmonitor { "Album files removed and unmonitored" } else { "Album files removed" };
-                    dispatch_with_toast(ServerAction::RemoveAlbumFiles { album_id: aid.clone(), unmonitor }, msg);
+                    dispatch_with_toast(ServerAction::RemoveAlbumFiles { album_id, unmonitor }, msg);
                 }
             }
         />

@@ -3,8 +3,9 @@
 use uuid::Uuid;
 
 use crate::{
-    DownloadJob, ImportConfirmation, ImportPreviewItem, ImportResultSummary, MatchSuggestion,
-    MonitoredAlbum, MonitoredArtist, ProviderLink, SearchArtistResult, ServerAction, TrackInfo,
+    ArtistImageOption, DownloadJob, ImportConfirmation, ImportPreviewItem, ImportResultSummary,
+    MatchSuggestion, MonitoredAlbum, MonitoredArtist, ProviderLink, SearchArtistResult,
+    ServerAction, TrackInfo,
 };
 
 type AsyncFnResult<T> =
@@ -43,6 +44,9 @@ pub type ConfirmImportFn = std::sync::Arc<
     dyn Fn(Vec<ImportConfirmation>) -> AsyncFnResult<ImportResultSummary> + Send + Sync,
 >;
 
+pub type FetchArtistImagesFn =
+    std::sync::Arc<dyn Fn(Uuid) -> AsyncFnResult<Vec<ArtistImageOption>> + Send + Sync>;
+
 /// Holds the shared in-memory state that server functions need to read.
 ///
 /// Provided via `leptos::context::provide_context` in main.rs and consumed via
@@ -63,4 +67,5 @@ pub struct ServerContext {
     pub dispatch_action: DispatchActionFn,
     pub preview_import: PreviewImportFn,
     pub confirm_import: ConfirmImportFn,
+    pub fetch_artist_images: FetchArtistImagesFn,
 }

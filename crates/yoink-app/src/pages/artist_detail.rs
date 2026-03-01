@@ -2,9 +2,9 @@ use leptos::prelude::*;
 use lucide_leptos::{ArrowLeft, ChevronRight};
 
 use yoink_shared::{
-    DownloadJob, MatchSuggestion, MonitoredAlbum, MonitoredArtist, ProviderLink, ServerAction,
-    album_cover_url, album_type_label, album_type_rank, build_latest_jobs, provider_display_name,
-    status_class, status_label_text,
+    ArtistImageOption, DownloadJob, MatchSuggestion, MonitoredAlbum, MonitoredArtist, ProviderLink,
+    ServerAction, album_cover_url, album_type_label, album_type_rank, build_latest_jobs,
+    provider_display_name, status_class, status_label_text,
 };
 
 use leptoaster::{ToastBuilder, ToastLevel, ToastPosition, expect_toaster};
@@ -12,7 +12,7 @@ use leptoaster::{ToastBuilder, ToastLevel, ToastPosition, expect_toaster};
 use super::provider_icon_svg;
 use crate::actions::dispatch_action;
 use crate::components::toast::{dispatch_with_toast, dispatch_with_toast_loading};
-use crate::components::{ConfirmDialog, ErrorPanel, LinkProviderDialog, MobileMenuButton, Sidebar};
+use crate::components::{ConfirmDialog, EditArtistDialog, ErrorPanel, LinkProviderDialog, MobileMenuButton, Sidebar};
 use crate::hooks::{set_page_title, use_sse_version};
 use crate::styles::{
     BREADCRUMB_CURRENT, BREADCRUMB_LINK, BREADCRUMB_NAV, BREADCRUMB_SEP, BTN, BTN_DANGER,
@@ -85,6 +85,25 @@ pub async fn get_artist_detail(artist_id: String) -> Result<ArtistDetailData, Se
         provider_links,
         match_suggestions,
     })
+}
+
+/// Fetch available artist images from linked providers.
+#[server(GetArtistImages, "/leptos")]
+pub async fn get_artist_images(
+    artist_id: String,
+) -> Result<Vec<ArtistImageOption>, ServerFnError> {
+    use yoink_shared::Uuid;
+
+    let ctx = use_context::<yoink_shared::ServerContext>()
+        .ok_or_else(|| ServerFnError::new("ServerContext not available"))?;
+
+    let artist_uuid: Uuid = artist_id
+        .parse()
+        .map_err(|_| ServerFnError::new("invalid artist UUID"))?;
+
+    (ctx.fetch_artist_images)(artist_uuid)
+        .await
+        .map_err(ServerFnError::new)
 }
 
 // ── Page component ──────────────────────────────────────────
@@ -253,6 +272,7 @@ fn ArtistDetailContent(
     let show_unmonitor_all = RwSignal::new(false);
     let show_remove_artist = RwSignal::new(false);
     let show_link_provider = RwSignal::new(false);
+    let show_edit_artist = RwSignal::new(false);
 
     // Loading state signals for async buttons
     let sync_loading = RwSignal::new(false);
@@ -371,6 +391,13 @@ fn ArtistDetailContent(
                                 }}
 
                                 <div class="flex flex-wrap gap-1.5">
+                                    <button type="button"
+                                        class={cls(BTN, "px-2.5 py-0.5 text-xs")}
+                                        on:click=move |_| {
+                                            show_edit_artist.set(true);
+                                        }>
+                                        "Edit"
+                                    </button>
                                     <button type="button"
                                         class=move || btn_cls(BTN, "px-2.5 py-0.5 text-xs", sync_loading.get())
                                         disabled=move || sync_loading.get()
@@ -587,6 +614,29 @@ fn ArtistDetailContent(
                         artist_id=a.id
                         artist_name=a.name.clone()
                         already_linked=already_linked
+                    />
+                }
+            }}
+
+            // Edit artist dialog
+            {move || {
+                let a = a();
+                let current_name = Signal::derive(move || {
+                    artist.get().map(|a| a.name.clone()).unwrap_or_default()
+                });
+                let current_image_url = Signal::derive(move || {
+                    artist.get().and_then(|a| a.image_url.clone())
+                });
+                let has_bio = Signal::derive(move || {
+                    artist.get().map(|a| a.bio.is_some()).unwrap_or(false)
+                });
+                view! {
+                    <EditArtistDialog
+                        open=show_edit_artist
+                        artist_id=a.id
+                        current_name=current_name
+                        current_image_url=current_image_url
+                        has_bio=has_bio
                     />
                 }
             }}

@@ -16,7 +16,9 @@ pub(crate) use albums::{
     delete_album, delete_albums_by_artist, load_albums, reassign_jobs_to_album,
     reassign_tracks_to_album, update_album_flags, upsert_album,
 };
-pub(crate) use artists::{delete_artist, load_artists, update_artist_bio, upsert_artist};
+pub(crate) use artists::{
+    delete_artist, load_artists, update_artist_bio, update_artist_details, upsert_artist,
+};
 pub(crate) use jobs::{delete_completed_jobs, delete_job, insert_job, load_jobs, update_job};
 pub(crate) use match_suggestions::{
     MatchSuggestion, clear_pending_match_suggestions, load_match_suggestion_by_id,

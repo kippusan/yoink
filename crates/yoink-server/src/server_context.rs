@@ -42,6 +42,7 @@ pub(crate) fn build_server_context(state: &AppState) -> yoink_shared::ServerCont
     let dispatch_action_fn = build_dispatch_action_fn(state);
     let preview_import_fn = build_preview_import_fn(state);
     let confirm_import_fn = build_confirm_import_fn(state);
+    let fetch_artist_images_fn = build_fetch_artist_images_fn(state);
 
     yoink_shared::ServerContext {
         monitored_artists: state.monitored_artists.clone(),
@@ -58,6 +59,7 @@ pub(crate) fn build_server_context(state: &AppState) -> yoink_shared::ServerCont
         dispatch_action: dispatch_action_fn,
         preview_import: preview_import_fn,
         confirm_import: confirm_import_fn,
+        fetch_artist_images: fetch_artist_images_fn,
     }
 }
 
@@ -369,6 +371,90 @@ fn build_confirm_import_fn(state: &AppState) -> yoink_shared::ConfirmImportFn {
     std::sync::Arc::new(move |items: Vec<yoink_shared::ImportConfirmation>| {
         let s = s.clone();
         Box::pin(async move { services::confirm_import_library(&s, items).await })
+    })
+}
+
+fn build_fetch_artist_images_fn(state: &AppState) -> yoink_shared::FetchArtistImagesFn {
+    let s = state.clone();
+    std::sync::Arc::new(move |artist_id: Uuid| {
+        let s = s.clone();
+        Box::pin(async move {
+            let links = db::load_artist_provider_links(&s.db, artist_id)
+                .await
+                .map_err(|e| format!("Failed to load provider links: {e}"))?;
+
+            let mut images = Vec::new();
+
+            for link in &links {
+                let provider_id = &link.provider;
+
+                // Skip providers that don't have artist images (empty string sentinel).
+                if link.image_ref.as_deref() == Some("") {
+                    continue;
+                }
+
+                let Some(provider) = s.registry.metadata_provider(provider_id) else {
+                    continue;
+                };
+
+                // Always try a fresh fetch first — stored refs can go stale
+                // (e.g. Tidal rotates CDN images).
+                if let Some(image_ref) =
+                    provider.fetch_artist_image_ref(&link.external_id).await
+                {
+                    let url = yoink_shared::provider_image_url(provider_id, &image_ref, 640);
+                    images.push(yoink_shared::ArtistImageOption {
+                        provider: provider_id.clone(),
+                        image_url: url,
+                    });
+
+                    // Update the stored ref so other code paths use the fresh one
+                    let mut updated_link = link.clone();
+                    updated_link.image_ref = Some(image_ref);
+                    let _ = db::upsert_artist_provider_link(&s.db, &updated_link).await;
+                    continue;
+                }
+
+                // Fall back to the stored image_ref if the provider doesn't
+                // implement fetch_artist_image_ref.
+                if let Some(ref stored_ref) = link.image_ref {
+                    // Extract the raw image ref from the stored value
+                    let raw_ref = if stored_ref.starts_with("/api/image/") {
+                        // Stored as proxy URL "/api/image/{provider}/{ref}/{size}"
+                        // Extract the raw ref (the segment between provider and size)
+                        stored_ref
+                            .strip_prefix(&format!("/api/image/{provider_id}/"))
+                            .and_then(|rest| rest.rsplit_once('/').map(|(r, _)| r.to_string()))
+                    } else {
+                        Some(stored_ref.clone())
+                    };
+
+                    if let Some(raw_ref) = raw_ref {
+                        // Verify the image exists upstream before offering it
+                        let upstream_url = provider.image_url(&raw_ref, 640);
+                        let ok = s
+                            .http
+                            .head(&upstream_url)
+                            .timeout(std::time::Duration::from_secs(5))
+                            .send()
+                            .await
+                            .map(|r| r.status().is_success())
+                            .unwrap_or(false);
+
+                        if ok {
+                            let url =
+                                yoink_shared::provider_image_url(provider_id, &raw_ref, 640);
+                            images.push(yoink_shared::ArtistImageOption {
+                                provider: provider_id.clone(),
+                                image_url: url,
+                            });
+                        }
+                    }
+                }
+            }
+
+            Ok(images)
+        })
     })
 }
 

@@ -85,4 +85,12 @@ pub enum ServerAction {
     ConfirmImport {
         items: Vec<ImportConfirmation>,
     },
+    UpdateArtist {
+        artist_id: Uuid,
+        name: Option<String>,
+        image_url: Option<String>,
+    },
+    FetchArtistBio {
+        artist_id: Uuid,
+    },
 }

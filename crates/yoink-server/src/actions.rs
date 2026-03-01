@@ -7,27 +7,85 @@ use crate::{db, services, state::AppState};
 /// Fetch artist bio from linked metadata providers in background.
 pub(crate) fn spawn_fetch_artist_bio(state: &AppState, artist_id: Uuid) {
     let s = state.clone();
+    info!(%artist_id, "Spawning background bio fetch");
     tokio::spawn(async move {
         let links = match db::load_artist_provider_links(&s.db, artist_id).await {
             Ok(l) => l,
-            Err(_) => return,
-        };
-
-        for link in &links {
-            if let Some(provider) = s.registry.metadata_provider(&link.provider)
-                && let Some(bio) = provider.fetch_artist_bio(&link.external_id).await
-            {
-                let _ = db::update_artist_bio(&s.db, artist_id, Some(&bio)).await;
-                {
-                    let mut artists = s.monitored_artists.write().await;
-                    if let Some(a) = artists.iter_mut().find(|a| a.id == artist_id) {
-                        a.bio = Some(bio);
-                    }
-                }
-                s.notify_sse();
+            Err(e) => {
+                warn!(%artist_id, error = %e, "Failed to load provider links for bio fetch");
                 return;
             }
+        };
+
+        if links.is_empty() {
+            info!(%artist_id, "No provider links found, skipping bio fetch");
+            return;
         }
+
+        info!(%artist_id, link_count = links.len(), "Attempting bio fetch from linked providers");
+
+        for link in &links {
+            let provider_name = &link.provider;
+            let external_id = &link.external_id;
+
+            let Some(provider) = s.registry.metadata_provider(provider_name) else {
+                info!(
+                    %artist_id,
+                    provider = %provider_name,
+                    "Provider not available as metadata source, skipping"
+                );
+                continue;
+            };
+
+            info!(
+                %artist_id,
+                provider = %provider_name,
+                %external_id,
+                "Fetching bio from provider"
+            );
+
+            match provider.fetch_artist_bio(external_id).await {
+                Some(bio) => {
+                    let bio_len = bio.len();
+                    if let Err(e) = db::update_artist_bio(&s.db, artist_id, Some(&bio)).await {
+                        warn!(
+                            %artist_id,
+                            provider = %provider_name,
+                            error = %e,
+                            "Failed to persist fetched bio to database"
+                        );
+                        return;
+                    }
+                    {
+                        let mut artists = s.monitored_artists.write().await;
+                        if let Some(a) = artists.iter_mut().find(|a| a.id == artist_id) {
+                            a.bio = Some(bio);
+                        }
+                    }
+                    info!(
+                        %artist_id,
+                        provider = %provider_name,
+                        bio_len,
+                        "Successfully fetched and saved artist bio"
+                    );
+                    s.notify_sse();
+                    return;
+                }
+                None => {
+                    info!(
+                        %artist_id,
+                        provider = %provider_name,
+                        %external_id,
+                        "Provider returned no bio"
+                    );
+                }
+            }
+        }
+
+        info!(
+            %artist_id,
+            "No provider returned a bio for this artist"
+        );
     });
 }
 
@@ -714,6 +772,52 @@ pub(crate) async fn dispatch_action_impl(
                     }
                 }
             });
+        }
+
+        ServerAction::UpdateArtist {
+            artist_id,
+            name,
+            image_url,
+        } => {
+            let db_name: Option<&str> = name.as_deref();
+            // Empty string means "clear image"
+            let db_image: Option<Option<&str>> = image_url
+                .as_ref()
+                .map(|u| if u.is_empty() { None } else { Some(u.as_str()) });
+            db::update_artist_details(&state.db, artist_id, db_name, db_image)
+                .await
+                .map_err(|e| format!("failed to update artist: {e}"))?;
+            {
+                let mut artists = state.monitored_artists.write().await;
+                if let Some(a) = artists.iter_mut().find(|a| a.id == artist_id) {
+                    if let Some(ref new_name) = name {
+                        a.name = new_name.clone();
+                    }
+                    if let Some(ref new_url) = image_url {
+                        a.image_url = if new_url.is_empty() {
+                            None
+                        } else {
+                            Some(new_url.clone())
+                        };
+                    }
+                }
+            }
+            info!(%artist_id, ?name, ?image_url, "Updated artist details");
+            state.notify_sse();
+        }
+
+        ServerAction::FetchArtistBio { artist_id } => {
+            info!(%artist_id, "Manual bio fetch requested, clearing existing bio");
+            // Clear old bio first so the fetch replaces it
+            let _ = db::update_artist_bio(&state.db, artist_id, None).await;
+            {
+                let mut artists = state.monitored_artists.write().await;
+                if let Some(a) = artists.iter_mut().find(|a| a.id == artist_id) {
+                    a.bio = None;
+                }
+            }
+            state.notify_sse();
+            spawn_fetch_artist_bio(&state, artist_id);
         }
 
         ServerAction::ConfirmImport { items } => {

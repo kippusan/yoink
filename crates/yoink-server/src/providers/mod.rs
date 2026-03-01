@@ -221,6 +221,13 @@ pub(crate) trait MetadataProvider: Send + Sync {
     /// Fetch cover art bytes for an image ref (full resolution).
     async fn fetch_cover_art_bytes(&self, image_ref: &str) -> Option<Vec<u8>>;
 
+    /// Fetch the image ref for an artist by their external ID.
+    /// Returns a provider-specific image reference that can be passed to `image_url()`.
+    /// Default returns `None`; providers can override.
+    async fn fetch_artist_image_ref(&self, _external_artist_id: &str) -> Option<String> {
+        None
+    }
+
     /// Fetch a biographical summary for an artist (plain text).
     /// Default returns `None`; providers can override to source from Wikipedia etc.
     async fn fetch_artist_bio(&self, _external_artist_id: &str) -> Option<String> {

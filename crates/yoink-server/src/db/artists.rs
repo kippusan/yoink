@@ -47,6 +47,34 @@ pub(crate) async fn update_artist_bio(
     Ok(())
 }
 
+/// Update the artist name and/or image_url. Only provided (Some) fields are updated.
+pub(crate) async fn update_artist_details(
+    pool: &SqlitePool,
+    artist_id: Uuid,
+    name: Option<&str>,
+    image_url: Option<Option<&str>>,
+) -> Result<(), sqlx::Error> {
+    if let Some(new_name) = name {
+        sqlx::query!(
+            "UPDATE artists SET name = $1 WHERE id = $2",
+            new_name,
+            artist_id
+        )
+        .execute(pool)
+        .await?;
+    }
+    if let Some(new_image) = image_url {
+        sqlx::query!(
+            "UPDATE artists SET image_url = $1 WHERE id = $2",
+            new_image,
+            artist_id
+        )
+        .execute(pool)
+        .await?;
+    }
+    Ok(())
+}
+
 pub(crate) async fn delete_artist(pool: &SqlitePool, artist_id: Uuid) -> Result<(), sqlx::Error> {
     sqlx::query!("DELETE FROM artists WHERE id = $1", artist_id)
         .execute(pool)

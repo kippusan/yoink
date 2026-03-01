@@ -135,6 +135,13 @@ pub struct MatchSuggestion {
     pub status: String,
 }
 
+/// An artist image option from a linked provider.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArtistImageOption {
+    pub provider: String,
+    pub image_url: String,
+}
+
 /// A search result from a metadata provider.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchArtistResult {

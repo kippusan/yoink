@@ -172,10 +172,12 @@ fn build_registry(app_config: &AppConfig) -> ProviderRegistry {
     let mut registry = ProviderRegistry::new();
 
     if app_config.tidal_enabled {
-        let tidal_base_url = app_config.resolved_tidal_base_url();
         let tidal = Arc::new(TidalProvider::new(
             reqwest::Client::new(),
-            Some(tidal_base_url),
+            match app_config.tidal_api_base_url.as_str() {
+                "" => None,
+                ref url => Some(url.to_string()),
+            },
         ));
         registry.register_metadata(Arc::clone(&tidal) as Arc<dyn providers::MetadataProvider>);
         registry.register_download(Arc::clone(&tidal) as Arc<dyn providers::DownloadSource>);

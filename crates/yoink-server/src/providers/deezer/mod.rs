@@ -428,7 +428,7 @@ impl MetadataProvider for DeezerProvider {
         resp.bytes().await.ok().map(|b| b.to_vec())
     }
 
-    async fn fetch_artist_image_ref(&self, external_artist_id: &str) -> Option<String> {
+    async fn fetch_artist_image_ref(&self, external_artist_id: &str, _name_hint: Option<&str>) -> Option<String> {
         let url = format!("{DEEZER_API_BASE}/artist/{external_artist_id}");
         let artist: DeezerArtist = self.deezer_get(&url).await.ok()?;
         extract_md5_from_picture_url(

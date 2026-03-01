@@ -379,30 +379,76 @@ fn build_fetch_artist_images_fn(state: &AppState) -> yoink_shared::FetchArtistIm
     std::sync::Arc::new(move |artist_id: Uuid| {
         let s = s.clone();
         Box::pin(async move {
+            // Look up the artist name to use as a search hint for providers
+            // that need to search by name (e.g. Tidal).
+            let artist_name = {
+                let artists = s.monitored_artists.read().await;
+                artists.iter().find(|a| a.id == artist_id).map(|a| a.name.clone())
+            };
+
             let links = db::load_artist_provider_links(&s.db, artist_id)
                 .await
                 .map_err(|e| format!("Failed to load provider links: {e}"))?;
+
+            tracing::debug!(
+                %artist_id,
+                link_count = links.len(),
+                "Fetching artist images from provider links"
+            );
 
             let mut images = Vec::new();
 
             for link in &links {
                 let provider_id = &link.provider;
+                let external_id = &link.external_id;
+                let stored_ref = link.image_ref.as_deref();
+
+                tracing::debug!(
+                    %artist_id,
+                    provider = %provider_id,
+                    %external_id,
+                    stored_image_ref = ?stored_ref,
+                    "Processing provider link for artist image"
+                );
 
                 // Skip providers that don't have artist images (empty string sentinel).
-                if link.image_ref.as_deref() == Some("") {
+                if stored_ref == Some("") {
+                    tracing::debug!(
+                        %artist_id,
+                        provider = %provider_id,
+                        "Skipping provider — empty image_ref sentinel (no artist images)"
+                    );
                     continue;
                 }
 
                 let Some(provider) = s.registry.metadata_provider(provider_id) else {
+                    tracing::debug!(
+                        %artist_id,
+                        provider = %provider_id,
+                        "Skipping provider — not registered as metadata provider"
+                    );
                     continue;
                 };
 
                 // Always try a fresh fetch first — stored refs can go stale
                 // (e.g. Tidal rotates CDN images).
+                tracing::debug!(
+                    %artist_id,
+                    provider = %provider_id,
+                    %external_id,
+                    "Attempting fresh image ref fetch from provider"
+                );
                 if let Some(image_ref) =
-                    provider.fetch_artist_image_ref(&link.external_id).await
+                    provider.fetch_artist_image_ref(external_id, artist_name.as_deref()).await
                 {
                     let url = yoink_shared::provider_image_url(provider_id, &image_ref, 640);
+                    tracing::debug!(
+                        %artist_id,
+                        provider = %provider_id,
+                        %image_ref,
+                        %url,
+                        "Got fresh image ref from provider"
+                    );
                     images.push(yoink_shared::ArtistImageOption {
                         provider: provider_id.clone(),
                         image_url: url,
@@ -415,6 +461,12 @@ fn build_fetch_artist_images_fn(state: &AppState) -> yoink_shared::FetchArtistIm
                     continue;
                 }
 
+                tracing::debug!(
+                    %artist_id,
+                    provider = %provider_id,
+                    "Provider returned no fresh image ref, falling back to stored ref"
+                );
+
                 // Fall back to the stored image_ref if the provider doesn't
                 // implement fetch_artist_image_ref.
                 if let Some(ref stored_ref) = link.image_ref {
@@ -422,36 +474,64 @@ fn build_fetch_artist_images_fn(state: &AppState) -> yoink_shared::FetchArtistIm
                     let raw_ref = if stored_ref.starts_with("/api/image/") {
                         // Stored as proxy URL "/api/image/{provider}/{ref}/{size}"
                         // Extract the raw ref (the segment between provider and size)
-                        stored_ref
+                        let extracted = stored_ref
                             .strip_prefix(&format!("/api/image/{provider_id}/"))
-                            .and_then(|rest| rest.rsplit_once('/').map(|(r, _)| r.to_string()))
+                            .and_then(|rest| rest.rsplit_once('/').map(|(r, _)| r.to_string()));
+                        tracing::debug!(
+                            %artist_id,
+                            provider = %provider_id,
+                            %stored_ref,
+                            extracted_raw_ref = ?extracted,
+                            "Extracted raw ref from stored proxy URL"
+                        );
+                        extracted
                     } else {
+                        tracing::debug!(
+                            %artist_id,
+                            provider = %provider_id,
+                            %stored_ref,
+                            "Using stored ref directly (not a proxy URL)"
+                        );
                         Some(stored_ref.clone())
                     };
 
                     if let Some(raw_ref) = raw_ref {
-                        // Verify the image exists upstream before offering it
-                        let upstream_url = provider.image_url(&raw_ref, 640);
-                        let ok = s
-                            .http
-                            .head(&upstream_url)
-                            .timeout(std::time::Duration::from_secs(5))
-                            .send()
-                            .await
-                            .map(|r| r.status().is_success())
-                            .unwrap_or(false);
-
-                        if ok {
-                            let url =
-                                yoink_shared::provider_image_url(provider_id, &raw_ref, 640);
-                            images.push(yoink_shared::ArtistImageOption {
-                                provider: provider_id.clone(),
-                                image_url: url,
-                            });
-                        }
+                        let url =
+                            yoink_shared::provider_image_url(provider_id, &raw_ref, 640);
+                        tracing::debug!(
+                            %artist_id,
+                            provider = %provider_id,
+                            %raw_ref,
+                            %url,
+                            "Adding stored image option"
+                        );
+                        images.push(yoink_shared::ArtistImageOption {
+                            provider: provider_id.clone(),
+                            image_url: url,
+                        });
+                    } else {
+                        tracing::warn!(
+                            %artist_id,
+                            provider = %provider_id,
+                            %stored_ref,
+                            "Failed to extract raw image ref from stored value"
+                        );
                     }
+                } else {
+                    tracing::debug!(
+                        %artist_id,
+                        provider = %provider_id,
+                        "No stored image_ref and no fresh ref — skipping provider"
+                    );
                 }
             }
+
+            tracing::debug!(
+                %artist_id,
+                image_count = images.len(),
+                providers = ?images.iter().map(|i| i.provider.as_str()).collect::<Vec<_>>(),
+                "Finished fetching artist images"
+            );
 
             Ok(images)
         })

@@ -247,6 +247,32 @@ impl MetadataProvider for TidalProvider {
             .ok()?;
         resp.bytes().await.ok().map(|b| b.to_vec())
     }
+
+    async fn fetch_artist_image_ref(
+        &self,
+        external_artist_id: &str,
+        name_hint: Option<&str>,
+    ) -> Option<String> {
+        // Tidal has no "get artist by ID" endpoint that returns the picture,
+        // so we search by name and match on the numeric ID.
+        let query = name_hint?;
+        let parsed = self
+            .hifi_get::<HifiResponse>("/search/", vec![("a".to_string(), query.to_string())])
+            .await
+            .ok()?;
+
+        let artists = parsed
+            .data
+            .artists
+            .map(|paged| paged.items)
+            .or(parsed.data.items)
+            .unwrap_or_default();
+
+        artists
+            .into_iter()
+            .find(|a| a.id.to_string() == external_artist_id)
+            .and_then(|a| a.picture.or(a.selected_album_cover_fallback))
+    }
 }
 
 #[async_trait]

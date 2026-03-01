@@ -4,7 +4,6 @@ use better_config::{EnvConfig, env};
 
 use crate::config::DEFAULT_QUALITY;
 
-const DEFAULT_TIDAL_API_BASE_URL: &str = "http://127.0.0.1:8000";
 const DEFAULT_MUSIC_ROOT: &str = "./music";
 const DEFAULT_DATABASE_URL: &str = "sqlite:./yoink.db?mode=rwc";
 const DEFAULT_SITE_ROOT: &str = "target/site";
@@ -16,13 +15,8 @@ const DEFAULT_SLSKD_DOWNLOADS_DIR: &str = "./development/slskd-data/downloads";
 #[env(EnvConfig)]
 pub(crate) struct AppConfig {
     /// Base URL for the Tidal hifi-api proxy.
-    /// Legacy env var HIFI_API_BASE_URL is still supported.
     #[conf(from = "TIDAL_API_BASE_URL", default = "")]
     pub(crate) tidal_api_base_url: String,
-
-    /// Legacy alias for TIDAL_API_BASE_URL.
-    #[conf(from = "HIFI_API_BASE_URL", default = "http://127.0.0.1:8000")]
-    pub(crate) hifi_api_base_url: String,
 
     /// Whether the Tidal provider is enabled. Defaults to true.
     #[conf(from = "TIDAL_ENABLED", default = "true")]
@@ -93,23 +87,10 @@ impl AppConfig {
         PathBuf::from(&self.music_root)
     }
 
-    /// Resolved Tidal API base URL: prefers TIDAL_API_BASE_URL, falls back to HIFI_API_BASE_URL.
-    pub(crate) fn resolved_tidal_base_url(&self) -> String {
-        if !self.tidal_api_base_url.is_empty() {
-            self.tidal_api_base_url.clone()
-        } else {
-            self.hifi_api_base_url.clone()
-        }
-    }
-
     fn normalize(&mut self) {
         self.tidal_api_base_url = normalize_string_opt(&self.tidal_api_base_url)
             .map(|s| s.trim_end_matches('/').to_string())
             .unwrap_or_default();
-        self.hifi_api_base_url =
-            normalize_string(&self.hifi_api_base_url, DEFAULT_TIDAL_API_BASE_URL)
-                .trim_end_matches('/')
-                .to_string();
         self.slskd_base_url = normalize_string(&self.slskd_base_url, DEFAULT_SLSKD_BASE_URL)
             .trim_end_matches('/')
             .to_string();
@@ -166,31 +147,26 @@ mod tests {
     #[test]
     #[serial]
     fn uses_defaults_for_empty_values() {
-        with_env_vars(
-            &[
-                ("HIFI_API_BASE_URL", "   "),
-                ("MUSIC_ROOT", ""),
-                ("DEFAULT_QUALITY", "   "),
-            ],
-            || {
-                let mut cfg = AppConfig::builder().build().expect("config parse");
-                cfg.normalize();
+        with_env_vars(&[("MUSIC_ROOT", ""), ("DEFAULT_QUALITY", "   ")], || {
+            let mut cfg = AppConfig::builder().build().expect("config parse");
+            cfg.normalize();
 
-                assert_eq!(cfg.hifi_api_base_url, DEFAULT_TIDAL_API_BASE_URL);
-                assert_eq!(cfg.music_root, DEFAULT_MUSIC_ROOT);
-                assert_eq!(cfg.default_quality, DEFAULT_QUALITY);
-            },
-        );
+            assert_eq!(cfg.music_root, DEFAULT_MUSIC_ROOT);
+            assert_eq!(cfg.default_quality, DEFAULT_QUALITY);
+        });
     }
 
     #[test]
     #[serial]
     fn trims_base_url_trailing_slash() {
-        with_env_vars(&[("HIFI_API_BASE_URL", "http://localhost:8000///")], || {
-            let mut cfg = AppConfig::builder().build().expect("config parse");
-            cfg.normalize();
+        with_env_vars(
+            &[("TIDAL_API_BASE_URL", "http://localhost:8000///")],
+            || {
+                let mut cfg = AppConfig::builder().build().expect("config parse");
+                cfg.normalize();
 
-            assert_eq!(cfg.hifi_api_base_url, "http://localhost:8000");
-        });
+                assert_eq!(cfg.tidal_api_base_url, "http://localhost:8000");
+            },
+        );
     }
 }

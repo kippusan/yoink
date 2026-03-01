@@ -4,6 +4,16 @@ use uuid::Uuid;
 
 use crate::{db, services, state::AppState};
 
+/// Generate a default external URL for an artist on a given provider.
+fn default_provider_artist_url(provider: &str, external_id: &str) -> Option<String> {
+    match provider {
+        "tidal" => Some(format!("https://tidal.com/browse/artist/{external_id}")),
+        "deezer" => Some(format!("https://www.deezer.com/artist/{external_id}")),
+        "musicbrainz" => Some(format!("https://musicbrainz.org/artist/{external_id}")),
+        _ => None,
+    }
+}
+
 /// Fetch artist bio from linked metadata providers in background.
 pub(crate) fn spawn_fetch_artist_bio(state: &AppState, artist_id: Uuid) {
     let s = state.clone();
@@ -143,9 +153,10 @@ pub(crate) async fn dispatch_action_impl(
             let mut to_queue = Vec::new();
             {
                 let mut albums = state.monitored_albums.write().await;
-                for album in albums.iter_mut().filter(|a| {
-                    a.artist_id == artist_id || a.artist_ids.contains(&artist_id)
-                }) {
+                for album in albums
+                    .iter_mut()
+                    .filter(|a| a.artist_id == artist_id || a.artist_ids.contains(&artist_id))
+                {
                     album.monitored = monitored;
                     services::update_wanted(album);
                     let _ = db::update_album_flags(
@@ -216,8 +227,8 @@ pub(crate) async fn dispatch_action_impl(
                 let mut albums = state.monitored_albums.write().await;
                 let mut sole_album_ids = Vec::new();
                 for album in albums.iter_mut() {
-                    let is_related = album.artist_id == artist_id
-                        || album.artist_ids.contains(&artist_id);
+                    let is_related =
+                        album.artist_id == artist_id || album.artist_ids.contains(&artist_id);
                     if !is_related {
                         continue;
                     }
@@ -257,6 +268,10 @@ pub(crate) async fn dispatch_action_impl(
             image_url,
             external_url,
         } => {
+            // Generate a default external URL if none was provided
+            let external_url =
+                external_url.or_else(|| default_provider_artist_url(&provider, &external_id));
+
             let existing_artist_id =
                 db::find_artist_by_provider_link(&state.db, &provider, &external_id)
                     .await
@@ -308,6 +323,8 @@ pub(crate) async fn dispatch_action_impl(
             external_name,
             image_ref,
         } => {
+            let external_url =
+                external_url.or_else(|| default_provider_artist_url(&provider, &external_id));
             let link = db::ArtistProviderLink {
                 id: Uuid::now_v7(),
                 artist_id,
@@ -338,9 +355,8 @@ pub(crate) async fn dispatch_action_impl(
             provider,
             external_id,
         } => {
-            let _ =
-                db::delete_artist_provider_link(&state.db, artist_id, &provider, &external_id)
-                    .await;
+            let _ = db::delete_artist_provider_link(&state.db, artist_id, &provider, &external_id)
+                .await;
             spawn_recompute_artist_match_suggestions(&state, artist_id);
             state.notify_sse();
         }
@@ -353,10 +369,9 @@ pub(crate) async fn dispatch_action_impl(
 
             match suggestion.scope_type.as_str() {
                 "album" => {
-                    let album_links =
-                        db::load_album_provider_links(&state.db, suggestion.scope_id)
-                            .await
-                            .map_err(|e| format!("failed loading album links: {e}"))?;
+                    let album_links = db::load_album_provider_links(&state.db, suggestion.scope_id)
+                        .await
+                        .map_err(|e| format!("failed loading album links: {e}"))?;
                     let linked: std::collections::HashSet<(String, String)> = album_links
                         .iter()
                         .map(|l| (l.provider.clone(), l.external_id.clone()))
@@ -696,10 +711,10 @@ pub(crate) async fn dispatch_action_impl(
                 .map_err(|e| format!("failed to add album artist: {e}"))?;
             {
                 let mut albums = state.monitored_albums.write().await;
-                if let Some(album) = albums.iter_mut().find(|a| a.id == album_id) {
-                    if !album.artist_ids.contains(&artist_id) {
-                        album.artist_ids.push(artist_id);
-                    }
+                if let Some(album) = albums.iter_mut().find(|a| a.id == album_id)
+                    && !album.artist_ids.contains(&artist_id)
+                {
+                    album.artist_ids.push(artist_id);
                 }
             }
             state.notify_sse();
@@ -712,10 +727,10 @@ pub(crate) async fn dispatch_action_impl(
             // Must keep at least one artist
             {
                 let albums = state.monitored_albums.read().await;
-                if let Some(album) = albums.iter().find(|a| a.id == album_id) {
-                    if album.artist_ids.len() <= 1 {
-                        return Err("Cannot remove the only artist from an album".to_string());
-                    }
+                if let Some(album) = albums.iter().find(|a| a.id == album_id)
+                    && album.artist_ids.len() <= 1
+                {
+                    return Err("Cannot remove the only artist from an album".to_string());
                 }
             }
             db::remove_album_artist(&state.db, album_id, artist_id)

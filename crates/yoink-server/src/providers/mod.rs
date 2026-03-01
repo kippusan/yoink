@@ -222,9 +222,14 @@ pub(crate) trait MetadataProvider: Send + Sync {
     async fn fetch_cover_art_bytes(&self, image_ref: &str) -> Option<Vec<u8>>;
 
     /// Fetch the image ref for an artist by their external ID.
+    /// `name_hint` can be used by providers that need to search by name to find the artist.
     /// Returns a provider-specific image reference that can be passed to `image_url()`.
     /// Default returns `None`; providers can override.
-    async fn fetch_artist_image_ref(&self, _external_artist_id: &str) -> Option<String> {
+    async fn fetch_artist_image_ref(
+        &self,
+        _external_artist_id: &str,
+        _name_hint: Option<&str>,
+    ) -> Option<String> {
         None
     }
 

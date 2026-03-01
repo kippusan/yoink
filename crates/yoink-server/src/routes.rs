@@ -11,7 +11,7 @@ use axum::{
     routing::get,
 };
 use tokio_stream::{StreamExt as _, wrappers::BroadcastStream};
-use tracing::debug;
+use tracing::{debug, warn};
 
 use uuid::Uuid;
 
@@ -213,20 +213,24 @@ async fn proxy_image_impl(
 ) -> axum::response::Response {
     // Validate size
     if ![160, 320, 640, 750, 1080].contains(&size) {
+        debug!(provider, image_id, size, "Image proxy rejected: invalid size");
         return (StatusCode::BAD_REQUEST, "invalid size").into_response();
     }
 
     // Resolve upstream URL via the provider
     let Some(metadata_provider) = state.registry.metadata_provider(provider) else {
+        debug!(provider, image_id, "Image proxy rejected: unknown provider");
         return (StatusCode::BAD_REQUEST, "unknown provider").into_response();
     };
 
     // Provider-specific image ID validation
     if !metadata_provider.validate_image_id(image_id) {
+        debug!(provider, image_id, "Image proxy rejected: invalid image id");
         return (StatusCode::BAD_REQUEST, "invalid image id").into_response();
     }
 
     let upstream_url = metadata_provider.image_url(image_id, size);
+    debug!(provider, image_id, size, %upstream_url, "Image proxy fetching upstream");
 
     let resp = state
         .http
@@ -244,30 +248,34 @@ async fn proxy_image_impl(
                 .unwrap_or("image/jpeg")
                 .to_string();
             match upstream.bytes().await {
-                Ok(bytes) => (
-                    StatusCode::OK,
-                    [
-                        (header::CONTENT_TYPE, content_type),
-                        (
-                            header::CACHE_CONTROL,
-                            "public, max-age=86400, immutable".to_string(),
-                        ),
-                    ],
-                    bytes,
-                )
-                    .into_response(),
+                Ok(bytes) => {
+                    debug!(provider, image_id, size, bytes = bytes.len(), "Image proxy success");
+                    (
+                        StatusCode::OK,
+                        [
+                            (header::CONTENT_TYPE, content_type),
+                            (
+                                header::CACHE_CONTROL,
+                                "public, max-age=86400, immutable".to_string(),
+                            ),
+                        ],
+                        bytes,
+                    )
+                        .into_response()
+                }
                 Err(err) => {
-                    debug!(error = %err, "Failed to read upstream image body");
+                    warn!(provider, image_id, %upstream_url, error = %err, "Image proxy: failed to read upstream body");
                     (StatusCode::BAD_GATEWAY, "upstream read error").into_response()
                 }
             }
         }
         Ok(upstream) => {
-            debug!(status = %upstream.status(), url = %upstream_url, "Upstream image not found");
+            let status = upstream.status();
+            warn!(provider, image_id, size, %upstream_url, %status, "Image proxy: upstream returned non-success");
             (StatusCode::NOT_FOUND, "image not found").into_response()
         }
         Err(err) => {
-            debug!(error = %err, "Failed to fetch upstream image");
+            warn!(provider, image_id, %upstream_url, error = %err, "Image proxy: upstream unreachable");
             (StatusCode::BAD_GATEWAY, "upstream unreachable").into_response()
         }
     }

@@ -327,6 +327,7 @@ impl MetadataProvider for DeezerProvider {
                     cover_ref: a.md5_image,
                     url,
                     explicit: a.explicit_lyrics,
+                    artists: Vec::new(),
                 }
             })
             .collect())

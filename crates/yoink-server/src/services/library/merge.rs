@@ -15,7 +15,7 @@ pub(crate) async fn merge_albums(
         return Err("target and source albums must be different".to_string());
     }
 
-    let (target_artist_id, source_artist_id, source_flags) = {
+    let (target_artist_ids, source_artist_ids, source_flags) = {
         let albums = state.monitored_albums.read().await;
         let Some(target) = albums.iter().find(|a| a.id == target_album_id) else {
             return Err("target album not found".to_string());
@@ -24,14 +24,18 @@ pub(crate) async fn merge_albums(
             return Err("source album not found".to_string());
         };
         (
-            target.artist_id,
-            source.artist_id,
+            target.artist_ids.clone(),
+            source.artist_ids.clone(),
             (source.monitored, source.acquired, source.wanted),
         )
     };
 
-    if target_artist_id != source_artist_id {
-        return Err("can only merge albums from same artist".to_string());
+    // Check that the albums share at least one artist.
+    let share_artist = target_artist_ids
+        .iter()
+        .any(|id| source_artist_ids.contains(id));
+    if !share_artist {
+        return Err("can only merge albums that share at least one artist".to_string());
     }
 
     let source_links = db::load_album_provider_links(&state.db, source_album_id)

@@ -1,3 +1,4 @@
+mod album_artists;
 mod albums;
 mod artists;
 mod jobs;
@@ -8,6 +9,9 @@ mod tracks;
 use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};
 use tracing::info;
 
+pub(crate) use album_artists::{
+    add_album_artist, delete_album_artists_by_artist, remove_album_artist, set_album_artists,
+};
 pub(crate) use albums::{
     delete_album, delete_albums_by_artist, load_albums, reassign_jobs_to_album,
     reassign_tracks_to_album, update_album_flags, upsert_album,

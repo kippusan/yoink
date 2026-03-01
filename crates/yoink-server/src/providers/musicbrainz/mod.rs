@@ -268,6 +268,7 @@ impl MetadataProvider for MusicBrainzProvider {
                     cover_ref,
                     url,
                     explicit: false, // MusicBrainz doesn't track explicit content
+                    artists: Vec::new(),
                 }
             })
             .collect())

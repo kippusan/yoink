@@ -9,7 +9,7 @@ use yoink_shared::{
 
 use super::provider_icon_svg;
 use crate::components::toast::{dispatch_with_toast, dispatch_with_toast_loading};
-use crate::components::{ConfirmDialog, ErrorPanel, MobileMenuButton, Sidebar};
+use crate::components::{ConfirmDialog, ErrorPanel, MobileMenuButton, ResolveArtistDialog, Sidebar};
 use crate::hooks::{set_page_title, use_sse_version};
 use crate::styles::{
     BREADCRUMB_CURRENT, BREADCRUMB_LINK, BREADCRUMB_NAV, BREADCRUMB_SEP, BTN, BTN_DANGER,
@@ -18,10 +18,25 @@ use crate::styles::{
 
 // ── DTO ─────────────────────────────────────────────────────
 
+/// A resolved album artist credit for the UI.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ResolvedArtistCredit {
+    pub name: String,
+    /// If the artist is monitored locally, their UUID (clickable link).
+    pub artist_id: Option<yoink_shared::Uuid>,
+    /// Provider that sourced this credit.
+    pub provider: Option<String>,
+    /// External ID in that provider (for linking).
+    pub external_id: Option<String>,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AlbumDetailData {
     pub album: Option<MonitoredAlbum>,
+    /// Primary artist (backward compat).
     pub artist: Option<MonitoredArtist>,
+    /// All album artists — resolved against local monitored artists.
+    pub album_artists: Vec<ResolvedArtistCredit>,
     pub tracks: Vec<TrackInfo>,
     pub jobs: Vec<DownloadJob>,
     pub provider_links: Vec<ProviderLink>,
@@ -41,18 +56,50 @@ pub async fn get_album_detail(album_id: String) -> Result<AlbumDetailData, Serve
         .parse()
         .map_err(|_| ServerFnError::new("invalid album UUID"))?;
 
-    let (album, artist) = {
+    let (album, artist, album_artists) = {
         let albums = ctx.monitored_albums.read().await;
         let album = albums.iter().find(|a| a.id == album_uuid).cloned();
         let artist_id = album.as_ref().map(|a| a.artist_id);
+        let all_artist_ids = album.as_ref().map(|a| a.artist_ids.clone()).unwrap_or_default();
+        let credits = album.as_ref().map(|a| a.artist_credits.clone()).unwrap_or_default();
         drop(albums);
-        let artist = if let Some(aid) = artist_id {
-            let artists = ctx.monitored_artists.read().await;
-            artists.iter().find(|ar| ar.id == aid).cloned()
+
+        let monitored_artists = ctx.monitored_artists.read().await;
+        let artist = artist_id.and_then(|aid| {
+            monitored_artists.iter().find(|ar| ar.id == aid).cloned()
+        });
+
+        // Build resolved album artist list.
+        // If we have artist_credits from the provider, use those (richer info).
+        // Otherwise fall back to the linked artist_ids.
+        let album_artists: Vec<ResolvedArtistCredit> = if !credits.is_empty() {
+            credits.iter().map(|c| {
+                // Try to resolve to a local monitored artist via provider link
+                let local_id = all_artist_ids.iter().find(|&aid| {
+                    monitored_artists.iter().any(|ar| ar.id == *aid && ar.name == c.name)
+                }).copied();
+                ResolvedArtistCredit {
+                    name: c.name.clone(),
+                    artist_id: local_id,
+                    provider: c.provider.clone(),
+                    external_id: c.external_id.clone(),
+                }
+            }).collect()
         } else {
-            None
+            // No provider credits — build from linked artist_ids
+            all_artist_ids.iter().filter_map(|aid| {
+                monitored_artists.iter().find(|ar| ar.id == *aid).map(|ar| {
+                    ResolvedArtistCredit {
+                        name: ar.name.clone(),
+                        artist_id: Some(ar.id),
+                        provider: None,
+                        external_id: None,
+                    }
+                })
+            }).collect()
         };
-        (album, artist)
+
+        (album, artist, album_artists)
     };
 
     // Fetch tracks, links, and suggestions concurrently (all are independent)
@@ -80,6 +127,7 @@ pub async fn get_album_detail(album_id: String) -> Result<AlbumDetailData, Serve
     Ok(AlbumDetailData {
         album,
         artist,
+        album_artists,
         tracks,
         jobs,
         provider_links,
@@ -197,6 +245,7 @@ pub fn AlbumDetailPage() -> impl IntoView {
                                         <AlbumDetailContent
                                             album=album
                                             artist=data.artist
+                                            album_artists=data.album_artists
                                             tracks=data.tracks
                                             jobs=data.jobs
                                             provider_links=data.provider_links
@@ -220,6 +269,7 @@ pub fn AlbumDetailPage() -> impl IntoView {
 fn AlbumDetailContent(
     album: MonitoredAlbum,
     artist: Option<MonitoredArtist>,
+    album_artists: Vec<ResolvedArtistCredit>,
     tracks: Vec<TrackInfo>,
     jobs: Vec<DownloadJob>,
     provider_links: Vec<ProviderLink>,
@@ -291,6 +341,12 @@ fn AlbumDetailContent(
     // Confirmation dialog signals
     let show_remove_files = RwSignal::new(false);
 
+    // Resolve artist dialog state
+    let show_resolve_artist = RwSignal::new(false);
+    let resolve_credit_name = RwSignal::new(String::new());
+    let resolve_credit_provider = RwSignal::new(None::<String>);
+    let resolve_credit_external_id = RwSignal::new(None::<String>);
+
     // Loading state signals
     let download_loading = RwSignal::new(false);
 
@@ -352,11 +408,54 @@ fn AlbumDetailContent(
                             // Title — wraps on narrow screens
                             <h1 class="text-xl md:text-2xl font-bold text-zinc-900 dark:text-zinc-100 m-0 mb-1.5 leading-snug break-words">{album_title.clone()}</h1>
 
-                            // Artist · date · tracks
+                            // Artist(s) · date · tracks
                             <div class={cls(MUTED, "text-sm flex flex-wrap items-center gap-1.5")}>
-                                <a href=artist_link.clone() class="text-zinc-600 dark:text-zinc-300 hover:text-blue-500 dark:hover:text-blue-400 no-underline font-medium">
-                                    {artist_name.clone()}
-                                </a>
+                                {if album_artists.is_empty() {
+                                    // Fallback: show primary artist only
+                                    view! {
+                                        <a href=artist_link.clone() class="text-zinc-600 dark:text-zinc-300 hover:text-blue-500 dark:hover:text-blue-400 no-underline font-medium">
+                                            {artist_name.clone()}
+                                        </a>
+                                    }.into_any()
+                                } else {
+                                    view! {
+                                        <span class="inline-flex flex-wrap items-center gap-0">
+                                            {album_artists.iter().enumerate().map(|(i, credit)| {
+                                                let sep = if i > 0 { ", " } else { "" };
+                                                if let Some(aid) = credit.artist_id {
+                                                    let href = format!("/artists/{aid}");
+                                                    view! {
+                                                        <><span>{sep}</span><a href=href class="text-zinc-600 dark:text-zinc-300 hover:text-blue-500 dark:hover:text-blue-400 no-underline font-medium">
+                                                            {credit.name.clone()}
+                                                        </a></>
+                                                    }.into_any()
+                                                } else {
+                                                    let credit_name = credit.name.clone();
+                                                    let credit_name_display = credit_name.clone();
+                                                    let credit_provider = credit.provider.clone();
+                                                    let credit_external_id = credit.external_id.clone();
+                                                    view! {
+                                                        <><span>{sep}</span><button
+                                                            type="button"
+                                                            class="text-zinc-400 dark:text-zinc-500 italic hover:text-amber-500 dark:hover:text-amber-400 bg-transparent border-none border-b border-dashed border-zinc-400/50 dark:border-zinc-500/50 cursor-pointer p-0 font-inherit text-sm transition-colors duration-150"
+                                                            title="Not linked \u{2014} click to resolve"
+                                                            on:click={
+                                                                move |_| {
+                                                                    resolve_credit_name.set(credit_name.clone());
+                                                                    resolve_credit_provider.set(credit_provider.clone());
+                                                                    resolve_credit_external_id.set(credit_external_id.clone());
+                                                                    show_resolve_artist.set(true);
+                                                                }
+                                                            }
+                                                        >
+                                                            {credit_name_display}
+                                                        </button></>
+                                                    }.into_any()
+                                                }
+                                            }).collect_view()}
+                                        </span>
+                                    }.into_any()
+                                }}
                                 <span>"\u{00b7}"</span>
                                 <span>{release_date.clone()}</span>
                                 <span>"\u{00b7}"</span>
@@ -543,7 +642,7 @@ fn AlbumDetailContent(
 
             // ── Contributing artists ─────────────────────────
             {
-                let mut all_artists = std::collections::BTreeSet::<String>::new();
+                let mut contributing = std::collections::BTreeSet::<String>::new();
                 for t in &tracks {
                     if let Some(ref ta) = t.track_artist {
                         // Split on common joinphrases: ";", ",", " & ", " feat. ", " ft. ", " featuring ", " with ", " x "
@@ -559,15 +658,18 @@ fn AlbumDetailContent(
                         for name in re_split {
                             let trimmed = name.trim();
                             if !trimmed.is_empty() {
-                                all_artists.insert(trimmed.to_string());
+                                contributing.insert(trimmed.to_string());
                             }
                         }
                     }
                 }
-                // Remove the primary album artist so only additional artists show
-                all_artists.remove(&artist_name);
-                if !all_artists.is_empty() {
-                    let artists_list: Vec<String> = all_artists.into_iter().collect();
+                // Remove all album-level artists so only additional (track-level) artists show
+                contributing.remove(&artist_name);
+                for credit in &album_artists {
+                    contributing.remove(&credit.name);
+                }
+                if !contributing.is_empty() {
+                    let artists_list: Vec<String> = contributing.into_iter().collect();
                     view! {
                         <div class={cls(GLASS, "mb-5")}>
                             <div class=GLASS_HEADER>
@@ -604,6 +706,12 @@ fn AlbumDetailContent(
                 } else {
                     let has_any_artist = tracks.iter().any(|t| t.track_artist.is_some());
                     let has_any_path = tracks.iter().any(|t| t.file_path.is_some());
+                    // Build a set of all album-level artist names to suppress in track rows
+                    let album_artist_names: std::collections::HashSet<String> = {
+                        let mut set: std::collections::HashSet<String> = album_artists.iter().map(|c| c.name.clone()).collect();
+                        set.insert(artist_name.clone());
+                        set
+                    };
                     view! {
                         <div class={cls(GLASS_BODY, "p-0!")}>
                             <div class="divide-y divide-black/[.04] dark:divide-white/[.04]">
@@ -624,9 +732,15 @@ fn AlbumDetailContent(
                                         } else {
                                             num.to_string()
                                         };
-                                        // Show track artist only if it differs from the album artist
+                                        // Show track artist only if it contains names not in the album artist list
                                         let show_track_artist = has_any_artist && track_artist.as_deref()
-                                            .map(|ta| ta != artist_name)
+                                            .map(|ta| {
+                                                // Split on common joinphrases and check if any name is new
+                                                ta.split(';')
+                                                    .flat_map(|s| s.split(','))
+                                                    .flat_map(|s| s.split(" & "))
+                                                    .any(|name| !album_artist_names.contains(name.trim()))
+                                            })
                                             .unwrap_or(false);
                                         view! {
                                             <div class="flex items-center gap-3 px-5 py-2.5 transition-colors duration-100 hover:bg-blue-500/[.03] dark:hover:bg-blue-500/[.05]">
@@ -716,5 +830,21 @@ fn AlbumDetailContent(
                 }
             }
         />
+
+        // ── Resolve unlinked album artist dialog ────────────
+        {move || {
+            let name = resolve_credit_name.get();
+            let prov = resolve_credit_provider.get().unwrap_or_default();
+            let eid = resolve_credit_external_id.get().unwrap_or_default();
+            view! {
+                <ResolveArtistDialog
+                    open=show_resolve_artist
+                    album_id=album_id
+                    credit_name=name
+                    credit_provider=prov
+                    credit_external_id=eid
+                />
+            }
+        }}
     }
 }

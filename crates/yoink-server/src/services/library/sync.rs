@@ -105,6 +105,17 @@ pub(crate) async fn sync_artist_albums(state: &AppState, artist_id: Uuid) -> Res
             }
         }
 
+        // Build artist credits from the best provider's data.
+        let credits: Vec<yoink_shared::ArtistCredit> = best_album
+            .artists
+            .iter()
+            .map(|a| yoink_shared::ArtistCredit {
+                name: a.name.clone(),
+                provider: Some(best_provider.to_string()),
+                external_id: Some(a.external_id.clone()),
+            })
+            .collect();
+
         let album_id = if let Some(existing_id) = local_album_id {
             if let Some(existing) = albums.iter_mut().find(|a| a.id == existing_id) {
                 existing.title = best_album.title.clone();
@@ -115,6 +126,9 @@ pub(crate) async fn sync_artist_albums(state: &AppState, artist_id: Uuid) -> Res
                     .as_deref()
                     .map(|c| yoink_shared::provider_image_url(best_provider, c, 640));
                 existing.explicit = best_album.explicit;
+                if !credits.is_empty() {
+                    existing.artist_credits = credits.clone();
+                }
                 let _ = db::upsert_album(&state.db, existing).await;
             }
             existing_id
@@ -123,6 +137,8 @@ pub(crate) async fn sync_artist_albums(state: &AppState, artist_id: Uuid) -> Res
             let album = MonitoredAlbum {
                 id: new_id,
                 artist_id,
+                artist_ids: vec![artist_id],
+                artist_credits: credits.clone(),
                 title: best_album.title.clone(),
                 album_type: best_album.album_type.clone(),
                 release_date: best_album.release_date.clone(),
@@ -142,6 +158,8 @@ pub(crate) async fn sync_artist_albums(state: &AppState, artist_id: Uuid) -> Res
         };
 
         // Upsert ALL provider links for this group.
+        // Also collect album-level artist external IDs from providers.
+        let mut extra_artist_ext_ids: Vec<(String, String)> = Vec::new(); // (provider, external_id)
         for (prov, album) in entries {
             let link = db::AlbumProviderLink {
                 id: Uuid::now_v7(),
@@ -153,12 +171,41 @@ pub(crate) async fn sync_artist_albums(state: &AppState, artist_id: Uuid) -> Res
                 cover_ref: album.cover_ref.clone(),
             };
             let _ = db::upsert_album_provider_link(&state.db, &link).await;
+
+            // Collect extra artists from this provider (skip the artist we're syncing for)
+            for pa in &album.artists {
+                extra_artist_ext_ids.push((prov.clone(), pa.external_id.clone()));
+            }
+        }
+
+        // Resolve extra album artists: find monitored artists that have a
+        // matching provider link and associate them with this album.
+        if !extra_artist_ext_ids.is_empty() {
+            let mut resolved_ids: Vec<Uuid> = vec![artist_id];
+            for (prov, ext_id) in &extra_artist_ext_ids {
+                if let Ok(Some(other_artist_id)) =
+                    db::find_artist_by_provider_link(&state.db, prov, ext_id).await
+                {
+                    if !resolved_ids.contains(&other_artist_id) {
+                        resolved_ids.push(other_artist_id);
+                    }
+                }
+            }
+            if resolved_ids.len() > 1 {
+                if let Some(album) = albums.iter_mut().find(|a| a.id == album_id) {
+                    album.artist_ids = resolved_ids.clone();
+                    album.artist_id = resolved_ids[0];
+                }
+                let _ = db::set_album_artists(&state.db, album_id, &resolved_ids).await;
+            }
         }
     }
 
     // ── 4. Remove stale albums ──────────────────────────────────────────
     let mut ids_to_remove = Vec::new();
-    for album in albums.iter().filter(|a| a.artist_id == artist_id) {
+    for album in albums.iter().filter(|a| {
+        a.artist_id == artist_id || a.artist_ids.contains(&artist_id)
+    }) {
         let key = album_identity_key(&album.title, album.release_date.as_deref());
         if !incoming_keys.contains(&key) {
             ids_to_remove.push(album.id);

@@ -72,6 +72,14 @@ pub enum ServerAction {
         /// If provided, override the surviving album's cover URL.
         result_cover_url: Option<String>,
     },
+    AddAlbumArtist {
+        album_id: Uuid,
+        artist_id: Uuid,
+    },
+    RemoveAlbumArtist {
+        album_id: Uuid,
+        artist_id: Uuid,
+    },
     RetagLibrary,
     ScanImportLibrary,
     ConfirmImport {

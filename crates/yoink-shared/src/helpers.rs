@@ -7,10 +7,18 @@ use crate::{DownloadJob, DownloadStatus, MonitoredAlbum, MonitoredArtist};
 // ── Data helpers (pure transforms) ──────────────────────────
 
 /// Group albums by artist_id, sorted newest-first within each group.
+/// Albums with multiple artists appear under each artist's group.
 pub fn build_albums_by_artist(albums: Vec<MonitoredAlbum>) -> HashMap<Uuid, Vec<MonitoredAlbum>> {
     let mut map: HashMap<Uuid, Vec<MonitoredAlbum>> = HashMap::new();
     for album in albums {
-        map.entry(album.artist_id).or_default().push(album);
+        if album.artist_ids.is_empty() {
+            // Fallback: use the primary artist_id
+            map.entry(album.artist_id).or_default().push(album);
+        } else {
+            for &aid in &album.artist_ids {
+                map.entry(aid).or_default().push(album.clone());
+            }
+        }
     }
     for albums in map.values_mut() {
         albums.sort_by(|a, b| {

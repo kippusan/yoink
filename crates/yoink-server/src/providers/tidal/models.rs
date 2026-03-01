@@ -50,6 +50,16 @@ pub(crate) struct HifiAlbum {
     pub cover: Option<String>,
     pub url: Option<String>,
     pub explicit: Option<bool>,
+    /// Album-level artists returned by Tidal (main + featured).
+    #[serde(default)]
+    pub artists: Vec<HifiAlbumArtist>,
+}
+
+/// Minimal artist object embedded in album responses.
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct HifiAlbumArtist {
+    pub id: i64,
+    pub name: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]

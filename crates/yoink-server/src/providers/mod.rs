@@ -84,6 +84,14 @@ pub(crate) struct ProviderArtist {
     pub popularity: Option<u8>,
 }
 
+/// A minimal artist reference attached to a provider album.
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub(crate) struct ProviderAlbumArtist {
+    pub external_id: String,
+    pub name: String,
+}
+
 /// An album returned by a metadata provider.
 #[derive(Debug, Clone)]
 pub(crate) struct ProviderAlbum {
@@ -94,6 +102,8 @@ pub(crate) struct ProviderAlbum {
     pub cover_ref: Option<String>,
     pub url: Option<String>,
     pub explicit: bool,
+    /// Artists credited on this album (may be empty if provider doesn't supply them).
+    pub artists: Vec<ProviderAlbumArtist>,
 }
 
 /// A track returned by a metadata provider.

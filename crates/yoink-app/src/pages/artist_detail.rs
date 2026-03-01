@@ -53,7 +53,10 @@ pub async fn get_artist_detail(artist_id: String) -> Result<ArtistDetailData, Se
         .read()
         .await
         .iter()
-        .filter(|a| a.artist_id == artist_uuid)
+        .filter(|a| {
+            a.artist_id == artist_uuid
+                || a.artist_ids.contains(&artist_uuid)
+        })
         .cloned()
         .collect();
 

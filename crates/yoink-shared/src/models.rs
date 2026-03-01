@@ -49,10 +49,31 @@ pub struct MonitoredArtist {
     pub added_at: DateTime<Utc>,
 }
 
+/// A raw artist credit from a provider, stored on the album.
+/// Used to display all album artists even when some aren't monitored locally.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ArtistCredit {
+    pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub external_id: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MonitoredAlbum {
     pub id: Uuid,
+    /// Primary (first) artist — kept for backward compatibility and as a
+    /// convenient shorthand for the common single-artist case.
     pub artist_id: Uuid,
+    /// All artists associated with this album, ordered by display priority.
+    /// The first entry always equals `artist_id`.
+    #[serde(default)]
+    pub artist_ids: Vec<Uuid>,
+    /// Raw artist credits from providers. Includes artists that may not be
+    /// monitored locally. Used for display on the album detail page.
+    #[serde(default)]
+    pub artist_credits: Vec<ArtistCredit>,
     pub title: String,
     pub album_type: Option<String>,
     pub release_date: Option<String>,

@@ -144,6 +144,14 @@ impl MetadataProvider for TidalProvider {
                 cover_ref: a.cover,
                 url: a.url,
                 explicit: a.explicit.unwrap_or(false),
+                artists: a
+                    .artists
+                    .into_iter()
+                    .map(|ar| super::ProviderAlbumArtist {
+                        external_id: ar.id.to_string(),
+                        name: ar.name,
+                    })
+                    .collect(),
             })
             .collect())
     }

@@ -85,7 +85,9 @@ pub(crate) async fn dispatch_action_impl(
             let mut to_queue = Vec::new();
             {
                 let mut albums = state.monitored_albums.write().await;
-                for album in albums.iter_mut().filter(|a| a.artist_id == artist_id) {
+                for album in albums.iter_mut().filter(|a| {
+                    a.artist_id == artist_id || a.artist_ids.contains(&artist_id)
+                }) {
                     album.monitored = monitored;
                     services::update_wanted(album);
                     let _ = db::update_album_flags(
@@ -133,7 +135,10 @@ pub(crate) async fn dispatch_action_impl(
                     let albums = state.monitored_albums.read().await;
                     albums
                         .iter()
-                        .filter(|a| a.artist_id == artist_id && a.acquired)
+                        .filter(|a| {
+                            (a.artist_id == artist_id || a.artist_ids.contains(&artist_id))
+                                && a.acquired
+                        })
                         .cloned()
                         .collect()
                 };
@@ -147,12 +152,38 @@ pub(crate) async fn dispatch_action_impl(
                     }
                 }
             }
-            let _ = db::delete_albums_by_artist(&state.db, artist_id).await;
-            let _ = db::delete_artist(&state.db, artist_id).await;
+            // Remove albums solely owned by this artist; for multi-artist albums
+            // just detach this artist.
             {
                 let mut albums = state.monitored_albums.write().await;
-                albums.retain(|a| a.artist_id != artist_id);
+                let mut sole_album_ids = Vec::new();
+                for album in albums.iter_mut() {
+                    let is_related = album.artist_id == artist_id
+                        || album.artist_ids.contains(&artist_id);
+                    if !is_related {
+                        continue;
+                    }
+                    if album.artist_ids.len() <= 1 {
+                        // Sole artist — delete the album entirely
+                        sole_album_ids.push(album.id);
+                    } else {
+                        // Multi-artist — remove this artist from the list
+                        album.artist_ids.retain(|id| *id != artist_id);
+                        if album.artist_id == artist_id {
+                            album.artist_id = album.artist_ids[0];
+                        }
+                        let _ = db::upsert_album(&state.db, album).await;
+                        let _ = db::remove_album_artist(&state.db, album.id, artist_id).await;
+                    }
+                }
+                for id in &sole_album_ids {
+                    let _ = db::delete_album(&state.db, *id).await;
+                }
+                albums.retain(|a| !sole_album_ids.contains(&a.id));
             }
+            let _ = db::delete_albums_by_artist(&state.db, artist_id).await;
+            let _ = db::delete_album_artists_by_artist(&state.db, artist_id).await;
+            let _ = db::delete_artist(&state.db, artist_id).await;
             {
                 let mut artists = state.monitored_artists.write().await;
                 artists.retain(|a| a.id != artist_id);
@@ -595,6 +626,54 @@ pub(crate) async fn dispatch_action_impl(
                 %album_id,
                 removed, unmonitor, "Removed downloaded album files"
             );
+            state.notify_sse();
+        }
+
+        ServerAction::AddAlbumArtist {
+            album_id,
+            artist_id,
+        } => {
+            db::add_album_artist(&state.db, album_id, artist_id)
+                .await
+                .map_err(|e| format!("failed to add album artist: {e}"))?;
+            {
+                let mut albums = state.monitored_albums.write().await;
+                if let Some(album) = albums.iter_mut().find(|a| a.id == album_id) {
+                    if !album.artist_ids.contains(&artist_id) {
+                        album.artist_ids.push(artist_id);
+                    }
+                }
+            }
+            state.notify_sse();
+        }
+
+        ServerAction::RemoveAlbumArtist {
+            album_id,
+            artist_id,
+        } => {
+            // Must keep at least one artist
+            {
+                let albums = state.monitored_albums.read().await;
+                if let Some(album) = albums.iter().find(|a| a.id == album_id) {
+                    if album.artist_ids.len() <= 1 {
+                        return Err("Cannot remove the only artist from an album".to_string());
+                    }
+                }
+            }
+            db::remove_album_artist(&state.db, album_id, artist_id)
+                .await
+                .map_err(|e| format!("failed to remove album artist: {e}"))?;
+            {
+                let mut albums = state.monitored_albums.write().await;
+                if let Some(album) = albums.iter_mut().find(|a| a.id == album_id) {
+                    album.artist_ids.retain(|id| *id != artist_id);
+                    if album.artist_id == artist_id && !album.artist_ids.is_empty() {
+                        album.artist_id = album.artist_ids[0];
+                        // Update the legacy column
+                        let _ = db::upsert_album(&state.db, album).await;
+                    }
+                }
+            }
             state.notify_sse();
         }
 

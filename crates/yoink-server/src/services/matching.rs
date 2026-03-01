@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use chrono::Utc;
+use uuid::Uuid;
 
 use crate::{
     db,
@@ -11,7 +12,7 @@ use crate::{
 
 pub(crate) async fn recompute_artist_match_suggestions(
     state: &AppState,
-    artist_id: &str,
+    artist_id: Uuid,
 ) -> Result<(), String> {
     let artist_name = {
         let artists = state.monitored_artists.read().await;
@@ -48,7 +49,7 @@ pub(crate) async fn recompute_artist_match_suggestions(
 
 async fn recompute_artist_level_suggestions(
     state: &AppState,
-    artist_id: &str,
+    artist_id: Uuid,
     artist_name: &str,
     artist_links: &[db::ArtistProviderLink],
 ) -> Result<(), String> {
@@ -88,9 +89,9 @@ async fn recompute_artist_level_suggestions(
 
         let now = Utc::now();
         let suggestion = db::MatchSuggestion {
-            id: db::uuid_to_string(&db::new_uuid()),
+            id: Uuid::now_v7(),
             scope_type: "artist".to_string(),
-            scope_id: artist_id.to_string(),
+            scope_id: artist_id,
             left_provider: reference.provider.clone(),
             left_external_id: reference.external_id.clone(),
             right_provider: provider_id.clone(),
@@ -122,11 +123,11 @@ async fn recompute_album_match_suggestions(
     album: &MonitoredAlbum,
     artist_name: &str,
 ) -> Result<(), String> {
-    let existing_links = db::load_album_provider_links(&state.db, &album.id)
+    let existing_links = db::load_album_provider_links(&state.db, album.id)
         .await
         .map_err(|e| format!("failed to load album provider links: {e}"))?;
 
-    let _ = db::clear_pending_match_suggestions(&state.db, "album", &album.id).await;
+    let _ = db::clear_pending_match_suggestions(&state.db, "album", album.id).await;
 
     if existing_links.is_empty() {
         return Ok(());
@@ -222,9 +223,9 @@ async fn recompute_album_match_suggestions(
 
         let now = Utc::now();
         let suggestion = db::MatchSuggestion {
-            id: db::uuid_to_string(&db::new_uuid()),
+            id: Uuid::now_v7(),
             scope_type: "album".to_string(),
-            scope_id: album.id.clone(),
+            scope_id: album.id,
             left_provider: reference_pair.0.clone(),
             left_external_id: reference_pair.1.clone(),
             right_provider: provider_id.clone(),

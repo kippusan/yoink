@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use crate::ImportConfirmation;
 
@@ -9,18 +10,18 @@ use crate::ImportConfirmation;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ServerAction {
     ToggleAlbumMonitor {
-        album_id: String,
+        album_id: Uuid,
         monitored: bool,
     },
     BulkMonitor {
-        artist_id: String,
+        artist_id: Uuid,
         monitored: bool,
     },
     SyncArtistAlbums {
-        artist_id: String,
+        artist_id: Uuid,
     },
     RemoveArtist {
-        artist_id: String,
+        artist_id: Uuid,
         remove_files: bool,
     },
     AddArtist {
@@ -31,7 +32,7 @@ pub enum ServerAction {
         external_url: Option<String>,
     },
     LinkArtistProvider {
-        artist_id: String,
+        artist_id: Uuid,
         provider: String,
         external_id: String,
         external_url: Option<String>,
@@ -39,33 +40,33 @@ pub enum ServerAction {
         image_ref: Option<String>,
     },
     UnlinkArtistProvider {
-        artist_id: String,
+        artist_id: Uuid,
         provider: String,
         external_id: String,
     },
     CancelDownload {
-        job_id: String,
+        job_id: Uuid,
     },
     ClearCompleted,
     RetryDownload {
-        album_id: String,
+        album_id: Uuid,
     },
     RemoveAlbumFiles {
-        album_id: String,
+        album_id: Uuid,
         unmonitor: bool,
     },
     AcceptMatchSuggestion {
-        suggestion_id: String,
+        suggestion_id: Uuid,
     },
     DismissMatchSuggestion {
-        suggestion_id: String,
+        suggestion_id: Uuid,
     },
     RefreshMatchSuggestions {
-        artist_id: String,
+        artist_id: Uuid,
     },
     MergeAlbums {
-        target_album_id: String,
-        source_album_id: String,
+        target_album_id: Uuid,
+        source_album_id: Uuid,
         /// If provided, override the surviving album's title.
         result_title: Option<String>,
         /// If provided, override the surviving album's cover URL.

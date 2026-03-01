@@ -1,5 +1,7 @@
 //! Server-side context for Leptos server functions (SSR only).
 
+use uuid::Uuid;
+
 use crate::{
     DownloadJob, ImportConfirmation, ImportPreviewItem, ImportResultSummary, MatchSuggestion,
     MonitoredAlbum, MonitoredArtist, ProviderLink, SearchArtistResult, ServerAction, TrackInfo,
@@ -17,19 +19,19 @@ pub type SearchArtistsScopedFn =
 pub type ListProvidersFn = std::sync::Arc<dyn Fn() -> Vec<String> + Send + Sync>;
 
 pub type FetchTracksFn =
-    std::sync::Arc<dyn Fn(String) -> AsyncFnResult<Vec<TrackInfo>> + Send + Sync>;
+    std::sync::Arc<dyn Fn(Uuid) -> AsyncFnResult<Vec<TrackInfo>> + Send + Sync>;
 
 pub type FetchArtistLinksFn =
-    std::sync::Arc<dyn Fn(String) -> AsyncFnResult<Vec<ProviderLink>> + Send + Sync>;
+    std::sync::Arc<dyn Fn(Uuid) -> AsyncFnResult<Vec<ProviderLink>> + Send + Sync>;
 
 pub type FetchAlbumLinksFn =
-    std::sync::Arc<dyn Fn(String) -> AsyncFnResult<Vec<ProviderLink>> + Send + Sync>;
+    std::sync::Arc<dyn Fn(Uuid) -> AsyncFnResult<Vec<ProviderLink>> + Send + Sync>;
 
 pub type FetchArtistMatchSuggestionsFn =
-    std::sync::Arc<dyn Fn(String) -> AsyncFnResult<Vec<MatchSuggestion>> + Send + Sync>;
+    std::sync::Arc<dyn Fn(Uuid) -> AsyncFnResult<Vec<MatchSuggestion>> + Send + Sync>;
 
 pub type FetchAlbumMatchSuggestionsFn =
-    std::sync::Arc<dyn Fn(String) -> AsyncFnResult<Vec<MatchSuggestion>> + Send + Sync>;
+    std::sync::Arc<dyn Fn(Uuid) -> AsyncFnResult<Vec<MatchSuggestion>> + Send + Sync>;
 
 pub type DispatchActionFn =
     std::sync::Arc<dyn Fn(ServerAction) -> AsyncFnResult<()> + Send + Sync>;

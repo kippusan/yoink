@@ -3,7 +3,7 @@ use uuid::Uuid;
 
 use crate::models::MonitoredArtist;
 
-use super::{new_uuid, parse_dt, parse_uuid};
+use super::parse_dt;
 
 pub(crate) async fn load_artists(pool: &SqlitePool) -> Result<Vec<MonitoredArtist>, sqlx::Error> {
     let rows = sqlx::query(
@@ -17,7 +17,7 @@ pub(crate) async fn load_artists(pool: &SqlitePool) -> Result<Vec<MonitoredArtis
         .map(|r| {
             let id: Vec<u8> = r.get("id");
             MonitoredArtist {
-                id: Uuid::from_slice(&id).unwrap_or_default().to_string(),
+                id: Uuid::from_slice(&id).unwrap_or_default(),
                 name: r.get("name"),
                 image_url: r.get("image_url"),
                 bio: r.get("bio"),
@@ -31,7 +31,6 @@ pub(crate) async fn upsert_artist(
     pool: &SqlitePool,
     artist: &MonitoredArtist,
 ) -> Result<(), sqlx::Error> {
-    let uuid = parse_uuid(&artist.id).unwrap_or_else(|_| new_uuid());
     sqlx::query(
         "INSERT INTO artists (id, name, image_url, bio, added_at)
          VALUES ($1, $2, $3, $4, $5)
@@ -40,7 +39,7 @@ pub(crate) async fn upsert_artist(
            image_url = excluded.image_url,
            bio = COALESCE(excluded.bio, artists.bio)",
     )
-    .bind(uuid.as_bytes().as_slice())
+    .bind(artist.id.as_bytes().as_slice())
     .bind(&artist.name)
     .bind(&artist.image_url)
     .bind(&artist.bio)
@@ -53,22 +52,20 @@ pub(crate) async fn upsert_artist(
 /// Update only the bio field for an artist.
 pub(crate) async fn update_artist_bio(
     pool: &SqlitePool,
-    artist_id: &str,
+    artist_id: Uuid,
     bio: Option<&str>,
 ) -> Result<(), sqlx::Error> {
-    let uuid = parse_uuid(artist_id).unwrap_or_default();
     sqlx::query("UPDATE artists SET bio = $1 WHERE id = $2")
         .bind(bio)
-        .bind(uuid.as_bytes().as_slice())
+        .bind(artist_id.as_bytes().as_slice())
         .execute(pool)
         .await?;
     Ok(())
 }
 
-pub(crate) async fn delete_artist(pool: &SqlitePool, artist_id: &str) -> Result<(), sqlx::Error> {
-    let uuid = parse_uuid(artist_id).unwrap_or_default();
+pub(crate) async fn delete_artist(pool: &SqlitePool, artist_id: Uuid) -> Result<(), sqlx::Error> {
     sqlx::query("DELETE FROM artists WHERE id = $1")
-        .bind(uuid.as_bytes().as_slice())
+        .bind(artist_id.as_bytes().as_slice())
         .execute(pool)
         .await?;
     Ok(())

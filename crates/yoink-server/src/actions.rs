@@ -1,13 +1,14 @@
 use chrono::Utc;
 use tracing::{info, warn};
+use uuid::Uuid;
 
 use crate::{db, services, state::AppState};
 
 /// Fetch artist bio from linked metadata providers in background.
-pub(crate) fn spawn_fetch_artist_bio(state: &AppState, artist_id: String) {
+pub(crate) fn spawn_fetch_artist_bio(state: &AppState, artist_id: Uuid) {
     let s = state.clone();
     tokio::spawn(async move {
-        let links = match db::load_artist_provider_links(&s.db, &artist_id).await {
+        let links = match db::load_artist_provider_links(&s.db, artist_id).await {
             Ok(l) => l,
             Err(_) => return,
         };
@@ -16,7 +17,7 @@ pub(crate) fn spawn_fetch_artist_bio(state: &AppState, artist_id: String) {
             if let Some(provider) = s.registry.metadata_provider(&link.provider)
                 && let Some(bio) = provider.fetch_artist_bio(&link.external_id).await
             {
-                let _ = db::update_artist_bio(&s.db, &artist_id, Some(&bio)).await;
+                let _ = db::update_artist_bio(&s.db, artist_id, Some(&bio)).await;
                 {
                     let mut artists = s.monitored_artists.write().await;
                     if let Some(a) = artists.iter_mut().find(|a| a.id == artist_id) {
@@ -30,10 +31,10 @@ pub(crate) fn spawn_fetch_artist_bio(state: &AppState, artist_id: String) {
     });
 }
 
-pub(crate) fn spawn_recompute_artist_match_suggestions(state: &AppState, artist_id: String) {
+pub(crate) fn spawn_recompute_artist_match_suggestions(state: &AppState, artist_id: Uuid) {
     let s = state.clone();
     tokio::spawn(async move {
-        if let Err(err) = services::recompute_artist_match_suggestions(&s, &artist_id).await {
+        if let Err(err) = services::recompute_artist_match_suggestions(&s, artist_id).await {
             warn!(artist_id = %artist_id, error = %err, "Background match recompute failed");
         }
         s.notify_sse();
@@ -60,7 +61,7 @@ pub(crate) async fn dispatch_action_impl(
                     services::update_wanted(album);
                     let _ = db::update_album_flags(
                         &state.db,
-                        &album.id,
+                        album.id,
                         album.monitored,
                         album.acquired,
                         album.wanted,
@@ -89,7 +90,7 @@ pub(crate) async fn dispatch_action_impl(
                     services::update_wanted(album);
                     let _ = db::update_album_flags(
                         &state.db,
-                        &album.id,
+                        album.id,
                         album.monitored,
                         album.acquired,
                         album.wanted,
@@ -107,7 +108,7 @@ pub(crate) async fn dispatch_action_impl(
         }
 
         ServerAction::SyncArtistAlbums { artist_id } => {
-            let _ = services::sync_artist_albums(&state, &artist_id).await;
+            let _ = services::sync_artist_albums(&state, artist_id).await;
             {
                 let artists = state.monitored_artists.read().await;
                 let has_bio = artists
@@ -116,10 +117,10 @@ pub(crate) async fn dispatch_action_impl(
                     .map(|a| a.bio.is_some())
                     .unwrap_or(false);
                 if !has_bio {
-                    spawn_fetch_artist_bio(&state, artist_id.clone());
+                    spawn_fetch_artist_bio(&state, artist_id);
                 }
             }
-            spawn_recompute_artist_match_suggestions(&state, artist_id.clone());
+            spawn_recompute_artist_match_suggestions(&state, artist_id);
             state.notify_sse();
         }
 
@@ -146,8 +147,8 @@ pub(crate) async fn dispatch_action_impl(
                     }
                 }
             }
-            let _ = db::delete_albums_by_artist(&state.db, &artist_id).await;
-            let _ = db::delete_artist(&state.db, &artist_id).await;
+            let _ = db::delete_albums_by_artist(&state.db, artist_id).await;
+            let _ = db::delete_artist(&state.db, artist_id).await;
             {
                 let mut albums = state.monitored_albums.write().await;
                 albums.retain(|a| a.artist_id != artist_id);
@@ -176,9 +177,9 @@ pub(crate) async fn dispatch_action_impl(
             let artist_id = if let Some(id) = existing_artist_id {
                 id
             } else {
-                let new_id = db::uuid_to_string(&db::new_uuid());
+                let new_id = Uuid::now_v7();
                 let artist = yoink_shared::MonitoredArtist {
-                    id: new_id.clone(),
+                    id: new_id,
                     name: name.clone(),
                     image_url: image_url.clone(),
                     bio: None,
@@ -191,8 +192,8 @@ pub(crate) async fn dispatch_action_impl(
                 }
 
                 let link = db::ArtistProviderLink {
-                    id: db::uuid_to_string(&db::new_uuid()),
-                    artist_id: new_id.clone(),
+                    id: Uuid::now_v7(),
+                    artist_id: new_id,
                     provider: provider.clone(),
                     external_id: external_id.clone(),
                     external_url: external_url.clone(),
@@ -204,9 +205,9 @@ pub(crate) async fn dispatch_action_impl(
                 new_id
             };
 
-            let _ = services::sync_artist_albums(&state, &artist_id).await;
-            spawn_fetch_artist_bio(&state, artist_id.clone());
-            spawn_recompute_artist_match_suggestions(&state, artist_id.clone());
+            let _ = services::sync_artist_albums(&state, artist_id).await;
+            spawn_fetch_artist_bio(&state, artist_id);
+            spawn_recompute_artist_match_suggestions(&state, artist_id);
             state.notify_sse();
         }
 
@@ -219,7 +220,7 @@ pub(crate) async fn dispatch_action_impl(
             image_ref,
         } => {
             let link = db::ArtistProviderLink {
-                id: db::uuid_to_string(&db::new_uuid()),
+                id: Uuid::now_v7(),
                 artist_id,
                 provider,
                 external_id,
@@ -236,10 +237,10 @@ pub(crate) async fn dispatch_action_impl(
                     .map(|a| a.bio.is_some())
                     .unwrap_or(false);
                 if !has_bio {
-                    spawn_fetch_artist_bio(&state, link.artist_id.clone());
+                    spawn_fetch_artist_bio(&state, link.artist_id);
                 }
             }
-            spawn_recompute_artist_match_suggestions(&state, link.artist_id.clone());
+            spawn_recompute_artist_match_suggestions(&state, link.artist_id);
             state.notify_sse();
         }
 
@@ -248,14 +249,15 @@ pub(crate) async fn dispatch_action_impl(
             provider,
             external_id,
         } => {
-            let _ = db::delete_artist_provider_link(&state.db, &artist_id, &provider, &external_id)
-                .await;
-            spawn_recompute_artist_match_suggestions(&state, artist_id.clone());
+            let _ =
+                db::delete_artist_provider_link(&state.db, artist_id, &provider, &external_id)
+                    .await;
+            spawn_recompute_artist_match_suggestions(&state, artist_id);
             state.notify_sse();
         }
 
         ServerAction::AcceptMatchSuggestion { suggestion_id } => {
-            let suggestion = db::load_match_suggestion_by_id(&state.db, &suggestion_id)
+            let suggestion = db::load_match_suggestion_by_id(&state.db, suggestion_id)
                 .await
                 .map_err(|e| format!("failed to load match suggestion: {e}"))?
                 .ok_or_else(|| "match suggestion not found".to_string())?;
@@ -263,7 +265,7 @@ pub(crate) async fn dispatch_action_impl(
             match suggestion.scope_type.as_str() {
                 "album" => {
                     let album_links =
-                        db::load_album_provider_links(&state.db, &suggestion.scope_id)
+                        db::load_album_provider_links(&state.db, suggestion.scope_id)
                             .await
                             .map_err(|e| format!("failed loading album links: {e}"))?;
                     let linked: std::collections::HashSet<(String, String)> = album_links
@@ -317,8 +319,8 @@ pub(crate) async fn dispatch_action_impl(
                     }
 
                     let link = db::AlbumProviderLink {
-                        id: db::uuid_to_string(&db::new_uuid()),
-                        album_id: suggestion.scope_id.clone(),
+                        id: Uuid::now_v7(),
+                        album_id: suggestion.scope_id,
                         provider: target_provider,
                         external_id: target_external_id,
                         external_url: target_url,
@@ -329,7 +331,7 @@ pub(crate) async fn dispatch_action_impl(
                 }
                 "artist" => {
                     let artist_links =
-                        db::load_artist_provider_links(&state.db, &suggestion.scope_id)
+                        db::load_artist_provider_links(&state.db, suggestion.scope_id)
                             .await
                             .map_err(|e| format!("failed loading artist links: {e}"))?;
                     let linked: std::collections::HashSet<(String, String)> = artist_links
@@ -383,8 +385,8 @@ pub(crate) async fn dispatch_action_impl(
                     }
 
                     let link = db::ArtistProviderLink {
-                        id: db::uuid_to_string(&db::new_uuid()),
-                        artist_id: suggestion.scope_id.clone(),
+                        id: Uuid::now_v7(),
+                        artist_id: suggestion.scope_id,
                         provider: target_provider,
                         external_id: target_external_id,
                         external_url: target_url,
@@ -393,13 +395,13 @@ pub(crate) async fn dispatch_action_impl(
                     };
                     let _ = db::upsert_artist_provider_link(&state.db, &link).await;
 
-                    let _ = services::sync_artist_albums(&state, &suggestion.scope_id).await;
-                    spawn_recompute_artist_match_suggestions(&state, suggestion.scope_id.clone());
+                    let _ = services::sync_artist_albums(&state, suggestion.scope_id).await;
+                    spawn_recompute_artist_match_suggestions(&state, suggestion.scope_id);
                 }
                 _ => return Err("unknown suggestion scope type".to_string()),
             }
 
-            let _ = db::set_match_suggestion_status(&state.db, &suggestion_id, "accepted").await;
+            let _ = db::set_match_suggestion_status(&state.db, suggestion_id, "accepted").await;
 
             if suggestion.scope_type == "album" {
                 let artist_id = {
@@ -407,7 +409,7 @@ pub(crate) async fn dispatch_action_impl(
                     albums
                         .iter()
                         .find(|a| a.id == suggestion.scope_id)
-                        .map(|a| a.artist_id.clone())
+                        .map(|a| a.artist_id)
                 };
                 if let Some(artist_id) = artist_id {
                     spawn_recompute_artist_match_suggestions(&state, artist_id);
@@ -418,11 +420,11 @@ pub(crate) async fn dispatch_action_impl(
         }
 
         ServerAction::DismissMatchSuggestion { suggestion_id } => {
-            let scope = db::load_match_suggestion_by_id(&state.db, &suggestion_id)
+            let scope = db::load_match_suggestion_by_id(&state.db, suggestion_id)
                 .await
                 .ok()
                 .flatten();
-            let _ = db::set_match_suggestion_status(&state.db, &suggestion_id, "dismissed").await;
+            let _ = db::set_match_suggestion_status(&state.db, suggestion_id, "dismissed").await;
 
             if let Some(suggestion) = scope
                 && suggestion.scope_type == "album"
@@ -432,7 +434,7 @@ pub(crate) async fn dispatch_action_impl(
                     albums
                         .iter()
                         .find(|a| a.id == suggestion.scope_id)
-                        .map(|a| a.artist_id.clone())
+                        .map(|a| a.artist_id)
                 };
                 if let Some(artist_id) = artist_id {
                     spawn_recompute_artist_match_suggestions(&state, artist_id);
@@ -442,7 +444,7 @@ pub(crate) async fn dispatch_action_impl(
         }
 
         ServerAction::RefreshMatchSuggestions { artist_id } => {
-            let _ = services::recompute_artist_match_suggestions(&state, &artist_id).await;
+            let _ = services::recompute_artist_match_suggestions(&state, artist_id).await;
             state.notify_sse();
         }
 
@@ -454,8 +456,8 @@ pub(crate) async fn dispatch_action_impl(
         } => {
             services::merge_albums(
                 &state,
-                &target_album_id,
-                &source_album_id,
+                target_album_id,
+                source_album_id,
                 result_title.as_deref(),
                 result_cover_url.as_deref(),
             )
@@ -466,7 +468,7 @@ pub(crate) async fn dispatch_action_impl(
                 albums
                     .iter()
                     .find(|a| a.id == target_album_id)
-                    .map(|a| a.artist_id.clone())
+                    .map(|a| a.artist_id)
             };
             if let Some(artist_id) = artist_id {
                 spawn_recompute_artist_match_suggestions(&state, artist_id);
@@ -557,7 +559,7 @@ pub(crate) async fn dispatch_action_impl(
                     services::update_wanted(existing);
                     let _ = db::update_album_flags(
                         &state.db,
-                        &existing.id,
+                        existing.id,
                         existing.monitored,
                         existing.acquired,
                         existing.wanted,
@@ -576,13 +578,13 @@ pub(crate) async fn dispatch_action_impl(
                     let should_remove = j.album_id == album_id
                         && j.status == yoink_shared::DownloadStatus::Completed;
                     if should_remove {
-                        removed_completed_ids.push(j.id.clone());
+                        removed_completed_ids.push(j.id);
                     }
                     !should_remove
                 });
             }
             for job_id in removed_completed_ids {
-                let _ = db::delete_job(&state.db, &job_id).await;
+                let _ = db::delete_job(&state.db, job_id).await;
             }
 
             if let Some(album) = to_queue {

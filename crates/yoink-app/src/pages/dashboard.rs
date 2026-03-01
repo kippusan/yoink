@@ -284,7 +284,7 @@ fn DashboardContent(data: DashboardData) -> impl IntoView {
 #[component]
 fn JobRow(
     job: DownloadJob,
-    #[allow(unused_variables)] artist_names: HashMap<String, String>,
+    #[allow(unused_variables)] artist_names: HashMap<yoink_shared::Uuid, String>,
 ) -> impl IntoView {
     let sc = status_class(&job.status).to_string();
     let st_label = status_label_text(&job.status, job.completed_tracks, job.total_tracks);

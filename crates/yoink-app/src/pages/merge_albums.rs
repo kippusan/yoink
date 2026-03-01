@@ -29,7 +29,7 @@ pub struct MergeCandidate {
     pub confidence: u8,
     pub explanation: Option<String>,
     /// All suggestion IDs that contributed to this candidate (for dismiss).
-    pub suggestion_ids: Vec<String>,
+    pub suggestion_ids: Vec<yoink_shared::Uuid>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -42,11 +42,17 @@ pub struct MergeAlbumsData {
 
 #[server(GetMergeAlbumsData, "/leptos")]
 pub async fn get_merge_albums_data(artist_id: String) -> Result<MergeAlbumsData, ServerFnError> {
+    use yoink_shared::Uuid;
+
     let ctx = use_context::<yoink_shared::ServerContext>()
         .ok_or_else(|| ServerFnError::new("ServerContext not available"))?;
 
+    let artist_uuid: Uuid = artist_id
+        .parse()
+        .map_err(|_| ServerFnError::new("invalid artist UUID"))?;
+
     let artists = ctx.monitored_artists.read().await;
-    let artist = artists.iter().find(|a| a.id == artist_id).cloned();
+    let artist = artists.iter().find(|a| a.id == artist_uuid).cloned();
     drop(artists);
 
     let albums: Vec<MonitoredAlbum> = ctx
@@ -54,43 +60,39 @@ pub async fn get_merge_albums_data(artist_id: String) -> Result<MergeAlbumsData,
         .read()
         .await
         .iter()
-        .filter(|a| a.artist_id == artist_id)
+        .filter(|a| a.artist_id == artist_uuid)
         .cloned()
         .collect();
 
-    let mut album_by_id: std::collections::HashMap<String, MonitoredAlbum> =
+    let mut album_by_id: std::collections::HashMap<Uuid, MonitoredAlbum> =
         std::collections::HashMap::new();
-    let mut links_by_album: std::collections::HashMap<String, Vec<ProviderLink>> =
+    let mut links_by_album: std::collections::HashMap<Uuid, Vec<ProviderLink>> =
         std::collections::HashMap::new();
-    let mut pair_to_album: std::collections::HashMap<(String, String), String> =
+    let mut pair_to_album: std::collections::HashMap<(String, String), Uuid> =
         std::collections::HashMap::new();
-    let mut tracks_by_album: std::collections::HashMap<String, Vec<TrackInfo>> =
+    let mut tracks_by_album: std::collections::HashMap<Uuid, Vec<TrackInfo>> =
         std::collections::HashMap::new();
 
     for album in &albums {
-        album_by_id.insert(album.id.clone(), album.clone());
-        let links = (ctx.fetch_album_links)(album.id.clone())
-            .await
-            .unwrap_or_default();
+        album_by_id.insert(album.id, album.clone());
+        let links = (ctx.fetch_album_links)(album.id).await.unwrap_or_default();
         for link in &links {
             pair_to_album.insert(
                 (link.provider.clone(), link.external_id.clone()),
-                album.id.clone(),
+                album.id,
             );
         }
-        links_by_album.insert(album.id.clone(), links);
+        links_by_album.insert(album.id, links);
         tracks_by_album.insert(
-            album.id.clone(),
-            (ctx.fetch_tracks)(album.id.clone())
-                .await
-                .unwrap_or_default(),
+            album.id,
+            (ctx.fetch_tracks)(album.id).await.unwrap_or_default(),
         );
     }
 
     // Deduplicate by ordered album-pair (regardless of which suggestion triggered it).
-    let mut dedupe: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+    let mut dedupe: std::collections::HashSet<(Uuid, Uuid)> = std::collections::HashSet::new();
     // Collect suggestion IDs per album pair for dismiss support.
-    let mut suggestion_ids_map: std::collections::HashMap<(String, String), Vec<String>> =
+    let mut suggestion_ids_map: std::collections::HashMap<(Uuid, Uuid), Vec<Uuid>> =
         std::collections::HashMap::new();
     // Store first-seen metadata per pair.
     struct PairMeta {
@@ -98,17 +100,17 @@ pub async fn get_merge_albums_data(artist_id: String) -> Result<MergeAlbumsData,
         confidence: u8,
         explanation: Option<String>,
     }
-    let mut pair_meta: std::collections::HashMap<(String, String), PairMeta> =
+    let mut pair_meta: std::collections::HashMap<(Uuid, Uuid), PairMeta> =
         std::collections::HashMap::new();
 
     for album in &albums {
-        let suggestions = (ctx.fetch_album_match_suggestions)(album.id.clone())
+        let suggestions = (ctx.fetch_album_match_suggestions)(album.id)
             .await
             .unwrap_or_default();
 
         for s in suggestions.into_iter().filter(|s| s.status == "pending") {
             let pair = (s.right_provider.clone(), s.right_external_id.clone());
-            let Some(other_album_id) = pair_to_album.get(&pair).cloned() else {
+            let Some(&other_album_id) = pair_to_album.get(&pair) else {
                 continue;
             };
             if other_album_id == album.id {
@@ -116,17 +118,17 @@ pub async fn get_merge_albums_data(artist_id: String) -> Result<MergeAlbumsData,
             }
 
             let key = if album.id < other_album_id {
-                (album.id.clone(), other_album_id.clone())
+                (album.id, other_album_id)
             } else {
-                (other_album_id.clone(), album.id.clone())
+                (other_album_id, album.id)
             };
 
             suggestion_ids_map
-                .entry(key.clone())
+                .entry(key)
                 .or_default()
-                .push(s.id.clone());
+                .push(s.id);
 
-            pair_meta.entry(key.clone()).or_insert(PairMeta {
+            pair_meta.entry(key).or_insert(PairMeta {
                 match_kind: s.match_kind.clone(),
                 confidence: s.confidence,
                 explanation: s.explanation.clone(),
@@ -145,10 +147,10 @@ pub async fn get_merge_albums_data(artist_id: String) -> Result<MergeAlbumsData,
         let Some(b) = album_by_id.get(&key.1).cloned() else {
             continue;
         };
-        let a_links = links_by_album.get(&a.id).cloned().unwrap_or_default();
-        let b_links = links_by_album.get(&b.id).cloned().unwrap_or_default();
-        let a_tracks = tracks_by_album.get(&a.id).cloned().unwrap_or_default();
-        let b_tracks = tracks_by_album.get(&b.id).cloned().unwrap_or_default();
+        let a_links = links_by_album.get(&key.0).cloned().unwrap_or_default();
+        let b_links = links_by_album.get(&key.1).cloned().unwrap_or_default();
+        let a_tracks = tracks_by_album.get(&key.0).cloned().unwrap_or_default();
+        let b_tracks = tracks_by_album.get(&key.1).cloned().unwrap_or_default();
         let merged_tracks = build_merged_track_preview(&a_tracks, &b_tracks);
         let merged_links = build_merged_links_preview(&a_links, &b_links);
         let meta = pair_meta.remove(key).unwrap();
@@ -337,10 +339,8 @@ fn MergeCandidateCard(candidate: MergeCandidate) -> impl IntoView {
     let (selected_cover, set_selected_cover) = signal(cover_a.clone());
 
     // IDs for the merge action.
-    let id_a = candidate.album_a.id.clone();
-    let id_b = candidate.album_b.id.clone();
-    let merge_target_id = id_a.clone();
-    let merge_source_id = id_b.clone();
+    let merge_target_id = candidate.album_a.id;
+    let merge_source_id = candidate.album_b.id;
     let suggestion_ids = candidate.suggestion_ids.clone();
 
     // Summary stats.
@@ -487,9 +487,9 @@ fn MergeCandidateCard(candidate: MergeCandidate) -> impl IntoView {
                                 type="button"
                                 class={cls(BTN_DANGER, "px-3 py-1 text-xs")}
                                 on:click=move |_| {
-                                    for sid in &sids {
+                                    for &sid in &sids {
                                         dispatch_with_toast(
-                                            ServerAction::DismissMatchSuggestion { suggestion_id: sid.clone() },
+                                            ServerAction::DismissMatchSuggestion { suggestion_id: sid },
                                             "Match dismissed",
                                         );
                                     }
@@ -513,8 +513,8 @@ fn MergeCandidateCard(candidate: MergeCandidate) -> impl IntoView {
                                     let cover = selected_cover.get();
                                     dispatch_with_toast(
                                         ServerAction::MergeAlbums {
-                                            target_album_id: target_id.clone(),
-                                            source_album_id: source_id.clone(),
+                                            target_album_id: target_id,
+                                            source_album_id: source_id,
                                             result_title: Some(title),
                                             result_cover_url: cover,
                                         },
@@ -632,7 +632,7 @@ pub fn MergeAlbumsPage() -> impl IntoView {
                             let artist_id_back = data
                                 .artist
                                 .as_ref()
-                                .map(|a| a.id.clone())
+                                .map(|a| a.id.to_string())
                                 .unwrap_or_default();
                             let artist_link = format!("/artists/{}", artist_id_back);
                             let count = data.candidates.len();

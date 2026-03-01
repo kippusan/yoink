@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 /// Match quality for a discovered local album during import preview.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -41,8 +42,8 @@ impl ImportMatchStatus {
 /// A candidate album match for a discovered local folder.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImportAlbumCandidate {
-    pub album_id: Option<String>,
-    pub artist_id: String,
+    pub album_id: Option<Uuid>,
+    pub artist_id: Uuid,
     pub artist_name: String,
     pub album_title: String,
     pub release_date: Option<String>,
@@ -76,8 +77,8 @@ pub struct ImportConfirmation {
     pub artist_name: String,
     pub album_title: String,
     pub year: Option<String>,
-    pub artist_id: Option<String>,
-    pub album_id: Option<String>,
+    pub artist_id: Option<Uuid>,
+    pub album_id: Option<Uuid>,
 }
 
 /// Summary of a confirmed import run.

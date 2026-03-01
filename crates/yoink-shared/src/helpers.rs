@@ -1,14 +1,16 @@
 use std::collections::HashMap;
 
+use uuid::Uuid;
+
 use crate::{DownloadJob, DownloadStatus, MonitoredAlbum, MonitoredArtist};
 
 // ── Data helpers (pure transforms) ──────────────────────────
 
 /// Group albums by artist_id, sorted newest-first within each group.
-pub fn build_albums_by_artist(albums: Vec<MonitoredAlbum>) -> HashMap<String, Vec<MonitoredAlbum>> {
-    let mut map: HashMap<String, Vec<MonitoredAlbum>> = HashMap::new();
+pub fn build_albums_by_artist(albums: Vec<MonitoredAlbum>) -> HashMap<Uuid, Vec<MonitoredAlbum>> {
+    let mut map: HashMap<Uuid, Vec<MonitoredAlbum>> = HashMap::new();
     for album in albums {
-        map.entry(album.artist_id.clone()).or_default().push(album);
+        map.entry(album.artist_id).or_default().push(album);
     }
     for albums in map.values_mut() {
         albums.sort_by(|a, b| {
@@ -21,10 +23,10 @@ pub fn build_albums_by_artist(albums: Vec<MonitoredAlbum>) -> HashMap<String, Ve
 }
 
 /// For each album_id, keep only the most recently updated job.
-pub fn build_latest_jobs(jobs: Vec<DownloadJob>) -> HashMap<String, DownloadJob> {
-    let mut map: HashMap<String, DownloadJob> = HashMap::new();
+pub fn build_latest_jobs(jobs: Vec<DownloadJob>) -> HashMap<Uuid, DownloadJob> {
+    let mut map: HashMap<Uuid, DownloadJob> = HashMap::new();
     for job in jobs {
-        map.entry(job.album_id.clone())
+        map.entry(job.album_id)
             .and_modify(|existing| {
                 if job.updated_at > existing.updated_at {
                     *existing = job.clone();
@@ -36,11 +38,8 @@ pub fn build_latest_jobs(jobs: Vec<DownloadJob>) -> HashMap<String, DownloadJob>
 }
 
 /// Map artist id -> name for display.
-pub fn build_artist_names(artists: &[MonitoredArtist]) -> HashMap<String, String> {
-    artists
-        .iter()
-        .map(|a| (a.id.clone(), a.name.clone()))
-        .collect()
+pub fn build_artist_names(artists: &[MonitoredArtist]) -> HashMap<Uuid, String> {
+    artists.iter().map(|a| (a.id, a.name.clone())).collect()
 }
 
 // ── Display helpers ─────────────────────────────────────────

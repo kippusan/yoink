@@ -3,6 +3,7 @@ use std::collections::{HashMap, HashSet};
 use chrono::Utc;
 use tokio::fs;
 use tracing::info;
+use uuid::Uuid;
 
 use yoink_shared::{
     ImportAlbumCandidate, ImportConfirmation, ImportMatchStatus, ImportPreviewItem,
@@ -61,12 +62,12 @@ pub(crate) async fn scan_and_import_library(state: &AppState) -> Result<ScanImpo
         }
 
         if !synced_artists.contains(&artist_id)
-            && sync_artist_albums(state, &artist_id).await.is_ok()
+            && sync_artist_albums(state, artist_id).await.is_ok()
         {
-            synced_artists.insert(artist_id.clone());
+            synced_artists.insert(artist_id);
         }
 
-        if import_local_album(state, &artist_id, &local.album_title, local.year.as_deref()).await? {
+        if import_local_album(state, artist_id, &local.album_title, local.year.as_deref()).await? {
             imported_albums += 1;
         } else {
             unmatched_albums += 1;
@@ -97,9 +98,9 @@ pub(crate) async fn preview_import_library(
 
     let artists = state.monitored_artists.read().await.clone();
     let albums = state.monitored_albums.read().await.clone();
-    let artist_names_lower: HashMap<String, (String, String)> = artists
+    let artist_names_lower: HashMap<String, (Uuid, String)> = artists
         .iter()
-        .map(|a| (normalize_text(&a.name), (a.id.clone(), a.name.clone())))
+        .map(|a| (normalize_text(&a.name), (a.id, a.name.clone())))
         .collect();
 
     let mut items = Vec::new();
@@ -147,8 +148,8 @@ pub(crate) async fn preview_import_library(
                         85
                     };
                     candidates.push(ImportAlbumCandidate {
-                        album_id: Some(album.id.clone()),
-                        artist_id: artist_id.clone(),
+                        album_id: Some(album.id),
+                        artist_id: *artist_id,
                         artist_name: artist_name.clone(),
                         album_title: album.title.clone(),
                         release_date: album.release_date.clone(),
@@ -164,8 +165,8 @@ pub(crate) async fn preview_import_library(
                     }
                 } else if title_match {
                     candidates.push(ImportAlbumCandidate {
-                        album_id: Some(album.id.clone()),
-                        artist_id: artist_id.clone(),
+                        album_id: Some(album.id),
+                        artist_id: *artist_id,
                         artist_name: artist_name.clone(),
                         album_title: album.title.clone(),
                         release_date: album.release_date.clone(),
@@ -181,8 +182,8 @@ pub(crate) async fn preview_import_library(
                     if sim > 0.85 {
                         let confidence = (sim * 80.0) as u8;
                         candidates.push(ImportAlbumCandidate {
-                            album_id: Some(album.id.clone()),
-                            artist_id: artist_id.clone(),
+                            album_id: Some(album.id),
+                            artist_id: *artist_id,
                             artist_name: artist_name.clone(),
                             album_title: album.title.clone(),
                             release_date: album.release_date.clone(),
@@ -200,7 +201,7 @@ pub(crate) async fn preview_import_library(
             if candidates.is_empty() {
                 candidates.push(ImportAlbumCandidate {
                     album_id: None,
-                    artist_id: artist_id.clone(),
+                    artist_id: *artist_id,
                     artist_name: artist_name.clone(),
                     album_title: local.album_title.clone(),
                     release_date: local.year.clone(),
@@ -279,8 +280,8 @@ pub(crate) async fn confirm_import_library(
     let mut synced_artists = HashSet::new();
 
     for item in &items {
-        let (artist_id, added_artist) = if let Some(ref aid) = item.artist_id {
-            (aid.clone(), false)
+        let (artist_id, added_artist) = if let Some(aid) = item.artist_id {
+            (aid, false)
         } else {
             match ensure_monitored_artist(state, &item.artist_name).await {
                 Ok(Some((id, added))) => (id, added),
@@ -308,14 +309,14 @@ pub(crate) async fn confirm_import_library(
         }
 
         if !synced_artists.contains(&artist_id)
-            && sync_artist_albums(state, &artist_id).await.is_ok()
+            && sync_artist_albums(state, artist_id).await.is_ok()
         {
-            synced_artists.insert(artist_id.clone());
+            synced_artists.insert(artist_id);
         }
 
-        if let Some(ref album_id) = item.album_id {
+        if let Some(album_id) = item.album_id {
             let mut albums = state.monitored_albums.write().await;
-            if let Some(album) = albums.iter_mut().find(|a| a.id == *album_id) {
+            if let Some(album) = albums.iter_mut().find(|a| a.id == album_id) {
                 let mut changed = false;
                 if !album.monitored {
                     album.monitored = true;
@@ -329,7 +330,7 @@ pub(crate) async fn confirm_import_library(
                 if changed {
                     let _ = db::update_album_flags(
                         &state.db,
-                        &album.id,
+                        album.id,
                         album.monitored,
                         album.acquired,
                         album.wanted,
@@ -344,7 +345,7 @@ pub(crate) async fn confirm_import_library(
                 ));
                 failed += 1;
             }
-        } else if import_local_album(state, &artist_id, &item.album_title, item.year.as_deref())
+        } else if import_local_album(state, artist_id, &item.album_title, item.year.as_deref())
             .await?
         {
             imported += 1;
@@ -434,7 +435,7 @@ async fn discover_local_albums(state: &AppState) -> Result<Vec<LocalAlbumDir>, S
 async fn ensure_monitored_artist(
     state: &AppState,
     artist_name: &str,
-) -> Result<Option<(String, bool)>, String> {
+) -> Result<Option<(Uuid, bool)>, String> {
     let needle = normalize_text(artist_name);
     {
         let artists = state.monitored_artists.read().await;
@@ -470,14 +471,14 @@ async fn ensure_monitored_artist(
         return Ok(None);
     };
 
-    let new_id = db::uuid_to_string(&db::new_uuid());
+    let new_id = Uuid::now_v7();
     let image_url = artist
         .image_ref
         .as_deref()
         .map(|r| yoink_shared::provider_image_url(&provider_id, r, 640));
 
     let monitored = MonitoredArtist {
-        id: new_id.clone(),
+        id: new_id,
         name: artist.name.clone(),
         image_url,
         bio: None,
@@ -486,8 +487,8 @@ async fn ensure_monitored_artist(
     let _ = db::upsert_artist(&state.db, &monitored).await;
 
     let link = db::ArtistProviderLink {
-        id: db::uuid_to_string(&db::new_uuid()),
-        artist_id: new_id.clone(),
+        id: Uuid::now_v7(),
+        artist_id: new_id,
         provider: provider_id,
         external_id: artist.external_id,
         external_url: artist.url,
@@ -508,7 +509,7 @@ async fn ensure_monitored_artist(
 
 async fn import_local_album(
     state: &AppState,
-    artist_id: &str,
+    artist_id: Uuid,
     album_title: &str,
     year_hint: Option<&str>,
 ) -> Result<bool, String> {
@@ -551,7 +552,7 @@ async fn import_local_album(
     if changed {
         let _ = db::update_album_flags(
             &state.db,
-            &album.id,
+            album.id,
             album.monitored,
             album.acquired,
             album.wanted,

@@ -3,7 +3,7 @@ use uuid::Uuid;
 
 use crate::models::DownloadJob;
 
-use super::{new_uuid, parse_dt, parse_status, parse_uuid};
+use super::{parse_dt, parse_status};
 
 pub(crate) async fn load_jobs(pool: &SqlitePool) -> Result<Vec<DownloadJob>, sqlx::Error> {
     let rows = sqlx::query(
@@ -20,8 +20,8 @@ pub(crate) async fn load_jobs(pool: &SqlitePool) -> Result<Vec<DownloadJob>, sql
             let id: Vec<u8> = r.get("id");
             let album_id: Vec<u8> = r.get("album_id");
             DownloadJob {
-                id: Uuid::from_slice(&id).unwrap_or_default().to_string(),
-                album_id: Uuid::from_slice(&album_id).unwrap_or_default().to_string(),
+                id: Uuid::from_slice(&id).unwrap_or_default(),
+                album_id: Uuid::from_slice(&album_id).unwrap_or_default(),
                 source: r.get("source"),
                 album_title: r.get("album_title"),
                 artist_name: r.get("artist_name"),
@@ -40,16 +40,14 @@ pub(crate) async fn load_jobs(pool: &SqlitePool) -> Result<Vec<DownloadJob>, sql
 pub(crate) async fn insert_job(
     pool: &SqlitePool,
     job: &DownloadJob,
-) -> Result<String, sqlx::Error> {
-    let uuid = parse_uuid(&job.id).unwrap_or_else(|_| new_uuid());
-    let album_uuid = parse_uuid(&job.album_id).unwrap_or_default();
+) -> Result<Uuid, sqlx::Error> {
     sqlx::query(
         "INSERT INTO download_jobs (id, album_id, source, album_title, artist_name, status, quality,
                                     total_tracks, completed_tracks, error, created_at, updated_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
     )
-    .bind(uuid.as_bytes().as_slice())
-    .bind(album_uuid.as_bytes().as_slice())
+    .bind(job.id.as_bytes().as_slice())
+    .bind(job.album_id.as_bytes().as_slice())
     .bind(&job.source)
     .bind(&job.album_title)
     .bind(&job.artist_name)
@@ -62,11 +60,10 @@ pub(crate) async fn insert_job(
     .bind(job.updated_at.to_rfc3339())
     .execute(pool)
     .await?;
-    Ok(uuid.to_string())
+    Ok(job.id)
 }
 
 pub(crate) async fn update_job(pool: &SqlitePool, job: &DownloadJob) -> Result<(), sqlx::Error> {
-    let uuid = parse_uuid(&job.id).unwrap_or_default();
     sqlx::query(
         "UPDATE download_jobs SET status = $1, total_tracks = $2, completed_tracks = $3,
                                   error = $4, updated_at = $5
@@ -77,17 +74,16 @@ pub(crate) async fn update_job(pool: &SqlitePool, job: &DownloadJob) -> Result<(
     .bind(job.completed_tracks as i32)
     .bind(&job.error)
     .bind(job.updated_at.to_rfc3339())
-    .bind(uuid.as_bytes().as_slice())
+    .bind(job.id.as_bytes().as_slice())
     .execute(pool)
     .await?;
     Ok(())
 }
 
 #[allow(dead_code)]
-pub(crate) async fn delete_job(pool: &SqlitePool, job_id: &str) -> Result<(), sqlx::Error> {
-    let uuid = parse_uuid(job_id).unwrap_or_default();
+pub(crate) async fn delete_job(pool: &SqlitePool, job_id: Uuid) -> Result<(), sqlx::Error> {
     sqlx::query("DELETE FROM download_jobs WHERE id = $1")
-        .bind(uuid.as_bytes().as_slice())
+        .bind(job_id.as_bytes().as_slice())
         .execute(pool)
         .await?;
     Ok(())

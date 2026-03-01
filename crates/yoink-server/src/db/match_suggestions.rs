@@ -3,13 +3,13 @@ use serde_json::json;
 use sqlx::{Row, SqlitePool};
 use uuid::Uuid;
 
-use super::{new_uuid, parse_dt, parse_uuid};
+use super::parse_dt;
 
 #[derive(Debug, Clone)]
 pub(crate) struct MatchSuggestion {
-    pub(crate) id: String,
+    pub(crate) id: Uuid,
     pub(crate) scope_type: String,
-    pub(crate) scope_id: String,
+    pub(crate) scope_id: Uuid,
     pub(crate) left_provider: String,
     pub(crate) left_external_id: String,
     pub(crate) right_provider: String,
@@ -34,8 +34,6 @@ pub(crate) async fn upsert_match_suggestion(
     pool: &SqlitePool,
     suggestion: &MatchSuggestion,
 ) -> Result<(), sqlx::Error> {
-    let id_uuid = parse_uuid(&suggestion.id).unwrap_or_else(|_| new_uuid());
-    let scope_uuid = parse_uuid(&suggestion.scope_id).unwrap_or_default();
     sqlx::query(
         "INSERT INTO match_suggestions (
             id, scope_type, scope_id,
@@ -73,9 +71,9 @@ pub(crate) async fn upsert_match_suggestion(
             updated_at = excluded.updated_at
          WHERE match_suggestions.status != 'dismissed' AND match_suggestions.status != 'accepted'",
     )
-    .bind(id_uuid.as_bytes().as_slice())
+    .bind(suggestion.id.as_bytes().as_slice())
     .bind(&suggestion.scope_type)
-    .bind(scope_uuid.as_bytes().as_slice())
+    .bind(suggestion.scope_id.as_bytes().as_slice())
     .bind(&suggestion.left_provider)
     .bind(&suggestion.left_external_id)
     .bind(&suggestion.right_provider)
@@ -102,15 +100,14 @@ pub(crate) async fn upsert_match_suggestion(
 pub(crate) async fn clear_pending_match_suggestions(
     pool: &SqlitePool,
     scope_type: &str,
-    scope_id: &str,
+    scope_id: Uuid,
 ) -> Result<u64, sqlx::Error> {
-    let scope_uuid = parse_uuid(scope_id).unwrap_or_default();
     let result = sqlx::query(
         "DELETE FROM match_suggestions
          WHERE scope_type = $1 AND scope_id = $2 AND status = 'pending'",
     )
     .bind(scope_type)
-    .bind(scope_uuid.as_bytes().as_slice())
+    .bind(scope_id.as_bytes().as_slice())
     .execute(pool)
     .await?;
     Ok(result.rows_affected())
@@ -119,9 +116,8 @@ pub(crate) async fn clear_pending_match_suggestions(
 pub(crate) async fn load_match_suggestions_for_scope(
     pool: &SqlitePool,
     scope_type: &str,
-    scope_id: &str,
+    scope_id: Uuid,
 ) -> Result<Vec<MatchSuggestion>, sqlx::Error> {
-    let scope_uuid = parse_uuid(scope_id).unwrap_or_default();
     let rows = sqlx::query(
         "SELECT
             id, scope_type, scope_id,
@@ -137,7 +133,7 @@ pub(crate) async fn load_match_suggestions_for_scope(
          ORDER BY status ASC, confidence DESC, created_at DESC",
     )
     .bind(scope_type)
-    .bind(scope_uuid.as_bytes().as_slice())
+    .bind(scope_id.as_bytes().as_slice())
     .fetch_all(pool)
     .await?;
 
@@ -146,9 +142,8 @@ pub(crate) async fn load_match_suggestions_for_scope(
 
 pub(crate) async fn load_match_suggestion_by_id(
     pool: &SqlitePool,
-    suggestion_id: &str,
+    suggestion_id: Uuid,
 ) -> Result<Option<MatchSuggestion>, sqlx::Error> {
-    let suggestion_uuid = parse_uuid(suggestion_id).unwrap_or_default();
     let row = sqlx::query(
         "SELECT
             id, scope_type, scope_id,
@@ -162,7 +157,7 @@ pub(crate) async fn load_match_suggestion_by_id(
          FROM match_suggestions
          WHERE id = $1",
     )
-    .bind(suggestion_uuid.as_bytes().as_slice())
+    .bind(suggestion_id.as_bytes().as_slice())
     .fetch_optional(pool)
     .await?;
 
@@ -171,10 +166,9 @@ pub(crate) async fn load_match_suggestion_by_id(
 
 pub(crate) async fn set_match_suggestion_status(
     pool: &SqlitePool,
-    suggestion_id: &str,
+    suggestion_id: Uuid,
     status: &str,
 ) -> Result<(), sqlx::Error> {
-    let suggestion_uuid = parse_uuid(suggestion_id).unwrap_or_default();
     sqlx::query(
         "UPDATE match_suggestions
          SET status = $1, updated_at = $2
@@ -182,7 +176,7 @@ pub(crate) async fn set_match_suggestion_status(
     )
     .bind(status)
     .bind(Utc::now().to_rfc3339())
-    .bind(suggestion_uuid.as_bytes().as_slice())
+    .bind(suggestion_id.as_bytes().as_slice())
     .execute(pool)
     .await?;
     Ok(())
@@ -194,9 +188,9 @@ fn row_to_suggestion(r: sqlx::sqlite::SqliteRow) -> MatchSuggestion {
     let id: Vec<u8> = r.get("id");
     let scope_id: Vec<u8> = r.get("scope_id");
     MatchSuggestion {
-        id: Uuid::from_slice(&id).unwrap_or_default().to_string(),
+        id: Uuid::from_slice(&id).unwrap_or_default(),
         scope_type: r.get("scope_type"),
-        scope_id: Uuid::from_slice(&scope_id).unwrap_or_default().to_string(),
+        scope_id: Uuid::from_slice(&scope_id).unwrap_or_default(),
         left_provider: r.get("left_provider"),
         left_external_id: r.get("left_external_id"),
         right_provider: r.get("right_provider"),

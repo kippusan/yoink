@@ -1,5 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
+use uuid::Uuid;
+
 use crate::{actions::dispatch_action_impl, db, services, state::AppState};
 
 /// Compute a relevance score (0.0–1.0) for a search result name against the query.
@@ -146,11 +148,11 @@ fn build_list_providers_fn(state: &AppState) -> yoink_shared::ListProvidersFn {
 
 fn build_fetch_tracks_fn(state: &AppState) -> yoink_shared::FetchTracksFn {
     let s = state.clone();
-    std::sync::Arc::new(move |album_id: String| {
+    std::sync::Arc::new(move |album_id: Uuid| {
         let s = s.clone();
         Box::pin(async move {
             // First try to load from local DB
-            let tracks = db::load_tracks_for_album(&s.db, &album_id)
+            let tracks = db::load_tracks_for_album(&s.db, album_id)
                 .await
                 .map_err(|e| format!("Failed to load tracks: {e}"))?;
 
@@ -159,7 +161,7 @@ fn build_fetch_tracks_fn(state: &AppState) -> yoink_shared::FetchTracksFn {
             }
 
             // Fallback: try to fetch from any linked metadata provider
-            let links = db::load_album_provider_links(&s.db, &album_id)
+            let links = db::load_album_provider_links(&s.db, album_id)
                 .await
                 .map_err(|e| format!("Failed to load album links: {e}"))?;
 
@@ -182,23 +184,23 @@ fn build_fetch_tracks_fn(state: &AppState) -> yoink_shared::FetchTracksFn {
                                 track_id
                             } else if let Some(ref isrc) = t.isrc {
                                 if let Ok(Some(track_id)) =
-                                    db::find_track_by_album_isrc(&s.db, &album_id, isrc).await
+                                    db::find_track_by_album_isrc(&s.db, album_id, isrc).await
                                 {
                                     track_id
                                 } else {
-                                    db::uuid_to_string(&db::new_uuid())
+                                    Uuid::now_v7()
                                 }
                             } else {
                                 db::find_track_by_album_position(
                                     &s.db,
-                                    &album_id,
+                                    album_id,
                                     t.disc_number.unwrap_or(1),
                                     t.track_number,
                                 )
                                 .await
                                 .ok()
                                 .flatten()
-                                .unwrap_or_else(|| db::uuid_to_string(&db::new_uuid()))
+                                .unwrap_or_else(Uuid::now_v7)
                             };
 
                             let explicit = t
@@ -211,7 +213,7 @@ fn build_fetch_tracks_fn(state: &AppState) -> yoink_shared::FetchTracksFn {
                             let mins = secs / 60;
                             let rem = secs % 60;
                             let track_info = yoink_shared::TrackInfo {
-                                id: local_track_id.clone(),
+                                id: local_track_id,
                                 title: t.title,
                                 version: t.version,
                                 disc_number: t.disc_number.unwrap_or(1),
@@ -222,17 +224,17 @@ fn build_fetch_tracks_fn(state: &AppState) -> yoink_shared::FetchTracksFn {
                                 explicit,
                             };
 
-                            let _ = db::upsert_track(&s.db, &track_info, &album_id).await;
+                            let _ = db::upsert_track(&s.db, &track_info, album_id).await;
                             let _ = db::upsert_track_provider_link(
                                 &s.db,
-                                &local_track_id,
+                                local_track_id,
                                 &link.provider,
                                 &t.external_id,
                             )
                             .await;
                         }
 
-                        let persisted = db::load_tracks_for_album(&s.db, &album_id)
+                        let persisted = db::load_tracks_for_album(&s.db, album_id)
                             .await
                             .unwrap_or_default();
                         return Ok(persisted);
@@ -248,10 +250,10 @@ fn build_fetch_tracks_fn(state: &AppState) -> yoink_shared::FetchTracksFn {
 
 fn build_fetch_artist_links_fn(state: &AppState) -> yoink_shared::FetchArtistLinksFn {
     let s = state.clone();
-    std::sync::Arc::new(move |artist_id: String| {
+    std::sync::Arc::new(move |artist_id: Uuid| {
         let s = s.clone();
         Box::pin(async move {
-            let links = db::load_artist_provider_links(&s.db, &artist_id)
+            let links = db::load_artist_provider_links(&s.db, artist_id)
                 .await
                 .map_err(|e| format!("Failed to load provider links: {e}"))?;
             Ok(links
@@ -269,10 +271,10 @@ fn build_fetch_artist_links_fn(state: &AppState) -> yoink_shared::FetchArtistLin
 
 fn build_fetch_album_links_fn(state: &AppState) -> yoink_shared::FetchAlbumLinksFn {
     let s = state.clone();
-    std::sync::Arc::new(move |album_id: String| {
+    std::sync::Arc::new(move |album_id: Uuid| {
         let s = s.clone();
         Box::pin(async move {
-            let links = db::load_album_provider_links(&s.db, &album_id)
+            let links = db::load_album_provider_links(&s.db, album_id)
                 .await
                 .map_err(|e| format!("Failed to load album provider links: {e}"))?;
             Ok(links
@@ -292,10 +294,10 @@ fn build_fetch_artist_match_suggestions_fn(
     state: &AppState,
 ) -> yoink_shared::FetchArtistMatchSuggestionsFn {
     let s = state.clone();
-    std::sync::Arc::new(move |artist_id: String| {
+    std::sync::Arc::new(move |artist_id: Uuid| {
         let s = s.clone();
         Box::pin(async move {
-            let artist_links = db::load_artist_provider_links(&s.db, &artist_id)
+            let artist_links = db::load_artist_provider_links(&s.db, artist_id)
                 .await
                 .map_err(|e| format!("Failed to load artist provider links: {e}"))?;
             let linked_pairs: HashSet<(String, String)> = artist_links
@@ -307,7 +309,7 @@ fn build_fetch_artist_match_suggestions_fn(
                 .map(|l| ((l.provider.clone(), l.external_id.clone()), l))
                 .collect();
 
-            let suggestions = db::load_match_suggestions_for_scope(&s.db, "artist", &artist_id)
+            let suggestions = db::load_match_suggestions_for_scope(&s.db, "artist", artist_id)
                 .await
                 .map_err(|e| format!("Failed to load artist match suggestions: {e}"))?;
             Ok(suggestions
@@ -322,10 +324,10 @@ fn build_fetch_album_match_suggestions_fn(
     state: &AppState,
 ) -> yoink_shared::FetchAlbumMatchSuggestionsFn {
     let s = state.clone();
-    std::sync::Arc::new(move |album_id: String| {
+    std::sync::Arc::new(move |album_id: Uuid| {
         let s = s.clone();
         Box::pin(async move {
-            let album_links = db::load_album_provider_links(&s.db, &album_id)
+            let album_links = db::load_album_provider_links(&s.db, album_id)
                 .await
                 .map_err(|e| format!("Failed to load album provider links: {e}"))?;
             let linked_pairs: HashSet<(String, String)> = album_links
@@ -337,7 +339,7 @@ fn build_fetch_album_match_suggestions_fn(
                 .map(|l| ((l.provider.clone(), l.external_id.clone()), l))
                 .collect();
 
-            let suggestions = db::load_match_suggestions_for_scope(&s.db, "album", &album_id)
+            let suggestions = db::load_match_suggestions_for_scope(&s.db, "album", album_id)
                 .await
                 .map_err(|e| format!("Failed to load album match suggestions: {e}"))?;
             Ok(suggestions

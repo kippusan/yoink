@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use chrono::Utc;
 use tracing::info;
+use uuid::Uuid;
 
 use crate::{db, models::MonitoredAlbum, providers::ProviderAlbum, state::AppState};
 
@@ -9,7 +10,7 @@ use crate::{db, models::MonitoredAlbum, providers::ProviderAlbum, state::AppStat
 /// Groups incoming albums by identity key (title + year), merges all provider
 /// links onto a single local album per key, and picks the best provider source
 /// for display metadata.
-pub(crate) async fn sync_artist_albums(state: &AppState, artist_id: &str) -> Result<(), String> {
+pub(crate) async fn sync_artist_albums(state: &AppState, artist_id: Uuid) -> Result<(), String> {
     let links = db::load_artist_provider_links(&state.db, artist_id)
         .await
         .map_err(|e| format!("failed to load provider links: {e}"))?;
@@ -35,7 +36,7 @@ pub(crate) async fn sync_artist_albums(state: &AppState, artist_id: &str) -> Res
             Err(err) => {
                 info!(
                     provider = %link.provider,
-                    artist_id = artist_id,
+                    artist_id = %artist_id,
                     error = %err.0,
                     "Failed to fetch albums from provider"
                 );
@@ -94,7 +95,7 @@ pub(crate) async fn sync_artist_albums(state: &AppState, artist_id: &str) -> Res
             });
 
         // Try to find an existing local album via ANY of the provider links.
-        let mut local_album_id: Option<String> = None;
+        let mut local_album_id: Option<Uuid> = None;
         for (prov, album) in entries {
             if let Ok(Some(id)) =
                 db::find_album_by_provider_link(&state.db, prov, &album.external_id).await
@@ -118,10 +119,10 @@ pub(crate) async fn sync_artist_albums(state: &AppState, artist_id: &str) -> Res
             }
             existing_id
         } else {
-            let new_id = db::uuid_to_string(&db::new_uuid());
+            let new_id = Uuid::now_v7();
             let album = MonitoredAlbum {
-                id: new_id.clone(),
-                artist_id: artist_id.to_string(),
+                id: new_id,
+                artist_id,
                 title: best_album.title.clone(),
                 album_type: best_album.album_type.clone(),
                 release_date: best_album.release_date.clone(),
@@ -143,8 +144,8 @@ pub(crate) async fn sync_artist_albums(state: &AppState, artist_id: &str) -> Res
         // Upsert ALL provider links for this group.
         for (prov, album) in entries {
             let link = db::AlbumProviderLink {
-                id: db::uuid_to_string(&db::new_uuid()),
-                album_id: album_id.clone(),
+                id: Uuid::now_v7(),
+                album_id,
                 provider: prov.clone(),
                 external_id: album.external_id.clone(),
                 external_url: album.url.clone(),
@@ -160,12 +161,12 @@ pub(crate) async fn sync_artist_albums(state: &AppState, artist_id: &str) -> Res
     for album in albums.iter().filter(|a| a.artist_id == artist_id) {
         let key = album_identity_key(&album.title, album.release_date.as_deref());
         if !incoming_keys.contains(&key) {
-            ids_to_remove.push(album.id.clone());
+            ids_to_remove.push(album.id);
         }
     }
 
     for id in &ids_to_remove {
-        let _ = db::delete_album(&state.db, id).await;
+        let _ = db::delete_album(&state.db, *id).await;
     }
     albums.retain(|album| !ids_to_remove.contains(&album.id));
 

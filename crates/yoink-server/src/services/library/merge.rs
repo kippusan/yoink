@@ -1,11 +1,13 @@
+use uuid::Uuid;
+
 use crate::{db, state::AppState};
 
 use super::update_wanted;
 
 pub(crate) async fn merge_albums(
     state: &AppState,
-    target_album_id: &str,
-    source_album_id: &str,
+    target_album_id: Uuid,
+    source_album_id: Uuid,
     result_title: Option<&str>,
     result_cover_url: Option<&str>,
 ) -> Result<(), String> {
@@ -22,8 +24,8 @@ pub(crate) async fn merge_albums(
             return Err("source album not found".to_string());
         };
         (
-            target.artist_id.clone(),
-            source.artist_id.clone(),
+            target.artist_id,
+            source.artist_id,
             (source.monitored, source.acquired, source.wanted),
         )
     };
@@ -38,8 +40,8 @@ pub(crate) async fn merge_albums(
 
     for link in source_links {
         let moved = db::AlbumProviderLink {
-            id: db::uuid_to_string(&db::new_uuid()),
-            album_id: target_album_id.to_string(),
+            id: Uuid::now_v7(),
+            album_id: target_album_id,
             provider: link.provider,
             external_id: link.external_id,
             external_url: link.external_url,

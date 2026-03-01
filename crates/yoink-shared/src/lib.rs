@@ -12,6 +12,7 @@ pub use actions::*;
 pub use helpers::*;
 pub use import::*;
 pub use models::*;
+pub use uuid::Uuid;
 
 #[cfg(feature = "ssr")]
 mod context;

@@ -35,11 +35,17 @@ pub struct ArtistDetailData {
 
 #[server(GetArtistDetail, "/leptos")]
 pub async fn get_artist_detail(artist_id: String) -> Result<ArtistDetailData, ServerFnError> {
+    use yoink_shared::Uuid;
+
     let ctx = use_context::<yoink_shared::ServerContext>()
         .ok_or_else(|| ServerFnError::new("ServerContext not available"))?;
 
+    let artist_uuid: Uuid = artist_id
+        .parse()
+        .map_err(|_| ServerFnError::new("invalid artist UUID"))?;
+
     let artists = ctx.monitored_artists.read().await;
-    let artist = artists.iter().find(|a| a.id == artist_id).cloned();
+    let artist = artists.iter().find(|a| a.id == artist_uuid).cloned();
     drop(artists);
 
     let albums: Vec<MonitoredAlbum> = ctx
@@ -47,14 +53,14 @@ pub async fn get_artist_detail(artist_id: String) -> Result<ArtistDetailData, Se
         .read()
         .await
         .iter()
-        .filter(|a| a.artist_id == artist_id)
+        .filter(|a| a.artist_id == artist_uuid)
         .cloned()
         .collect();
 
     let jobs = ctx.download_jobs.read().await.clone();
 
     let provider_links = if artist.is_some() {
-        (ctx.fetch_artist_links)(artist_id.clone())
+        (ctx.fetch_artist_links)(artist_uuid)
             .await
             .unwrap_or_default()
     } else {
@@ -62,7 +68,7 @@ pub async fn get_artist_detail(artist_id: String) -> Result<ArtistDetailData, Se
     };
 
     let match_suggestions = if artist.is_some() {
-        (ctx.fetch_artist_match_suggestions)(artist_id)
+        (ctx.fetch_artist_match_suggestions)(artist_uuid)
             .await
             .unwrap_or_default()
     } else {
@@ -582,7 +588,7 @@ fn ArtistDetailContent(
                 view! {
                     <LinkProviderDialog
                         open=show_link_provider
-                        artist_id=a.id.clone()
+                        artist_id=a.id
                         artist_name=a.name.clone()
                         already_linked=already_linked
                     />
@@ -766,9 +772,9 @@ fn AlbumSleeve(
     jobs: RwSignal<Vec<DownloadJob>>,
     artist_id: RwSignal<Option<MonitoredArtist>>,
 ) -> impl IntoView {
-    let album_id = album.id.clone();
-    let album_id_str = album.id.clone();
-    let album_id_for_url = album.id.clone();
+    let album_id = album.id;
+    let album_id_str = album.id.to_string();
+    let album_id_for_url = album.id;
     let album_title = album.title.clone();
     let release_date = album
         .release_date

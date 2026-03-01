@@ -25,7 +25,7 @@ pub(crate) async fn download_album_job(state: &AppState, job: DownloadJob) -> Re
     let requested_quality = Quality::from_str_lossy(&job.quality);
 
     // Resolve the provider link for this album to find the external ID and provider
-    let album_links = db::load_album_provider_links(&state.db, &job.album_id)
+    let album_links = db::load_album_provider_links(&state.db, job.album_id)
         .await
         .map_err(|e| format!("failed to load album provider links: {e}"))?;
 
@@ -86,7 +86,7 @@ pub(crate) async fn download_album_job(state: &AppState, job: DownloadJob) -> Re
     let total_tracks = provider_tracks.len();
     update_job_progress(
         state,
-        &job.id,
+        job.id,
         total_tracks,
         0,
         DownloadStatus::Downloading,
@@ -184,7 +184,7 @@ pub(crate) async fn download_album_job(state: &AppState, job: DownloadJob) -> Re
                 completed_tracks += 1;
                 update_job_progress(
                     state,
-                    &job.id,
+                    job.id,
                     total_tracks,
                     completed_tracks,
                     DownloadStatus::Downloading,
@@ -464,7 +464,7 @@ async fn find_existing_track_file(
 
 pub(crate) async fn update_job_progress(
     state: &AppState,
-    job_id: &str,
+    job_id: uuid::Uuid,
     total_tracks: usize,
     completed_tracks: usize,
     status: DownloadStatus,

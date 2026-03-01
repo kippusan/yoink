@@ -13,6 +13,8 @@ use chrono::Utc;
 use tokio::fs;
 use tracing::{debug, error, info};
 
+use uuid::Uuid;
+
 use crate::{
     db,
     models::{DownloadJob, DownloadStatus, MonitoredAlbum},
@@ -64,7 +66,7 @@ pub(crate) async fn enqueue_album_download(state: &AppState, album: &MonitoredAl
 
     // Determine the download source from available album provider links
     let source = {
-        let links = db::load_album_provider_links(&state.db, &album.id)
+        let links = db::load_album_provider_links(&state.db, album.id)
             .await
             .unwrap_or_default();
         let download_sources = state.registry.download_sources();
@@ -92,10 +94,9 @@ pub(crate) async fn enqueue_album_download(state: &AppState, album: &MonitoredAl
         }
     };
 
-    let job_id = db::uuid_to_string(&db::new_uuid());
     let mut new_job = DownloadJob {
-        id: job_id,
-        album_id: album.id.clone(),
+        id: Uuid::now_v7(),
+        album_id: album.id,
         source,
         album_title: album.title.clone(),
         artist_name,
@@ -181,7 +182,7 @@ pub(crate) async fn download_worker_loop(state: AppState) {
                     update_wanted(album);
                     let _ = db::update_album_flags(
                         &state.db,
-                        &album.id,
+                        album.id,
                         album.monitored,
                         album.acquired,
                         album.wanted,
@@ -207,7 +208,7 @@ pub(crate) async fn download_worker_loop(state: AppState) {
                     update_wanted(album);
                     let _ = db::update_album_flags(
                         &state.db,
-                        &album.id,
+                        album.id,
                         album.monitored,
                         album.acquired,
                         album.wanted,
@@ -226,10 +227,8 @@ pub(crate) async fn retag_existing_files(
     let artists = state.monitored_artists.read().await.clone();
     let albums = state.monitored_albums.read().await.clone();
 
-    let artist_names: HashMap<String, String> = artists
-        .into_iter()
-        .map(|a| (a.id.clone(), a.name))
-        .collect();
+    let artist_names: HashMap<Uuid, String> =
+        artists.into_iter().map(|a| (a.id, a.name)).collect();
 
     let mut tagged_files = 0usize;
     let mut missing_files = 0usize;
@@ -241,7 +240,7 @@ pub(crate) async fn retag_existing_files(
         };
 
         // Find a metadata provider link for this album
-        let album_links = db::load_album_provider_links(&state.db, &album.id)
+        let album_links = db::load_album_provider_links(&state.db, album.id)
             .await
             .unwrap_or_default();
 

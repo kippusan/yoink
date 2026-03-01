@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -25,8 +26,8 @@ impl DownloadStatus {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DownloadJob {
-    pub id: String,
-    pub album_id: String,
+    pub id: Uuid,
+    pub album_id: Uuid,
     pub source: String,
     pub album_title: String,
     pub artist_name: String,
@@ -41,7 +42,7 @@ pub struct DownloadJob {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MonitoredArtist {
-    pub id: String,
+    pub id: Uuid,
     pub name: String,
     pub image_url: Option<String>,
     pub bio: Option<String>,
@@ -50,8 +51,8 @@ pub struct MonitoredArtist {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MonitoredAlbum {
-    pub id: String,
-    pub artist_id: String,
+    pub id: Uuid,
+    pub artist_id: Uuid,
     pub title: String,
     pub album_type: Option<String>,
     pub release_date: Option<String>,
@@ -65,7 +66,7 @@ pub struct MonitoredAlbum {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrackInfo {
-    pub id: String,
+    pub id: Uuid,
     pub title: String,
     pub version: Option<String>,
     pub disc_number: u32,
@@ -88,9 +89,9 @@ pub struct ProviderLink {
 /// Potential cross-provider match suggestion.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MatchSuggestion {
-    pub id: String,
+    pub id: Uuid,
     pub scope_type: String,
-    pub scope_id: String,
+    pub scope_id: Uuid,
     pub left_provider: String,
     pub left_external_id: String,
     pub right_provider: String,

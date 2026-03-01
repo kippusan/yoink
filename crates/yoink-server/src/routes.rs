@@ -13,6 +13,8 @@ use axum::{
 use tokio_stream::{StreamExt as _, wrappers::BroadcastStream};
 use tracing::debug;
 
+use uuid::Uuid;
+
 use crate::{db, models::*, state::AppState};
 
 pub(crate) fn build_router(state: AppState) -> Router {
@@ -60,10 +62,10 @@ async fn list_tidal_instances(State(state): State<AppState>) -> impl IntoRespons
 
 async fn album_tracks(
     State(state): State<AppState>,
-    Path(album_id): Path<String>,
+    Path(album_id): Path<Uuid>,
 ) -> impl IntoResponse {
     // First try loading from local DB
-    match db::load_tracks_for_album(&state.db, &album_id).await {
+    match db::load_tracks_for_album(&state.db, album_id).await {
         Ok(tracks) if !tracks.is_empty() => {
             return (StatusCode::OK, Json(tracks)).into_response();
         }
@@ -71,7 +73,7 @@ async fn album_tracks(
     }
 
     // Fallback: fetch from any available metadata provider via provider link
-    let links = match db::load_album_provider_links(&state.db, &album_id).await {
+    let links = match db::load_album_provider_links(&state.db, album_id).await {
         Ok(links) => links,
         Err(err) => {
             debug!(album_id = %album_id, error = %err, "Failed to load album provider links");
@@ -98,7 +100,7 @@ async fn album_tracks(
                         let mins = secs / 60;
                         let rem = secs % 60;
                         TrackInfo {
-                            id: db::uuid_to_string(&db::new_uuid()),
+                            id: Uuid::now_v7(),
                             title: t.title,
                             version: t.version,
                             disc_number: t.disc_number.unwrap_or(1),

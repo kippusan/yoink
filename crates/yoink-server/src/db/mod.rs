@@ -8,7 +8,6 @@ mod tracks;
 use chrono::{DateTime, Utc};
 use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};
 use tracing::info;
-use uuid::Uuid;
 
 pub(crate) use albums::{
     delete_album, delete_albums_by_artist, load_albums, reassign_jobs_to_album,
@@ -30,21 +29,6 @@ pub(crate) use tracks::{
     find_track_by_album_isrc, find_track_by_album_position, find_track_by_provider_link,
     load_tracks_for_album, upsert_track,
 };
-
-/// Generate a new UUID v7 (time-ordered).
-pub(crate) fn new_uuid() -> Uuid {
-    Uuid::now_v7()
-}
-
-/// Convert a UUID to its hyphenated string form (for JSON transport).
-pub(crate) fn uuid_to_string(id: &Uuid) -> String {
-    id.to_string()
-}
-
-/// Parse a UUID from its hyphenated string form.
-pub(crate) fn parse_uuid(s: &str) -> Result<Uuid, String> {
-    Uuid::parse_str(s).map_err(|e| format!("invalid UUID: {e}"))
-}
 
 /// Open (or create) the database and run migrations.
 pub(crate) async fn open(url: &str) -> Result<SqlitePool, sqlx::Error> {

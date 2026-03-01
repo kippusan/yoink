@@ -32,11 +32,17 @@ pub struct AlbumDetailData {
 
 #[server(GetAlbumDetail, "/leptos")]
 pub async fn get_album_detail(album_id: String) -> Result<AlbumDetailData, ServerFnError> {
+    use yoink_shared::Uuid;
+
     let ctx = use_context::<yoink_shared::ServerContext>()
         .ok_or_else(|| ServerFnError::new("ServerContext not available"))?;
 
+    let album_uuid: Uuid = album_id
+        .parse()
+        .map_err(|_| ServerFnError::new("invalid album UUID"))?;
+
     let albums = ctx.monitored_albums.read().await;
-    let album = albums.iter().find(|a| a.id == album_id).cloned();
+    let album = albums.iter().find(|a| a.id == album_uuid).cloned();
     drop(albums);
 
     let artist = if let Some(ref a) = album {
@@ -46,14 +52,12 @@ pub async fn get_album_detail(album_id: String) -> Result<AlbumDetailData, Serve
         None
     };
 
-    let tracks = (ctx.fetch_tracks)(album_id.clone())
-        .await
-        .unwrap_or_default();
+    let tracks = (ctx.fetch_tracks)(album_uuid).await.unwrap_or_default();
 
     let jobs = ctx.download_jobs.read().await.clone();
 
     let provider_links = if album.is_some() {
-        (ctx.fetch_album_links)(album_id.clone())
+        (ctx.fetch_album_links)(album_uuid)
             .await
             .unwrap_or_default()
     } else {
@@ -61,7 +65,7 @@ pub async fn get_album_detail(album_id: String) -> Result<AlbumDetailData, Serve
     };
 
     let match_suggestions = if album.is_some() {
-        (ctx.fetch_album_match_suggestions)(album_id)
+        (ctx.fetch_album_match_suggestions)(album_uuid)
             .await
             .unwrap_or_default()
     } else {

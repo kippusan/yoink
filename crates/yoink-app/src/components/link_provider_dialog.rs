@@ -61,7 +61,7 @@ pub async fn search_all_providers(query: String) -> Result<Vec<SearchArtistResul
 #[component]
 pub fn LinkProviderDialog(
     open: RwSignal<bool>,
-    #[prop(into)] artist_id: String,
+    artist_id: yoink_shared::Uuid,
     #[prop(into)] artist_name: String,
     #[prop(into)] already_linked: Vec<(String, String)>,
 ) -> impl IntoView {
@@ -329,7 +329,7 @@ pub fn LinkProviderDialog(
 #[component]
 fn LinkResultRow(
     result: SearchArtistResult,
-    artist_id: String,
+    artist_id: yoink_shared::Uuid,
     session_linked: RwSignal<Vec<(String, String)>>,
 ) -> impl IntoView {
     let image_url = result.image_url.clone();

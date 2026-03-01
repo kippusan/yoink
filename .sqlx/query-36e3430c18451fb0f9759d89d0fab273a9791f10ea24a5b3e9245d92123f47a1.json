@@ -1,0 +1,74 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT\n            id as \"id!: Uuid\",\n            title, version, disc_number, track_number, duration_secs,\n            explicit as \"explicit!: bool\",\n            isrc, track_artist, file_path\n         FROM tracks WHERE album_id = $1\n         ORDER BY disc_number, track_number",
+  "describe": {
+    "columns": [
+      {
+        "name": "id!: Uuid",
+        "ordinal": 0,
+        "type_info": "Blob"
+      },
+      {
+        "name": "title",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "version",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "disc_number",
+        "ordinal": 3,
+        "type_info": "Integer"
+      },
+      {
+        "name": "track_number",
+        "ordinal": 4,
+        "type_info": "Integer"
+      },
+      {
+        "name": "duration_secs",
+        "ordinal": 5,
+        "type_info": "Integer"
+      },
+      {
+        "name": "explicit!: bool",
+        "ordinal": 6,
+        "type_info": "Integer"
+      },
+      {
+        "name": "isrc",
+        "ordinal": 7,
+        "type_info": "Text"
+      },
+      {
+        "name": "track_artist",
+        "ordinal": 8,
+        "type_info": "Text"
+      },
+      {
+        "name": "file_path",
+        "ordinal": 9,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true,
+      false,
+      true,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      true
+    ]
+  },
+  "hash": "36e3430c18451fb0f9759d89d0fab273a9791f10ea24a5b3e9245d92123f47a1"
+}

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "INSERT INTO tracks (id, album_id, title, version, disc_number, track_number, duration_secs, explicit, isrc, track_artist, file_path)\n         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)\n         ON CONFLICT(id) DO UPDATE SET\n           title = excluded.title,\n           version = excluded.version,\n           disc_number = excluded.disc_number,\n           track_number = excluded.track_number,\n           duration_secs = excluded.duration_secs,\n           explicit = excluded.explicit,\n           isrc = excluded.isrc,\n           track_artist = COALESCE(excluded.track_artist, tracks.track_artist),\n           file_path = COALESCE(excluded.file_path, tracks.file_path)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 11
+    },
+    "nullable": []
+  },
+  "hash": "d926f4fbe78b95e2bdc9639f5f014dd76fc680132a53dbb29b8e6dde89de5d70"
+}

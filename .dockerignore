@@ -1,0 +1,6 @@
+target/
+development/
+music/
+yoink.db*
+.env*
+.git/

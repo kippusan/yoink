@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT\n            id as \"id!: Uuid\",\n            artist_id as \"artist_id!: Uuid\",\n            title, album_type, release_date, cover_url,\n            explicit as \"explicit!: bool\",\n            monitored as \"monitored!: bool\",\n            acquired as \"acquired!: bool\",\n            wanted as \"wanted!: bool\",\n            added_at as \"added_at!: chrono::DateTime<chrono::Utc>\"\n         FROM albums ORDER BY release_date DESC",
+  "query": "SELECT\n            id as \"id!: Uuid\",\n            artist_id as \"artist_id!: Uuid\",\n            title, album_type, release_date, cover_url,\n            explicit as \"explicit!: bool\",\n            monitored as \"monitored!: bool\",\n            acquired as \"acquired!: bool\",\n            wanted as \"wanted!: bool\",\n            added_at as \"added_at!: chrono::DateTime<chrono::Utc>\",\n            artist_credits\n         FROM albums ORDER BY release_date DESC",
   "describe": {
     "columns": [
       {
@@ -57,6 +57,11 @@
         "name": "added_at!: chrono::DateTime<chrono::Utc>",
         "ordinal": 10,
         "type_info": "Text"
+      },
+      {
+        "name": "artist_credits",
+        "ordinal": 11,
+        "type_info": "Text"
       }
     ],
     "parameters": {
@@ -73,8 +78,9 @@
       false,
       false,
       false,
-      false
+      false,
+      true
     ]
   },
-  "hash": "81632b3772688f337cf63cb19d96a84d25a23478d0b98cdbc1e622b37815e1f5"
+  "hash": "34854daa8bb96188e03c183c8254b3bab92b4f8f31dce4ef45f4df907b6d7cd8"
 }

@@ -32,9 +32,18 @@ reqwest = { version = "0.12", default-features = false, features = [
   "json",
   "rustls-tls",
 ] }
-musicbrainz_rs = { version = "0.12", features = ["rate_limit"] }
+musicbrainz_rs = { version = "0.12", features = [
+  "rate_limit",
+  "async",
+  "rustls",
+], default-features = false }
 roxmltree = "0.20"
-sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "uuid", "chrono"] }
+sqlx = { version = "0.8", features = [
+  "runtime-tokio",
+  "sqlite",
+  "uuid",
+  "chrono",
+] }
 strsim = "0.11"
 tokio = { version = "1", features = [
   "fs",

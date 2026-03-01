@@ -1,0 +1,49 @@
+services:
+  yoink:
+    build: .
+    # image: ghcr.io/flyinpancake/yoink:latest  # uncomment when published
+    container_name: yoink
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - yoink-data:/data
+      - ./music:/music
+      # If using slskd, mount its downloads dir so yoink can read completed files:
+      # - ./slskd-data/downloads:/slskd-downloads:ro
+    environment:
+      PUID: 1000
+      PGID: 1000
+      DEFAULT_QUALITY: LOSSLESS
+      DOWNLOAD_MAX_PARALLEL_TRACKS: 2
+      DOWNLOAD_LYRICS: false
+      LOG_FORMAT: pretty
+      # ── Providers ────────────────────────────────────────
+      DEEZER_ENABLED: true
+      MUSICBRAINZ_ENABLED: true
+      # Tidal — set your hifi-api proxy URL to enable:
+      # TIDAL_API_BASE_URL: http://host.docker.internal:8000
+      # SoulSeek — requires a running slskd instance:
+      # SOULSEEK_ENABLED: true
+      # SLSKD_BASE_URL: http://slskd:5030
+      # SLSKD_USERNAME:
+      # SLSKD_PASSWORD:
+      # SLSKD_DOWNLOADS_DIR: /slskd-downloads
+
+  # ── Optional: slskd for SoulSeek downloads ────────────────
+  # Uncomment this service and the SOULSEEK env vars above to enable.
+  #
+  # slskd:
+  #   image: slskd/slskd
+  #   container_name: slskd
+  #   restart: unless-stopped
+  #   ports:
+  #     - "5030:5030"
+  #   environment:
+  #     SLSKD_REMOTE_CONFIGURATION: true
+  #   volumes:
+  #     - ./slskd-data:/app
+  #     - ./music:/music
+
+volumes:
+  yoink-data:

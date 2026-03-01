@@ -1,3 +1,5 @@
+#![recursion_limit = "256"]
+
 use wasm_bindgen::JsCast;
 
 #[wasm_bindgen::prelude::wasm_bindgen]

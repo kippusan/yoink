@@ -11,4 +11,4 @@ pub use edit_artist_dialog::EditArtistDialog;
 pub use error_panel::ErrorPanel;
 pub use link_provider_dialog::LinkProviderDialog;
 pub use resolve_artist_dialog::ResolveArtistDialog;
-pub use sidebar::{MobileMenuButton, Sidebar};
+pub use sidebar::{MobileMenuButton, Sidebar, SidebarProvider};

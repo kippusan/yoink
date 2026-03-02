@@ -12,7 +12,9 @@ use leptoaster::{ToastBuilder, ToastLevel, ToastPosition, expect_toaster};
 use super::provider_icon_svg;
 use crate::actions::dispatch_action;
 use crate::components::toast::{dispatch_with_toast, dispatch_with_toast_loading};
-use crate::components::{ConfirmDialog, EditArtistDialog, ErrorPanel, LinkProviderDialog, MobileMenuButton, Sidebar};
+use crate::components::{
+    ConfirmDialog, EditArtistDialog, ErrorPanel, LinkProviderDialog, MobileMenuButton, Sidebar,
+};
 use crate::hooks::{set_page_title, use_sse_version};
 use crate::styles::{
     BREADCRUMB_CURRENT, BREADCRUMB_LINK, BREADCRUMB_NAV, BREADCRUMB_SEP, BTN, BTN_DANGER,
@@ -53,10 +55,7 @@ pub async fn get_artist_detail(artist_id: String) -> Result<ArtistDetailData, Se
         .read()
         .await
         .iter()
-        .filter(|a| {
-            a.artist_id == artist_uuid
-                || a.artist_ids.contains(&artist_uuid)
-        })
+        .filter(|a| a.artist_id == artist_uuid || a.artist_ids.contains(&artist_uuid))
         .cloned()
         .collect();
 
@@ -89,9 +88,7 @@ pub async fn get_artist_detail(artist_id: String) -> Result<ArtistDetailData, Se
 
 /// Fetch available artist images from linked providers.
 #[server(GetArtistImages, "/leptos")]
-pub async fn get_artist_images(
-    artist_id: String,
-) -> Result<Vec<ArtistImageOption>, ServerFnError> {
+pub async fn get_artist_images(artist_id: String) -> Result<Vec<ArtistImageOption>, ServerFnError> {
     use yoink_shared::Uuid;
 
     let ctx = use_context::<yoink_shared::ServerContext>()
@@ -156,7 +153,7 @@ pub fn ArtistDetailPage() -> impl IntoView {
     view! {
         <div class="flex min-h-screen">
             <Sidebar active="artists" />
-            <div class="ml-[220px] max-md:ml-0 flex-1 min-h-screen">
+            <div class="ml-[220px] max-md:ml-0 flex-1 min-h-screen overflow-x-hidden">
                 // Skeleton — shown only until first data arrives
                 <Show when=move || !has_loaded.get()>
                     <div>
@@ -209,7 +206,7 @@ pub fn ArtistDetailPage() -> impl IntoView {
                     {move || {
                         let e = load_error.get().unwrap_or_default();
                         view! {
-                            <div class="p-6">
+                            <div class="p-6 max-md:p-4">
                                 <ErrorPanel
                                     message="Failed to load artist details."
                                     details=e
@@ -228,7 +225,7 @@ pub fn ArtistDetailPage() -> impl IntoView {
                                 <span class=BREADCRUMB_CURRENT>"Not Found"</span>
                             </nav>
                         </div>
-                        <div class="p-6">
+                        <div class="p-6 max-md:p-4">
                             <div class="text-zinc-500">"Artist not found."</div>
                             <a href="/artists" class={cls(BTN, "mt-4 inline-flex items-center gap-1.5")}>
                                 <ArrowLeft size=14 />
@@ -564,7 +561,7 @@ fn ArtistDetailContent(
                                                     </div>
                                                 </div>
 
-                                                <div class="flex items-center gap-1.5 shrink-0">
+                                                <div class="flex flex-col lg:flex-row items-center gap-1.5 shrink-0">
                                                     <button
                                                         type="button"
                                                         class={cls(BTN_PRIMARY, "px-2 py-0.5 text-xs")}

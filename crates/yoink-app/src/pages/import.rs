@@ -63,7 +63,7 @@ pub fn ImportPage() -> impl IntoView {
     view! {
         <div class="flex min-h-screen">
             <Sidebar active="import" />
-            <div class="ml-[220px] max-md:ml-0 flex-1 min-h-screen">
+            <div class="ml-[220px] max-md:ml-0 flex-1 min-h-screen overflow-x-hidden">
                 <Transition fallback=move || view! {
                     <div>
                         <div class=HEADER_BAR>
@@ -91,7 +91,7 @@ pub fn ImportPage() -> impl IntoView {
                     {move || {
                         preview_data.get().map(|result| match result {
                             Err(e) => view! {
-                                <div class="p-6">
+                                <div class="p-6 max-md:p-4">
                                     <ErrorPanel
                                         message="Failed to scan library."
                                         details=e.to_string()

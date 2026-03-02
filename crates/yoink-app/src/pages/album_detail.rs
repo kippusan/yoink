@@ -153,7 +153,7 @@ pub fn AlbumDetailPage() -> impl IntoView {
     view! {
         <div class="flex min-h-screen">
             <Sidebar active="artists" />
-            <div class="ml-[220px] max-md:ml-0 flex-1 min-h-screen">
+            <div class="ml-[220px] max-md:ml-0 flex-1 min-h-screen overflow-x-hidden">
                 <Transition fallback=move || view! {
                     <div>
                         <div class=HEADER_BAR>
@@ -209,7 +209,7 @@ pub fn AlbumDetailPage() -> impl IntoView {
                         let aid = artist_id();
                         data.get().map(|result| match result {
                             Err(e) => view! {
-                                <div class="p-6">
+                                <div class="p-6 max-md:p-4">
                                     <ErrorPanel
                                         message="Failed to load album details."
                                         details=e.to_string()
@@ -230,7 +230,7 @@ pub fn AlbumDetailPage() -> impl IntoView {
                                                     <span class=BREADCRUMB_CURRENT>"Not Found"</span>
                                                 </nav>
                                             </div>
-                                            <div class="p-6">
+                                            <div class="p-6 max-md:p-4">
                                                 <div class="text-zinc-500">"Album not found."</div>
                                                 <a href="/artists" class={cls(BTN, "mt-4 inline-flex items-center gap-1.5")}>
                                                     <ArrowLeft size=14 />

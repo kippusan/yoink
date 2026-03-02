@@ -12,6 +12,7 @@ use leptos_router::{
     path,
 };
 
+use components::SidebarProvider;
 use hooks::{SseStatus, provide_sse_version, use_sse_status};
 
 /// The top-level Leptos application component.
@@ -36,18 +37,20 @@ pub fn App() -> impl IntoView {
                 "Connection lost \u{2014} reconnecting\u{2026}"
             </div>
         </Show>
-        <Router>
-            <KeyboardShortcuts />
-            <Routes fallback=pages::not_found::NotFoundPage>
-                <Route path=path!("/") view=pages::dashboard::DashboardPage />
-                <Route path=path!("/artists") view=pages::artists::ArtistsPage />
-                <Route path=path!("/artists/:id") view=pages::artist_detail::ArtistDetailPage />
-                <Route path=path!("/artists/:id/merge-albums") view=pages::merge_albums::MergeAlbumsPage />
-                <Route path=path!("/artists/:artist_id/albums/:album_id") view=pages::album_detail::AlbumDetailPage />
-                <Route path=path!("/wanted") view=pages::wanted::WantedPage />
-                <Route path=path!("/import") view=pages::import::ImportPage />
-            </Routes>
-        </Router>
+        <SidebarProvider>
+            <Router>
+                <KeyboardShortcuts />
+                <Routes fallback=pages::not_found::NotFoundPage>
+                    <Route path=path!("/") view=pages::dashboard::DashboardPage />
+                    <Route path=path!("/artists") view=pages::artists::ArtistsPage />
+                    <Route path=path!("/artists/:id") view=pages::artist_detail::ArtistDetailPage />
+                    <Route path=path!("/artists/:id/merge-albums") view=pages::merge_albums::MergeAlbumsPage />
+                    <Route path=path!("/artists/:artist_id/albums/:album_id") view=pages::album_detail::AlbumDetailPage />
+                    <Route path=path!("/wanted") view=pages::wanted::WantedPage />
+                    <Route path=path!("/import") view=pages::import::ImportPage />
+                </Routes>
+            </Router>
+        </SidebarProvider>
     }
 }
 

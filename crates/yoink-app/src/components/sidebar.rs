@@ -6,6 +6,17 @@ use lucide_leptos::{FolderDown, Heart, House, Menu, MicVocal, SunMoon, X};
 #[derive(Clone, Copy)]
 struct MobileMenuOpen(RwSignal<bool>);
 
+/// Context provider for the sidebar's mobile-menu state.
+///
+/// Wrap this around any tree that contains both `<Sidebar/>` and
+/// `<MobileMenuButton/>` so they share the same `RwSignal<bool>`.
+/// Typically placed once in `<App/>`.
+#[component]
+pub fn SidebarProvider(children: Children) -> impl IntoView {
+    provide_context(MobileMenuOpen(RwSignal::new(false)));
+    children()
+}
+
 /// Button that opens the mobile sidebar drawer.
 /// Place this inside header bars. Hidden on desktop (md+).
 #[component]
@@ -215,9 +226,8 @@ pub fn Sidebar(#[prop(into)] active: String) -> impl IntoView {
         }
     };
 
-    // Mobile drawer state — provided via context so MobileMenuButton can access it
-    let mobile_open = RwSignal::new(false);
-    provide_context(MobileMenuOpen(mobile_open));
+    // Mobile drawer state — read from SidebarProvider context
+    let mobile_open = expect_context::<MobileMenuOpen>().0;
 
     let close_drawer = move || mobile_open.set(false);
 

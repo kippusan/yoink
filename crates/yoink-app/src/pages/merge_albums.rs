@@ -551,7 +551,7 @@ pub fn MergeAlbumsPage() -> impl IntoView {
     view! {
         <div class="flex min-h-screen">
             <Sidebar active="artists" />
-            <div class="ml-[220px] max-md:ml-0 flex-1 min-h-screen">
+            <div class="ml-[220px] max-md:ml-0 flex-1 min-h-screen overflow-x-hidden">
                 <Transition fallback=move || view! {
                     <div>
                         <div class=HEADER_BAR>

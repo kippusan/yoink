@@ -11,7 +11,7 @@ use crate::components::toast::{dispatch_with_toast, dispatch_with_toast_loading}
 use crate::components::{ConfirmDialog, ErrorPanel, MobileMenuButton, Sidebar};
 use crate::hooks::{set_page_title, use_sse_version};
 use crate::styles::{
-    BTN, BTN_DANGER, EMPTY, GLASS, GLASS_HEADER, GLASS_TITLE, MUTED, btn_cls, cls,
+    BTN, BTN_DANGER, EMPTY, GLASS, GLASS_HEADER, GLASS_TITLE, HEADER_BAR, MUTED, btn_cls, cls,
 };
 
 // ── Page-specific Tailwind class constants ──────────────────
@@ -61,10 +61,10 @@ pub fn DashboardPage() -> impl IntoView {
     view! {
         <div class="flex min-h-screen">
             <Sidebar active="dashboard" />
-            <div class="ml-[220px] max-md:ml-0 flex-1 min-h-screen">
+            <div class="ml-[220px] max-md:ml-0 flex-1 min-h-screen overflow-x-hidden">
                 <Transition fallback=move || view! {
                     <div>
-                        <div class="bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[16px] border-b border-black/[.06] dark:border-white/[.06] px-6 py-3.5 flex items-center justify-between sticky top-0 z-40">
+                        <div class=HEADER_BAR>
                             <div class="flex items-center gap-2"><MobileMenuButton /><h1 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 m-0">"Dashboard"</h1></div>
                         </div>
                         // Skeleton stat cards
@@ -99,7 +99,7 @@ pub fn DashboardPage() -> impl IntoView {
                     {move || {
                         data.get().map(|result| match result {
                             Err(e) => view! {
-                                <div class="p-6">
+                                <div class="p-6 max-md:p-4">
                                     <ErrorPanel
                                         message="Failed to load dashboard data."
                                         details=e.to_string()
@@ -158,7 +158,7 @@ fn DashboardContent(data: DashboardData) -> impl IntoView {
 
     view! {
         // Header bar
-        <div class="bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[16px] border-b border-black/[.06] dark:border-white/[.06] px-6 py-3.5 flex items-center justify-between sticky top-0 z-40">
+        <div class=HEADER_BAR>
             <div class="flex items-center gap-2"><MobileMenuButton /><h1 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 m-0">"Dashboard"</h1></div>
         </div>
 

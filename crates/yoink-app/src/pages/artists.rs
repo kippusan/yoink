@@ -152,7 +152,7 @@ pub fn ArtistsPage() -> impl IntoView {
     view! {
         <div class="flex min-h-screen">
             <Sidebar active="artists" />
-            <div class="ml-[220px] max-md:ml-0 flex-1 min-h-screen">
+            <div class="ml-[220px] max-md:ml-0 flex-1 min-h-screen overflow-x-hidden">
                 <Transition fallback=move || view! {
                     <div>
                         <div class=HEADER_BAR>
@@ -170,7 +170,7 @@ pub fn ArtistsPage() -> impl IntoView {
                                 <div class="px-5 py-3 border-b border-black/[.06] dark:border-white/[.06]">
                                     <div class="h-4 w-28 bg-zinc-200 dark:bg-zinc-700 rounded animate-pulse"></div>
                                 </div>
-                                <div class="p-4 grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
+                                <div class="p-4 grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
                                     {(0..8).map(|_| view! {
                                         <div class="rounded-xl p-4 flex items-center gap-3.5 border border-black/[.04] dark:border-white/[.04] animate-pulse">
                                             <div class="size-12 rounded-full bg-zinc-200 dark:bg-zinc-700 shrink-0"></div>
@@ -188,7 +188,7 @@ pub fn ArtistsPage() -> impl IntoView {
                     {move || {
                         data.get().map(|result| match result {
                             Err(e) => view! {
-                                <div class="p-6">
+                                <div class="p-6 max-md:p-4">
                                     <ErrorPanel
                                         message="Failed to load artists."
                                         details=e.to_string()
@@ -222,8 +222,7 @@ fn ArtistsContent(
         .collect();
     let albums_by_artist = build_albums_by_artist(data.albums);
 
-    // Client-side filter and sort for the collection grid
-    let (collection_filter, set_collection_filter) = signal(String::new());
+    // Client-side sort for the collection grid (filter reuses the search query)
     let (collection_sort, set_collection_sort) = signal("az".to_string());
 
     // Precompute artist data for filtering/sorting
@@ -282,102 +281,24 @@ fn ArtistsContent(
                 </div>
             </div>
 
-            // Search results with loading indicator (#14) and "no results" message (#28)
-            <Suspense fallback=move || view! {
-                <Show when=move || !query.get().trim().is_empty()>
-                    <div class="flex items-center gap-2 px-4 py-3 mb-5 text-sm text-zinc-500 dark:text-zinc-400">
-                        <span class="inline-block size-4 border-2 border-zinc-300 dark:border-zinc-600 border-t-blue-500 dark:border-t-blue-400 rounded-full animate-spin"></span>
-                        "Searching\u{2026}"
-                    </div>
-                </Show>
-            }>
-                {move || {
-                    let current_query = query.get();
-                    search_result.get().map(|result| {
-                        match result {
-                            Err(e) => view! {
-                                <ErrorPanel
-                                    message="Search failed. Please try again."
-                                    details=e.to_string()
-                                />
-                            }.into_any(),
-                            Ok(sr) => {
-                                let has_error = sr.error.is_some();
-                                let error_view = sr.error.map(|msg| view! {
-                                    <div class="px-4 py-3 mb-6 rounded-[10px] text-[13px] border border-red-500/30 bg-red-500/[.08] text-red-600">
-                                        {msg}
-                                    </div>
-                                });
-
-                                let has_query = !current_query.trim().is_empty();
-                                let results_view = if !sr.results.is_empty() {
-                                    let names = monitored_names.clone();
-                                    Some(view! {
-                                        <div class=GLASS>
-                                            <div class=GLASS_HEADER>
-                                                <h2 class=GLASS_TITLE>"Search Results"</h2>
-                                            </div>
-                                            <div>
-                                                {sr.results.into_iter().map(|artist| {
-                                                    let already_monitored = names.contains(&artist.name.to_lowercase());
-                                                    view! { <SearchResultRow artist=artist is_monitored=already_monitored set_query=set_query /> }
-                                                }).collect_view()}
-                                            </div>
-                                        </div>
-                                    }.into_any())
-                                } else if has_query && !has_error {
-                                    Some(view! {
-                                        <div class=EMPTY>
-                                            {format!("No artists found for \u{201c}{current_query}\u{201d}")}
-                                        </div>
-                                    }.into_any())
-                                } else {
-                                    None
-                                };
-
-                                view! {
-                                    <div>
-                                        {error_view}
-                                        {results_view}
-                                    </div>
-                                }.into_any()
-                            }
-                        }
-                    })
-                }}
-            </Suspense>
-
-            // Monitored artists collection with filter (#8) and sort (#9)
+            // Monitored artists collection (shown first, filtered by search query)
             <div class=GLASS>
                 <div class=GLASS_HEADER>
                     <h2 class=GLASS_TITLE>"Your Collection"</h2>
                     {if monitored_count > 0 {
                         view! {
-                            <div class="flex items-center gap-2">
-                                <select
-                                    class=SELECT
-                                    aria-label="Sort collection"
-                                    on:change=move |ev| {
-                                        set_collection_sort.set(event_target_value(&ev));
-                                    }
-                                >
-                                    <option value="az" selected=true>"A \u{2013} Z"</option>
-                                    <option value="za">"Z \u{2013} A"</option>
-                                    <option value="recent">"Recently Added"</option>
-                                    <option value="wanted">"Most Wanted"</option>
-                                </select>
-                                <input
-                                    type="text"
-                                    class="py-1 px-2.5 border border-black/[.06] dark:border-white/[.08] rounded-lg text-xs bg-white/40 dark:bg-zinc-800/40 text-zinc-900 dark:text-zinc-100 outline-none w-40 transition-[border-color,box-shadow] duration-150 focus:border-blue-500 focus:shadow-[0_0_0_2px_rgba(59,130,246,.12)] placeholder:text-zinc-400 dark:placeholder:text-zinc-600"
-                                    placeholder="Filter artists..."
-                                    autocomplete="off"
-                                    aria-label="Filter artists"
-                                    prop:value=move || collection_filter.get()
-                                    on:input=move |ev| {
-                                        set_collection_filter.set(event_target_value(&ev));
-                                    }
-                                />
-                            </div>
+                            <select
+                                class=SELECT
+                                aria-label="Sort collection"
+                                on:change=move |ev| {
+                                    set_collection_sort.set(event_target_value(&ev));
+                                }
+                            >
+                                <option value="az" selected=true>"A \u{2013} Z"</option>
+                                <option value="za">"Z \u{2013} A"</option>
+                                <option value="recent">"Recently Added"</option>
+                                <option value="wanted">"Most Wanted"</option>
+                            </select>
                         }.into_any()
                     } else {
                         view! { <span></span> }.into_any()
@@ -388,9 +309,9 @@ fn ArtistsContent(
                 } else {
                     view! {
                         <div class={cls(GLASS_BODY, "p-4")}>
-                            <div class="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-4">
+                            <div class="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
                                 {move || {
-                                    let filter = collection_filter.get().to_lowercase();
+                                    let filter = query.get().trim().to_lowercase();
                                     let sort_key = collection_sort.get();
                                     artists_with_albums.with_value(|all| {
                                         let mut filtered: Vec<_> = all.iter()
@@ -429,6 +350,75 @@ fn ArtistsContent(
                     }.into_any()
                 }}
             </div>
+
+            // Search results — only non-monitored artists, shown below collection
+            <Suspense fallback=move || view! {
+                <Show when=move || !query.get().trim().is_empty()>
+                    <div class="flex items-center gap-2 px-4 py-3 mb-5 text-sm text-zinc-500 dark:text-zinc-400">
+                        <span class="inline-block size-4 border-2 border-zinc-300 dark:border-zinc-600 border-t-blue-500 dark:border-t-blue-400 rounded-full animate-spin"></span>
+                        "Searching\u{2026}"
+                    </div>
+                </Show>
+            }>
+                {move || {
+                    let current_query = query.get();
+                    search_result.get().map(|result| {
+                        match result {
+                            Err(e) => view! {
+                                <ErrorPanel
+                                    message="Search failed. Please try again."
+                                    details=e.to_string()
+                                />
+                            }.into_any(),
+                            Ok(sr) => {
+                                let has_error = sr.error.is_some();
+                                let error_view = sr.error.map(|msg| view! {
+                                    <div class="px-4 py-3 mb-6 rounded-[10px] text-[13px] border border-red-500/30 bg-red-500/[.08] text-red-600">
+                                        {msg}
+                                    </div>
+                                });
+
+                                let has_query = !current_query.trim().is_empty();
+                                // Filter out artists already in the collection
+                                let names = monitored_names.clone();
+                                let new_results: Vec<_> = sr.results.into_iter()
+                                    .filter(|a| !names.contains(&a.name.to_lowercase()))
+                                    .collect();
+
+                                let results_view = if !new_results.is_empty() {
+                                    Some(view! {
+                                        <div class=GLASS>
+                                            <div class=GLASS_HEADER>
+                                                <h2 class=GLASS_TITLE>"Add from Search"</h2>
+                                            </div>
+                                            <div>
+                                                {new_results.into_iter().map(|artist| {
+                                                    view! { <SearchResultRow artist=artist set_query=set_query /> }
+                                                }).collect_view()}
+                                            </div>
+                                        </div>
+                                    }.into_any())
+                                } else if has_query && !has_error {
+                                    Some(view! {
+                                        <div class=EMPTY>
+                                            {format!("No new artists found for \u{201c}{current_query}\u{201d}")}
+                                        </div>
+                                    }.into_any())
+                                } else {
+                                    None
+                                };
+
+                                view! {
+                                    <div>
+                                        {error_view}
+                                        {results_view}
+                                    </div>
+                                }.into_any()
+                            }
+                        }
+                    })
+                }}
+            </Suspense>
         </div>
     }
 }
@@ -437,7 +427,6 @@ fn ArtistsContent(
 #[component]
 fn SearchResultRow(
     artist: SearchArtistResult,
-    #[prop(default = false)] is_monitored: bool,
     set_query: WriteSignal<String>,
 ) -> impl IntoView {
     let navigate = leptos_router::hooks::use_navigate();
@@ -530,62 +519,50 @@ fn SearchResultRow(
                     </div>
                 })}
             </div>
-            {if is_monitored {
-                view! {
-                    <span class="inline-flex items-center px-2.5 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400 bg-emerald-500/[.08] border border-emerald-500/20 rounded-lg">
-                        "Monitored"
-                    </span>
-                }.into_any()
-            } else {
-                view! {
-                    <button type="button"
-                        class=move || btn_cls(BTN_PRIMARY, "px-2.5 py-0.5 text-xs", adding.get())
-                        disabled=move || adding.get()
-                        on:click=move |_| {
-                            adding.set(true);
-                            let name = artist_name.clone();
-                            let provider = artist_provider.clone();
-                            let ext_id = artist_external_id.clone();
-                            let img_url = artist_image_url.clone();
-                            let ext_url = artist_url.clone();
-                            let navigate = navigate.clone();
-                            let toaster = expect_toaster();
-                            leptos::task::spawn_local(async move {
-                                match dispatch_action(ServerAction::AddArtist {
-                                    name: name.clone(),
-                                    provider,
-                                    external_id: ext_id,
-                                    image_url: img_url,
-                                    external_url: ext_url,
-                                }).await {
-                                    Ok(()) => {
-                                        toaster.toast(
-                                            ToastBuilder::new("Artist added")
-                                                .with_level(ToastLevel::Success)
-                                                .with_position(ToastPosition::BottomRight)
-                                                .with_expiry(Some(4_000)),
-                                        );
-                                        // Clear search so stale results disappear and the
-                                        // updated collection is immediately visible.
-                                        set_query.set(String::new());
-                                        navigate("/artists", Default::default());
-                                    }
-                                    Err(e) => {
-                                        toaster.toast(
-                                            ToastBuilder::new(format!("Error: {e}"))
-                                                .with_level(ToastLevel::Error)
-                                                .with_position(ToastPosition::BottomRight)
-                                                .with_expiry(Some(8_000)),
-                                        );
-                                        adding.set(false);
-                                    }
-                                }
-                            });
-                        }>
-                        {move || if adding.get() { "Adding\u{2026}" } else { "+ Add" }}
-                    </button>
-                }.into_any()
-            }}
+            <button type="button"
+                class=move || btn_cls(BTN_PRIMARY, "px-2.5 py-0.5 text-xs", adding.get())
+                disabled=move || adding.get()
+                on:click=move |_| {
+                    adding.set(true);
+                    let name = artist_name.clone();
+                    let provider = artist_provider.clone();
+                    let ext_id = artist_external_id.clone();
+                    let img_url = artist_image_url.clone();
+                    let ext_url = artist_url.clone();
+                    let navigate = navigate.clone();
+                    let toaster = expect_toaster();
+                    leptos::task::spawn_local(async move {
+                        match dispatch_action(ServerAction::AddArtist {
+                            name: name.clone(),
+                            provider,
+                            external_id: ext_id,
+                            image_url: img_url,
+                            external_url: ext_url,
+                        }).await {
+                            Ok(()) => {
+                                toaster.toast(
+                                    ToastBuilder::new("Artist added")
+                                        .with_level(ToastLevel::Success)
+                                        .with_position(ToastPosition::BottomRight)
+                                        .with_expiry(Some(4_000)),
+                                );
+                                set_query.set(String::new());
+                                navigate("/artists", Default::default());
+                            }
+                            Err(e) => {
+                                toaster.toast(
+                                    ToastBuilder::new(format!("Error: {e}"))
+                                        .with_level(ToastLevel::Error)
+                                        .with_position(ToastPosition::BottomRight)
+                                        .with_expiry(Some(8_000)),
+                                );
+                                adding.set(false);
+                            }
+                        }
+                    });
+                }>
+                {move || if adding.get() { "Adding\u{2026}" } else { "+ Add" }}
+            </button>
         </div>
     }
 }

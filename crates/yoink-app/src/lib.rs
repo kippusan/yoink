@@ -1,3 +1,5 @@
+#![recursion_limit = "256"]
+
 pub mod actions;
 pub mod components;
 pub mod hooks;

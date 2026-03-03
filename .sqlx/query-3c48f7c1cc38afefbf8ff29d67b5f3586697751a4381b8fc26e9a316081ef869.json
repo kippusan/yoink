@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT\n            id as \"id!: Uuid\",\n            title, version, disc_number, track_number, duration_secs,\n            explicit as \"explicit!: bool\",\n            isrc, track_artist, file_path\n         FROM tracks WHERE album_id = $1\n         ORDER BY disc_number, track_number",
+  "query": "SELECT\n            id as \"id!: Uuid\",\n            title, version, disc_number, track_number, duration_secs,\n            explicit as \"explicit!: bool\",\n            isrc, track_artist, file_path,\n            monitored as \"monitored!: bool\",\n            acquired as \"acquired!: bool\"\n         FROM tracks WHERE album_id = $1\n         ORDER BY disc_number, track_number",
   "describe": {
     "columns": [
       {
@@ -52,6 +52,16 @@
         "name": "file_path",
         "ordinal": 9,
         "type_info": "Text"
+      },
+      {
+        "name": "monitored!: bool",
+        "ordinal": 10,
+        "type_info": "Integer"
+      },
+      {
+        "name": "acquired!: bool",
+        "ordinal": 11,
+        "type_info": "Integer"
       }
     ],
     "parameters": {
@@ -67,8 +77,10 @@
       false,
       true,
       true,
-      true
+      true,
+      false,
+      false
     ]
   },
-  "hash": "36e3430c18451fb0f9759d89d0fab273a9791f10ea24a5b3e9245d92123f47a1"
+  "hash": "3c48f7c1cc38afefbf8ff29d67b5f3586697751a4381b8fc26e9a316081ef869"
 }

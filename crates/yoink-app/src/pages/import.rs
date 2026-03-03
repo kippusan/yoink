@@ -511,7 +511,7 @@ fn ImportRow(item: ImportPreviewItem, selected: RwSignal<Option<usize>>) -> impl
                 } else {
                     let search_name = discovered_artist.clone();
                     let search_url = format!(
-                        "/artists?q={}",
+                        "/library?q={}",
                         js_encode_uri_component(&search_name)
                     );
                     view! {

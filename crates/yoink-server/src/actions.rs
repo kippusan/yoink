@@ -109,6 +109,110 @@ pub(crate) fn spawn_recompute_artist_match_suggestions(state: &AppState, artist_
     });
 }
 
+/// Find an existing artist by provider link, or create a new lightweight
+/// (unmonitored) artist with a single provider link.
+async fn find_or_create_lightweight_artist(
+    state: &AppState,
+    provider: &str,
+    artist_external_id: &str,
+    artist_name: &str,
+) -> Result<Uuid, String> {
+    // Check if artist already exists via provider link.
+    if let Ok(Some(id)) =
+        db::find_artist_by_provider_link(&state.db, provider, artist_external_id).await
+    {
+        return Ok(id);
+    }
+
+    let new_id = Uuid::now_v7();
+    let external_url = default_provider_artist_url(provider, artist_external_id);
+    let artist = yoink_shared::MonitoredArtist {
+        id: new_id,
+        name: artist_name.to_string(),
+        image_url: None,
+        bio: None,
+        monitored: false, // lightweight — no auto-sync
+        added_at: Utc::now(),
+    };
+    let _ = db::upsert_artist(&state.db, &artist).await;
+    {
+        let mut artists = state.monitored_artists.write().await;
+        artists.push(artist);
+    }
+
+    let link = db::ArtistProviderLink {
+        id: Uuid::now_v7(),
+        artist_id: new_id,
+        provider: provider.to_string(),
+        external_id: artist_external_id.to_string(),
+        external_url,
+        external_name: Some(artist_name.to_string()),
+        image_ref: None,
+    };
+    let _ = db::upsert_artist_provider_link(&state.db, &link).await;
+
+    Ok(new_id)
+}
+
+/// Fetch tracks for an album from a provider and store them in the DB.
+/// If `monitor_all` is true, every track is marked as monitored.
+async fn store_album_tracks(
+    state: &AppState,
+    provider: &str,
+    external_album_id: &str,
+    album_id: Uuid,
+    monitor_all: bool,
+) -> Result<(), String> {
+    let prov = state
+        .registry
+        .metadata_provider(provider)
+        .ok_or_else(|| format!("Unknown metadata provider: {provider}"))?;
+
+    let (tracks, _album_extra) = prov
+        .fetch_tracks(external_album_id)
+        .await
+        .map_err(|e| format!("Failed to fetch tracks: {}", e.0))?;
+
+    for track in tracks {
+        let ext_id = track.external_id.clone();
+
+        // Skip if this exact provider+external_id track already exists.
+        let existing = db::find_track_by_provider_link(&state.db, provider, &ext_id)
+            .await
+            .ok()
+            .flatten();
+        if existing.is_some() {
+            continue;
+        }
+
+        let secs = track.duration_secs;
+        let mins = secs / 60;
+        let rem = secs % 60;
+
+        let track_info = yoink_shared::TrackInfo {
+            id: Uuid::now_v7(),
+            title: track.title,
+            version: track.version,
+            disc_number: track.disc_number.unwrap_or(1),
+            track_number: track.track_number.max(1),
+            duration_secs: secs,
+            duration_display: format!("{mins}:{rem:02}"),
+            isrc: track.isrc,
+            explicit: track.explicit,
+            track_artist: track.artists,
+            file_path: None,
+            monitored: monitor_all,
+            acquired: false,
+        };
+
+        let _ = db::upsert_track(&state.db, &track_info, album_id).await;
+        let _ =
+            db::upsert_track_provider_link(&state.db, track_info.id, provider, &ext_id).await;
+    }
+
+    Ok(())
+}
+
 /// Execute a `ServerAction` against the real `AppState`.
 pub(crate) async fn dispatch_action_impl(
     state: AppState,
@@ -287,6 +391,7 @@ pub(crate) async fn dispatch_action_impl(
                     name: name.clone(),
                     image_url: image_url.clone(),
                     bio: None,
+                    monitored: true, // Artists added via search are fully monitored
                     added_at: Utc::now(),
                 };
                 let _ = db::upsert_artist(&state.db, &artist).await;
@@ -852,6 +957,302 @@ pub(crate) async fn dispatch_action_impl(
                     summary.errors.join("; ")
                 ));
             }
+        }
+
+        ServerAction::ToggleArtistMonitor {
+            artist_id,
+            monitored,
+        } => {
+            let _ = db::update_artist_monitored(&state.db, artist_id, monitored).await;
+            {
+                let mut artists = state.monitored_artists.write().await;
+                if let Some(artist) = artists.iter_mut().find(|a| a.id == artist_id) {
+                    artist.monitored = monitored;
+                }
+            }
+            if monitored {
+                // Promoting to fully monitored — sync discography from providers
+                let _ = services::sync_artist_albums(&state, artist_id).await;
+                spawn_fetch_artist_bio(&state, artist_id);
+                spawn_recompute_artist_match_suggestions(&state, artist_id);
+            }
+            info!(%artist_id, monitored, "Toggled artist monitored status");
+            state.notify_sse();
+        }
+
+        ServerAction::AddAlbum {
+            provider,
+            external_album_id,
+            artist_external_id,
+            artist_name,
+            monitor_all,
+        } => {
+            // 1. Find or create lightweight (unmonitored) artist.
+            let artist_id =
+                find_or_create_lightweight_artist(&state, &provider, &artist_external_id, &artist_name).await?;
+
+            // 2. Fetch album metadata from the provider.
+            let prov = state
+                .registry
+                .metadata_provider(&provider)
+                .ok_or_else(|| format!("Unknown metadata provider: {provider}"))?;
+
+            let albums = prov
+                .fetch_albums(&artist_external_id)
+                .await
+                .map_err(|e| format!("Failed to fetch albums: {}", e.0))?;
+
+            let prov_album = albums
+                .into_iter()
+                .find(|a| a.external_id == external_album_id)
+                .ok_or_else(|| "Album not found in provider's album listing".to_string())?;
+
+            // 3. Check if album already exists via provider link.
+            let existing_album_id =
+                db::find_album_by_provider_link(&state.db, &provider, &external_album_id)
+                    .await
+                    .ok()
+                    .flatten();
+
+            let album_id = if let Some(id) = existing_album_id {
+                id
+            } else {
+                let new_id = Uuid::now_v7();
+                let album = yoink_shared::MonitoredAlbum {
+                    id: new_id,
+                    artist_id,
+                    artist_ids: vec![artist_id],
+                    artist_credits: prov_album
+                        .artists
+                        .iter()
+                        .map(|a| yoink_shared::ArtistCredit {
+                            name: a.name.clone(),
+                            provider: Some(provider.clone()),
+                            external_id: Some(a.external_id.clone()),
+                        })
+                        .collect(),
+                    title: prov_album.title.clone(),
+                    album_type: prov_album.album_type.clone(),
+                    release_date: prov_album.release_date.clone(),
+                    cover_url: prov_album
+                        .cover_ref
+                        .as_deref()
+                        .map(|c| yoink_shared::provider_image_url(&provider, c, 640)),
+                    explicit: prov_album.explicit,
+                    monitored: monitor_all,
+                    acquired: false,
+                    wanted: monitor_all,
+                    partially_wanted: false,
+                    added_at: Utc::now(),
+                };
+                let _ = db::upsert_album(&state.db, &album).await;
+
+                let link = db::AlbumProviderLink {
+                    id: Uuid::now_v7(),
+                    album_id: new_id,
+                    provider: provider.clone(),
+                    external_id: external_album_id.clone(),
+                    external_url: prov_album.url.clone(),
+                    external_title: Some(prov_album.title.clone()),
+                    cover_ref: prov_album.cover_ref.clone(),
+                };
+                let _ = db::upsert_album_provider_link(&state.db, &link).await;
+                let _ = db::add_album_artist(&state.db, new_id, artist_id).await;
+
+                {
+                    let mut albums = state.monitored_albums.write().await;
+                    albums.push(album);
+                }
+                new_id
+            };
+
+            // 4. Fetch and store tracks.
+            store_album_tracks(&state, &provider, &external_album_id, album_id, monitor_all).await?;
+
+            // 5. If monitored, queue download.
+            if monitor_all {
+                let album = {
+                    let albums = state.monitored_albums.read().await;
+                    albums.iter().find(|a| a.id == album_id).cloned()
+                };
+                if let Some(album) = album {
+                    services::enqueue_album_download(&state, &album).await;
+                }
+            }
+
+            info!(%album_id, %provider, %external_album_id, monitor_all, "Added album from search");
+            state.notify_sse();
+        }
+
+        ServerAction::AddTrack {
+            provider,
+            external_track_id,
+            external_album_id,
+            artist_external_id,
+            artist_name,
+        } => {
+            // 1. Find or create lightweight (unmonitored) artist.
+            let artist_id =
+                find_or_create_lightweight_artist(&state, &provider, &artist_external_id, &artist_name).await?;
+
+            // 2. Fetch album metadata to create the parent album.
+            let prov = state
+                .registry
+                .metadata_provider(&provider)
+                .ok_or_else(|| format!("Unknown metadata provider: {provider}"))?;
+
+            let albums = prov
+                .fetch_albums(&artist_external_id)
+                .await
+                .map_err(|e| format!("Failed to fetch albums: {}", e.0))?;
+
+            let prov_album = albums
+                .into_iter()
+                .find(|a| a.external_id == external_album_id)
+                .ok_or_else(|| "Album not found in provider's album listing".to_string())?;
+
+            // 3. Find or create the album.
+            let existing_album_id =
+                db::find_album_by_provider_link(&state.db, &provider, &external_album_id)
+                    .await
+                    .ok()
+                    .flatten();
+
+            let album_id = if let Some(id) = existing_album_id {
+                id
+            } else {
+                let new_id = Uuid::now_v7();
+                let album = yoink_shared::MonitoredAlbum {
+                    id: new_id,
+                    artist_id,
+                    artist_ids: vec![artist_id],
+                    artist_credits: prov_album
+                        .artists
+                        .iter()
+                        .map(|a| yoink_shared::ArtistCredit {
+                            name: a.name.clone(),
+                            provider: Some(provider.clone()),
+                            external_id: Some(a.external_id.clone()),
+                        })
+                        .collect(),
+                    title: prov_album.title.clone(),
+                    album_type: prov_album.album_type.clone(),
+                    release_date: prov_album.release_date.clone(),
+                    cover_url: prov_album
+                        .cover_ref
+                        .as_deref()
+                        .map(|c| yoink_shared::provider_image_url(&provider, c, 640)),
+                    explicit: prov_album.explicit,
+                    monitored: false, // album-level not monitored; only the specific track
+                    acquired: false,
+                    wanted: false,
+                    partially_wanted: true, // will have a monitored track
+                    added_at: Utc::now(),
+                };
+                let _ = db::upsert_album(&state.db, &album).await;
+
+                let link = db::AlbumProviderLink {
+                    id: Uuid::now_v7(),
+                    album_id: new_id,
+                    provider: provider.clone(),
+                    external_id: external_album_id.clone(),
+                    external_url: prov_album.url.clone(),
+                    external_title: Some(prov_album.title.clone()),
+                    cover_ref: prov_album.cover_ref.clone(),
+                };
+                let _ = db::upsert_album_provider_link(&state.db, &link).await;
+                let _ = db::add_album_artist(&state.db, new_id, artist_id).await;
+
+                {
+                    let mut albums = state.monitored_albums.write().await;
+                    albums.push(album);
+                }
+                new_id
+            };
+
+            // 4. Fetch and store tracks (none monitored by default).
+            store_album_tracks(&state, &provider, &external_album_id, album_id, false).await?;
+
+            // 5. Find the target track and mark it as monitored.
+            if let Ok(Some(track_id)) =
+                db::find_track_by_provider_link(&state.db, &provider, &external_track_id).await
+            {
+                let _ = db::update_track_flags(&state.db, track_id, true, false).await;
+
+                // Recompute partially_wanted
+                {
+                    let mut albums = state.monitored_albums.write().await;
+                    if let Some(album) = albums.iter_mut().find(|a| a.id == album_id) {
+                        services::recompute_partially_wanted(&state.db, album).await;
+                        if album.partially_wanted {
+                            let album_clone = album.clone();
+                            drop(albums);
+                            services::enqueue_album_download(&state, &album_clone).await;
+                        }
+                    }
+                }
+            }
+
+            info!(%album_id, %provider, %external_track_id, "Added track from search");
+            state.notify_sse();
+        }
+
+        ServerAction::ToggleTrackMonitor {
+            track_id,
+            album_id,
+            monitored,
+        } => {
+            // Update the track's monitored flag in DB
+            let current_acquired = {
+                let tracks = db::load_tracks_for_album(&state.db, album_id).await.unwrap_or_default();
+                tracks.iter().find(|t| t.id == track_id).map(|t| t.acquired).unwrap_or(false)
+            };
+            let _ = db::update_track_flags(&state.db, track_id, monitored, current_acquired).await;
+
+            // Recompute the album's partially_wanted flag
+            {
+                let mut albums = state.monitored_albums.write().await;
+                if let Some(album) = albums.iter_mut().find(|a| a.id == album_id) {
+                    services::recompute_partially_wanted(&state.db, album).await;
+                    // If track became wanted, trigger album download (the download
+                    // worker will handle track-level filtering in Phase 3)
+                    if monitored && !current_acquired && (album.wanted || album.partially_wanted) {
+                        let album_clone = album.clone();
+                        drop(albums);
+                        services::enqueue_album_download(&state, &album_clone).await;
+                    }
+                }
+            }
+            info!(%track_id, %album_id, monitored, "Toggled track monitored status");
+            state.notify_sse();
+        }
+
+        ServerAction::BulkToggleTrackMonitor { album_id, monitored } => {
+            // Update all tracks for the album
+            let tracks = db::load_tracks_for_album(&state.db, album_id)
+                .await
+                .unwrap_or_default();
+
+            for track in &tracks {
+                let _ = db::update_track_flags(&state.db, track.id, monitored, track.acquired).await;
+            }
+
+            // Recompute the album's partially_wanted flag and potentially enqueue
+            {
+                let mut albums = state.monitored_albums.write().await;
+                if let Some(album) = albums.iter_mut().find(|a| a.id == album_id) {
+                    services::recompute_partially_wanted(&state.db, album).await;
+                    if album.wanted || album.partially_wanted {
+                        let album_clone = album.clone();
+                        drop(albums);
+                        services::enqueue_album_download(&state, &album_clone).await;
+                    }
+                }
+            }
+
+            let count = tracks.len();
+            info!(%album_id, monitored, count, "Bulk toggled track monitoring");
+            state.notify_sse();
         }
     }
 

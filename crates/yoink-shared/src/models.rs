@@ -46,6 +46,9 @@ pub struct MonitoredArtist {
     pub name: String,
     pub image_url: Option<String>,
     pub bio: Option<String>,
+    /// Whether this artist is fully monitored (discography synced from providers).
+    /// `false` = lightweight artist (only explicitly-added albums, no auto-sync).
+    pub monitored: bool,
     pub added_at: DateTime<Utc>,
 }
 
@@ -82,6 +85,10 @@ pub struct MonitoredAlbum {
     pub monitored: bool,
     pub acquired: bool,
     pub wanted: bool,
+    /// True when the album is not fully monitored but has individually monitored
+    /// tracks that are not yet acquired.
+    #[serde(default)]
+    pub partially_wanted: bool,
     pub added_at: DateTime<Utc>,
 }
 
@@ -100,6 +107,20 @@ pub struct TrackInfo {
     pub track_artist: Option<String>,
     /// Local file path relative to the music root (populated for acquired albums).
     pub file_path: Option<String>,
+    /// Whether this individual track is monitored for download.
+    pub monitored: bool,
+    /// Whether this track has been acquired (file exists on disk).
+    pub acquired: bool,
+}
+
+/// A track with its parent album and artist context, for library-wide views.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LibraryTrack {
+    pub track: TrackInfo,
+    pub album_id: Uuid,
+    pub album_title: String,
+    pub artist_id: Uuid,
+    pub artist_name: String,
 }
 
 /// Provider link info for the UI.
@@ -155,4 +176,41 @@ pub struct SearchArtistResult {
     pub country: Option<String>,
     pub tags: Vec<String>,
     pub popularity: Option<u8>,
+}
+
+/// An album search result from a metadata provider.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchAlbumResult {
+    pub provider: String,
+    pub external_id: String,
+    pub title: String,
+    pub album_type: Option<String>,
+    pub release_date: Option<String>,
+    pub cover_url: Option<String>,
+    pub url: Option<String>,
+    pub explicit: bool,
+    /// Primary artist name for display.
+    pub artist_name: String,
+    /// Provider-specific external ID for the primary artist.
+    pub artist_external_id: String,
+}
+
+/// A track search result from a metadata provider.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchTrackResult {
+    pub provider: String,
+    pub external_id: String,
+    pub title: String,
+    pub version: Option<String>,
+    pub duration_secs: u32,
+    pub duration_display: String,
+    pub isrc: Option<String>,
+    pub explicit: bool,
+    /// Display-ready track artist string.
+    pub artist_name: String,
+    pub artist_external_id: String,
+    /// Album info for context.
+    pub album_title: String,
+    pub album_external_id: String,
+    pub album_cover_url: Option<String>,
 }

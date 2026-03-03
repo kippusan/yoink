@@ -26,6 +26,8 @@ pub(crate) fn build_router(state: AppState) -> Router {
         .route("/api/tidal/instances", get(list_tidal_instances))
         .route("/api/albums/{album_id}/tracks", get(album_tracks))
         .route("/api/search", get(api_search))
+        .route("/api/search/albums", get(api_search_albums))
+        .route("/api/search/tracks", get(api_search_tracks))
         .route("/api/events", get(sse_events))
         .route("/api/image/{image_id}/{size}", get(proxy_tidal_image))
         .route(
@@ -111,6 +113,8 @@ async fn album_tracks(
                             explicit: t.explicit,
                             track_artist: t.artists,
                             file_path: None,
+                            monitored: false,
+                            acquired: false,
                         }
                     })
                     .collect();
@@ -168,6 +172,87 @@ async fn api_search(
                 country: a.country.clone(),
                 tags: a.tags.clone(),
                 popularity: a.popularity,
+            });
+        }
+    }
+
+    (StatusCode::OK, Json(results)).into_response()
+}
+
+async fn api_search_albums(
+    State(state): State<AppState>,
+    Query(query): Query<SearchQuery>,
+) -> impl IntoResponse {
+    let q = match query.q.filter(|v| !v.trim().is_empty()) {
+        Some(q) => q,
+        None => return (StatusCode::OK, Json(Vec::<SearchResultAlbum>::new())).into_response(),
+    };
+
+    let all_results = state.registry.search_albums_all(&q).await;
+    let mut results = Vec::new();
+
+    for (provider_id, albums) in all_results {
+        for a in albums {
+            let cover_url = a
+                .cover_ref
+                .as_deref()
+                .map(|c| yoink_shared::provider_image_url(&provider_id, c, 320));
+
+            results.push(SearchResultAlbum {
+                provider: provider_id.clone(),
+                external_id: a.external_id,
+                title: a.title,
+                album_type: a.album_type,
+                release_date: a.release_date,
+                cover_url,
+                url: a.url,
+                explicit: a.explicit,
+                artist_name: a.artist_name,
+                artist_external_id: a.artist_external_id,
+            });
+        }
+    }
+
+    (StatusCode::OK, Json(results)).into_response()
+}
+
+async fn api_search_tracks(
+    State(state): State<AppState>,
+    Query(query): Query<SearchQuery>,
+) -> impl IntoResponse {
+    let q = match query.q.filter(|v| !v.trim().is_empty()) {
+        Some(q) => q,
+        None => return (StatusCode::OK, Json(Vec::<SearchResultTrack>::new())).into_response(),
+    };
+
+    let all_results = state.registry.search_tracks_all(&q).await;
+    let mut results = Vec::new();
+
+    for (provider_id, tracks) in all_results {
+        for t in tracks {
+            let secs = t.duration_secs;
+            let mins = secs / 60;
+            let rem = secs % 60;
+
+            let album_cover_url = t
+                .album_cover_ref
+                .as_deref()
+                .map(|c| yoink_shared::provider_image_url(&provider_id, c, 160));
+
+            results.push(SearchResultTrack {
+                provider: provider_id.clone(),
+                external_id: t.external_id,
+                title: t.title,
+                version: t.version,
+                duration_secs: t.duration_secs,
+                duration_display: format!("{mins}:{rem:02}"),
+                isrc: t.isrc,
+                explicit: t.explicit,
+                artist_name: t.artist_name,
+                artist_external_id: t.artist_external_id,
+                album_title: t.album_title,
+                album_external_id: t.album_external_id,
+                album_cover_url,
             });
         }
     }

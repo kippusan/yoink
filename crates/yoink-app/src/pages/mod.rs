@@ -3,8 +3,12 @@ pub mod artist_detail;
 pub mod artists;
 pub mod dashboard;
 pub mod import;
+pub mod library;
+pub mod library_albums;
+pub mod library_tracks;
 pub mod merge_albums;
 pub mod not_found;
+pub mod search;
 pub mod wanted;
 
 /// Return an inline SVG string for a provider icon using simpleicons-rs.

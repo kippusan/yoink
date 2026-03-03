@@ -1,11 +1,12 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use leptos::prelude::*;
-use lucide_leptos::X;
+use lucide_leptos::{ChevronDown, ChevronRight, X};
 
 use yoink_shared::{
-    DownloadJob, DownloadStatus, MonitoredAlbum, MonitoredArtist, ServerAction, album_cover_url,
-    build_albums_by_artist, build_artist_names, build_latest_jobs, status_class,
+    DownloadJob, DownloadStatus, MonitoredAlbum, MonitoredArtist, ServerAction, TrackInfo,
+    WantedAlbumGroup, WantedArtistGroup, album_cover_url, build_latest_jobs, build_wanted_tree,
+    status_class,
 };
 
 use crate::components::toast::dispatch_with_toast;
@@ -19,52 +20,56 @@ use crate::styles::{
 #[cfg(feature = "hydrate")]
 use leptoaster::{ToastBuilder, ToastLevel, ToastPosition, expect_toaster};
 
-// ── Page-specific Tailwind class constants ──────────────────
-
 const ICON_BTN: &str = "inline-flex items-center justify-center size-7 border border-black/[.08] dark:border-white/10 rounded-lg bg-white/50 dark:bg-zinc-800/50 backdrop-blur-[8px] text-zinc-500 dark:text-zinc-400 cursor-pointer transition-all duration-150 p-0 font-inherit text-[13px] hover:bg-blue-500 hover:border-blue-500 hover:text-white hover:shadow-[0_2px_8px_rgba(59,130,246,.3)]";
-const WANTED_CARD: &str = "flex items-center gap-3.5 px-5 py-3.5 border-b border-black/[.04] dark:border-white/[.04] transition-[background] duration-[120ms] last:border-b-0 hover:bg-blue-500/[.03] dark:hover:bg-blue-500/[.05]";
-const WANTED_THUMB: &str = "size-12 rounded-lg object-cover shrink-0 bg-zinc-200 dark:bg-zinc-800 shadow-[0_2px_8px_rgba(0,0,0,.08)] dark:shadow-[0_2px_8px_rgba(0,0,0,.3)]";
-const WANTED_THUMB_FALLBACK: &str = "size-12 rounded-lg inline-flex items-center justify-center bg-zinc-200 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-600 font-bold text-base shrink-0";
-const GROUP_HEADER: &str = "text-[13px] font-bold text-blue-500 dark:text-blue-400 px-5 py-2.5 border-b border-black/[.04] dark:border-white/[.04] bg-blue-500/[.03] dark:bg-blue-500/[.05] uppercase tracking-wide";
+const TREE_ARTIST_HEADER: &str = "flex items-center gap-2 px-5 py-3 border-b border-black/[.04] dark:border-white/[.04] bg-blue-500/[.03] dark:bg-blue-500/[.05]";
+const TREE_ALBUM_ROW: &str = "flex items-center gap-3 px-5 py-3 border-b border-black/[.04] dark:border-white/[.04]";
 
-// ── DTO for server function response ────────────────────────
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct WantedAlbumWithTracks {
+    pub album: MonitoredAlbum,
+    pub tracks: Vec<TrackInfo>,
+}
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct WantedData {
-    pub wanted: Vec<MonitoredAlbum>,
+    pub albums: Vec<WantedAlbumWithTracks>,
     pub artists: Vec<MonitoredArtist>,
     pub jobs: Vec<DownloadJob>,
 }
 
-// ── Server function ─────────────────────────────────────────
-
 #[server(GetWantedData, "/leptos")]
 pub async fn get_wanted_data() -> Result<WantedData, ServerFnError> {
-    // ServerContext was provided via provide_context in main.rs
     let ctx = use_context::<yoink_shared::ServerContext>()
         .ok_or_else(|| ServerFnError::new("ServerContext not available"))?;
 
     let artists = ctx.monitored_artists.read().await.clone();
     let jobs = ctx.download_jobs.read().await.clone();
-    let wanted: Vec<MonitoredAlbum> = ctx
+    let wanted_albums: Vec<MonitoredAlbum> = ctx
         .monitored_albums
         .read()
         .await
         .iter()
-        .filter(|a| a.wanted)
+        .filter(|a| a.wanted || a.partially_wanted)
         .cloned()
         .collect();
 
+    let fetches = wanted_albums.iter().map(|album| {
+        let fetch_tracks = ctx.fetch_tracks.clone();
+        let album = album.clone();
+        async move {
+            let tracks = (fetch_tracks)(album.id).await.unwrap_or_default();
+            WantedAlbumWithTracks { album, tracks }
+        }
+    });
+    let albums = futures::future::join_all(fetches).await;
+
     Ok(WantedData {
-        wanted,
+        albums,
         artists,
         jobs,
     })
 }
 
-// ── Page component ──────────────────────────────────────────
-
-/// Wanted page — shows albums that are wanted but not yet acquired.
 #[component]
 pub fn WantedPage() -> impl IntoView {
     set_page_title("Wanted");
@@ -80,30 +85,7 @@ pub fn WantedPage() -> impl IntoView {
                         <div class=HEADER_BAR>
                             <div class="flex items-center gap-2"><MobileMenuButton /><h1 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 m-0">"Wanted"</h1></div>
                         </div>
-                        <div class="p-6 max-md:p-4">
-                            <div class="bg-white/70 dark:bg-zinc-800/60 rounded-xl border border-black/[.06] dark:border-white/[.08] overflow-hidden">
-                                <div class="px-5 py-3 border-b border-black/[.06] dark:border-white/[.06]">
-                                    <div class="h-4 w-28 bg-zinc-200 dark:bg-zinc-700 rounded animate-pulse"></div>
-                                </div>
-                                // Skeleton artist group header + wanted rows
-                                {(0..3).map(|_| view! {
-                                    <div class="px-5 py-2.5 border-b border-black/[.04] dark:border-white/[.04] bg-blue-500/[.03] dark:bg-blue-500/[.05]">
-                                        <div class="h-3 w-24 bg-zinc-200 dark:bg-zinc-700 rounded animate-pulse"></div>
-                                    </div>
-                                    {(0..2).map(|_| view! {
-                                        <div class="flex items-center gap-3.5 px-5 py-3.5 border-b border-black/[.04] dark:border-white/[.04] animate-pulse">
-                                            <div class="size-12 rounded-lg bg-zinc-200 dark:bg-zinc-700 shrink-0"></div>
-                                            <div class="flex-1 min-w-0">
-                                                <div class="h-3.5 w-36 bg-zinc-200 dark:bg-zinc-700 rounded mb-2"></div>
-                                                <div class="h-3 w-20 bg-zinc-200 dark:bg-zinc-700 rounded"></div>
-                                            </div>
-                                            <div class="h-5 w-16 bg-zinc-200 dark:bg-zinc-700 rounded-full"></div>
-                                            <div class="h-7 w-16 bg-zinc-200 dark:bg-zinc-700 rounded-lg"></div>
-                                        </div>
-                                    }).collect_view()}
-                                }).collect_view()}
-                            </div>
-                        </div>
+                        <div class="p-6 max-md:p-4"><div class=EMPTY>"Loading wanted tree..."</div></div>
                     </div>
                 }>
                     {move || {
@@ -111,15 +93,14 @@ pub fn WantedPage() -> impl IntoView {
                             Err(e) => view! {
                                 <div class="p-6 max-md:p-4">
                                     <ErrorPanel
-                                        message="Failed to load wanted albums."
+                                        message="Failed to load wanted items."
                                         details=e.to_string()
                                         retry_href="/wanted"
                                     />
                                 </div>
-                            }.into_any(),
-                            Ok(data) => {
-                                view! { <WantedContent data=data /> }.into_any()
                             }
+                            .into_any(),
+                            Ok(data) => view! { <WantedContent data=data /> }.into_any(),
                         })
                     }}
                 </Transition>
@@ -128,15 +109,12 @@ pub fn WantedPage() -> impl IntoView {
     }
 }
 
-/// Inner content rendered once data is loaded.
 #[component]
 fn WantedContent(data: WantedData) -> impl IntoView {
-    let artist_names = build_artist_names(&data.artists);
     let latest_jobs = build_latest_jobs(data.jobs);
 
-    // Compute bulk action counts before grouping
-    let queueable_album_ids: Vec<yoink_shared::Uuid> = data
-        .wanted
+    let albums_only: Vec<MonitoredAlbum> = data.albums.iter().map(|x| x.album.clone()).collect();
+    let queueable_album_ids: Vec<yoink_shared::Uuid> = albums_only
         .iter()
         .filter(|album| {
             let job_status = latest_jobs.get(&album.id).map(|j| j.status.clone());
@@ -148,8 +126,7 @@ fn WantedContent(data: WantedData) -> impl IntoView {
         })
         .map(|a| a.id)
         .collect();
-    let failed_album_ids: Vec<yoink_shared::Uuid> = data
-        .wanted
+    let failed_album_ids: Vec<yoink_shared::Uuid> = albums_only
         .iter()
         .filter(|album| {
             matches!(
@@ -159,45 +136,57 @@ fn WantedContent(data: WantedData) -> impl IntoView {
         })
         .map(|a| a.id)
         .collect();
-    let queueable_count = queueable_album_ids.len();
-    let failed_count = failed_album_ids.len();
 
-    let albums_by_artist = build_albums_by_artist(data.wanted);
+    let tree: Vec<WantedArtistGroup> = build_wanted_tree(
+        &data.artists,
+        data.albums
+            .iter()
+            .map(|x| (x.album.clone(), x.tracks.clone()))
+            .collect(),
+    );
 
-    let mut artist_order: Vec<(yoink_shared::Uuid, String)> = albums_by_artist
-        .keys()
-        .map(|aid| {
-            let name = artist_names
-                .get(aid)
-                .cloned()
-                .unwrap_or_else(|| format!("Unknown ({aid})"));
-            (*aid, name)
-        })
-        .collect();
-    artist_order.sort_by(|a, b| a.1.to_lowercase().cmp(&b.1.to_lowercase()));
+    let total_albums: usize = tree.iter().map(|a| a.albums.len()).sum();
+    let total_tracks: usize = tree
+        .iter()
+        .flat_map(|a| a.albums.iter())
+        .map(|ag| if ag.album.monitored { 0 } else { ag.wanted_tracks.len() })
+        .sum();
+    let summary = if total_tracks > 0 {
+        format!("{total_albums} albums · {total_tracks} tracks")
+    } else {
+        format!("{total_albums} albums")
+    };
 
-    let total_wanted: usize = albums_by_artist.values().map(|v| v.len()).sum();
-    let total_str = format!("{total_wanted} albums");
-
-    // Bulk action loading states
     let queue_all_loading = RwSignal::new(false);
     let retry_all_loading = RwSignal::new(false);
 
+    let open_artists = RwSignal::new(
+        tree.iter()
+            .map(|g| g.artist_id)
+            .collect::<HashSet<yoink_shared::Uuid>>(),
+    );
+    let open_albums = RwSignal::new(
+        tree.iter()
+            .flat_map(|g| g.albums.iter().map(|a| a.album.id))
+            .collect::<HashSet<yoink_shared::Uuid>>(),
+    );
+
+    let latest_jobs_sv = StoredValue::new(latest_jobs);
+
     view! {
-        // Header bar
         <div class=HEADER_BAR>
             <div class="flex items-center gap-2"><MobileMenuButton /><h1 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 m-0">"Wanted"</h1></div>
-            <span class={cls(MUTED, "text-[13px]")}>{total_str.clone()}</span>
+            <span class={cls(MUTED, "text-[13px]")}>{summary.clone()}</span>
         </div>
 
-        // Content
         <div class="p-6 max-md:p-4">
             <div class=GLASS>
                 <div class=GLASS_HEADER>
-                    <h2 class=GLASS_TITLE>"Missing Albums"</h2>
+                    <h2 class=GLASS_TITLE>"Wanted Tree"</h2>
                     <div class="flex flex-wrap items-center gap-2">
-                        {if queueable_count > 0 {
+                        {if !queueable_album_ids.is_empty() {
                             let ids = queueable_album_ids.clone();
+                            let count = ids.len();
                             view! {
                                 <button type="button"
                                     class=move || btn_cls(BTN_PRIMARY, "px-2.5 py-0.5 text-xs", queue_all_loading.get())
@@ -206,50 +195,45 @@ fn WantedContent(data: WantedData) -> impl IntoView {
                                         queue_all_loading.set(true);
                                         let ids = ids.clone();
                                         leptos::task::spawn_local(async move {
-                                            let total = ids.len();
-                                            let mut failed = 0usize;
+                                            let _total = ids.len();
+                                            let mut _failed = 0usize;
                                             for album_id in ids {
-                                                if crate::actions::dispatch_action(
-                                                    ServerAction::RetryDownload { album_id },
-                                                ).await.is_err() {
-                                                    failed += 1;
+                                                if crate::actions::dispatch_action(ServerAction::RetryDownload { album_id }).await.is_err() {
+                                                    _failed += 1;
                                                 }
                                             }
                                             #[cfg(feature = "hydrate")]
                                             {
                                                 let toaster = expect_toaster();
-                                                if failed == 0 {
+                                                if _failed == 0 {
                                                     toaster.toast(
-                                                        ToastBuilder::new(format!("Queued {total} albums"))
+                                                        ToastBuilder::new(format!("Queued {_total} albums"))
                                                             .with_level(ToastLevel::Success)
                                                             .with_position(ToastPosition::BottomRight)
                                                             .with_expiry(Some(4_000)),
                                                     );
                                                 } else {
                                                     toaster.toast(
-                                                        ToastBuilder::new(format!("Queued {}/{total} albums, {failed} failed", total - failed))
+                                                        ToastBuilder::new(format!("Queued {}/{_total} albums, {_failed} failed", _total - _failed))
                                                             .with_level(ToastLevel::Error)
                                                             .with_position(ToastPosition::BottomRight)
                                                             .with_expiry(Some(8_000)),
                                                     );
                                                 }
                                             }
-                                            let _ = (total, failed);
                                             queue_all_loading.set(false);
                                         });
                                     }>
-                                    {move || if queue_all_loading.get() {
-                                        "Queueing\u{2026}".to_string()
-                                    } else {
-                                        format!("Download All ({queueable_count})")
-                                    }}
+                                    {move || if queue_all_loading.get() { "Queueing...".to_string() } else { format!("Download All ({count})") }}
                                 </button>
-                            }.into_any()
+                            }
+                                .into_any()
                         } else {
                             view! { <span></span> }.into_any()
                         }}
-                        {if failed_count > 0 {
+                        {if !failed_album_ids.is_empty() {
                             let ids = failed_album_ids.clone();
+                            let count = ids.len();
                             view! {
                                 <button type="button"
                                     class=move || btn_cls(BTN_DANGER, "px-2.5 py-0.5 text-xs", retry_all_loading.get())
@@ -258,69 +242,154 @@ fn WantedContent(data: WantedData) -> impl IntoView {
                                         retry_all_loading.set(true);
                                         let ids = ids.clone();
                                         leptos::task::spawn_local(async move {
-                                            let total = ids.len();
-                                            let mut failed = 0usize;
+                                            let _total = ids.len();
+                                            let mut _failed = 0usize;
                                             for album_id in ids {
-                                                if crate::actions::dispatch_action(
-                                                    ServerAction::RetryDownload { album_id },
-                                                ).await.is_err() {
-                                                    failed += 1;
+                                                if crate::actions::dispatch_action(ServerAction::RetryDownload { album_id }).await.is_err() {
+                                                    _failed += 1;
                                                 }
                                             }
                                             #[cfg(feature = "hydrate")]
                                             {
                                                 let toaster = expect_toaster();
-                                                if failed == 0 {
+                                                if _failed == 0 {
                                                     toaster.toast(
-                                                        ToastBuilder::new(format!("Retried {total} albums"))
+                                                        ToastBuilder::new(format!("Retried {_total} albums"))
                                                             .with_level(ToastLevel::Success)
                                                             .with_position(ToastPosition::BottomRight)
                                                             .with_expiry(Some(4_000)),
                                                     );
                                                 } else {
                                                     toaster.toast(
-                                                        ToastBuilder::new(format!("Retried {}/{total} albums, {failed} failed", total - failed))
+                                                        ToastBuilder::new(format!("Retried {}/{_total} albums, {_failed} failed", _total - _failed))
                                                             .with_level(ToastLevel::Error)
                                                             .with_position(ToastPosition::BottomRight)
                                                             .with_expiry(Some(8_000)),
                                                     );
                                                 }
                                             }
-                                            let _ = (total, failed);
                                             retry_all_loading.set(false);
                                         });
                                     }>
-                                    {move || if retry_all_loading.get() {
-                                        "Retrying\u{2026}".to_string()
-                                    } else {
-                                        format!("Retry Failed ({failed_count})")
-                                    }}
+                                    {move || if retry_all_loading.get() { "Retrying...".to_string() } else { format!("Retry Failed ({count})") }}
                                 </button>
-                            }.into_any()
+                            }
+                                .into_any()
                         } else {
                             view! { <span></span> }.into_any()
                         }}
-                        <span class={cls(MUTED, "text-xs")}>{total_str}</span>
+                        <span class={cls(MUTED, "text-xs")}>{summary}</span>
                     </div>
                 </div>
 
-                {if total_wanted == 0 {
-                    view! { <div class=EMPTY>"All albums acquired. Nothing wanted."</div> }.into_any()
+                {if tree.is_empty() {
+                    view! { <div class=EMPTY>"All wanted items are acquired."</div> }.into_any()
                 } else {
                     view! {
                         <div>
-                            {artist_order.into_iter().map(|(artist_id, artist_name)| {
-                                let group_albums = albums_by_artist
-                                    .get(&artist_id)
-                                    .cloned()
-                                    .unwrap_or_default();
-                                let jobs_ref = latest_jobs.clone();
+                            {tree.into_iter().map(|artist_group| {
+                                let aid = artist_group.artist_id;
+                                let is_open_artist = Signal::derive(move || open_artists.get().contains(&aid));
+                                let artist_count = artist_group.albums.len();
+
+                                let artist_albums = artist_group.albums.clone();
+
                                 view! {
-                                    <div class=GROUP_HEADER>{artist_name}</div>
-                                    {group_albums.into_iter().map(move |album| {
-                                        let jobs_inner = jobs_ref.clone();
-                                        view! { <WantedRow album=album latest_jobs=jobs_inner /> }
-                                    }).collect_view()}
+                                    <div>
+                                        <button
+                                            type="button"
+                                            class=TREE_ARTIST_HEADER
+                                            on:click=move |_| {
+                                                open_artists.update(|set| {
+                                                    if !set.remove(&aid) {
+                                                        set.insert(aid);
+                                                    }
+                                                });
+                                            }
+                                        >
+                                            {move || if is_open_artist.get() {
+                                                view! { <ChevronDown size=14 /> }.into_any()
+                                            } else {
+                                                view! { <ChevronRight size=14 /> }.into_any()
+                                            }}
+                                            <span class="text-[13px] font-bold text-blue-500 dark:text-blue-400 uppercase tracking-wide">{artist_group.artist_name}</span>
+                                            <span class={cls(MUTED, "text-xs")}>{format!("{artist_count} albums")}</span>
+                                        </button>
+
+                                        {move || {
+                                            if !is_open_artist.get() {
+                                                return view! { <span></span> }.into_any();
+                                            }
+
+                                            let albums = artist_albums.clone();
+                                            view! {
+                                                <div>
+                                                    {albums.into_iter().map(|album_group| {
+                                                        let album_id = album_group.album.id;
+                                                        let is_open_album = Signal::derive(move || open_albums.get().contains(&album_id));
+                                                        let wanted_track_count = album_group.wanted_tracks.len();
+                                                        let jobs = latest_jobs_sv.get_value();
+                                                        view! {
+                                                            <div>
+                                                                <div class=TREE_ALBUM_ROW>
+                                                                    <button
+                                                                        type="button"
+                                                                        class="inline-flex items-center justify-center size-5 rounded bg-transparent border-none p-0 text-zinc-500 dark:text-zinc-400"
+                                                                        on:click=move |_| {
+                                                                            open_albums.update(|set| {
+                                                                                if !set.remove(&album_id) {
+                                                                                    set.insert(album_id);
+                                                                                }
+                                                                            });
+                                                                        }
+                                                                    >
+                                                                        {move || if is_open_album.get() {
+                                                                            view! { <ChevronDown size=13 /> }.into_any()
+                                                                        } else {
+                                                                            view! { <ChevronRight size=13 /> }.into_any()
+                                                                        }}
+                                                                    </button>
+                                                                    <AlbumWantedRow album_group=album_group.clone() latest_jobs=jobs />
+                                                                </div>
+
+                                                                <Show when=move || is_open_album.get()>
+                                                                    <div class="pl-14 pr-5 pb-2 border-b border-black/[.04] dark:border-white/[.04]">
+                                                                        {if album_group.album.monitored {
+                                                                            view! {
+                                                                                <div class="text-xs text-zinc-500 dark:text-zinc-400 py-2">
+                                                                                    "Full album monitored"
+                                                                                </div>
+                                                                            }.into_any()
+                                                                        } else if wanted_track_count == 0 {
+                                                                            view! {
+                                                                                <div class="text-xs text-zinc-500 dark:text-zinc-400 py-2">
+                                                                                    "No wanted tracks"
+                                                                                </div>
+                                                                            }.into_any()
+                                                                        } else {
+                                                                            view! {
+                                                                                <div class="py-1.5 space-y-1.5">
+                                                                                    {album_group.wanted_tracks.iter().map(|t| {
+                                                                                        view! {
+                                                                                            <div class="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300">
+                                                                                                <span class="tabular-nums text-zinc-400 dark:text-zinc-500 min-w-8">{format!("{}-{}", t.disc_number, t.track_number)}</span>
+                                                                                                <span class="flex-1 truncate">{t.title.clone()}</span>
+                                                                                                <span class="text-amber-600 dark:text-amber-300">"Wanted"</span>
+                                                                                            </div>
+                                                                                        }
+                                                                                    }).collect_view()}
+                                                                                </div>
+                                                                            }.into_any()
+                                                                        }}
+                                                                    </div>
+                                                                </Show>
+                                                            </div>
+                                                        }
+                                                    }).collect_view()}
+                                                </div>
+                                            }.into_any()
+                                        }}
+                                    </div>
                                 }
                             }).collect_view()}
                         </div>
@@ -331,20 +400,15 @@ fn WantedContent(data: WantedData) -> impl IntoView {
     }
 }
 
-/// A single wanted album row.
 #[component]
-fn WantedRow(
-    album: MonitoredAlbum,
+fn AlbumWantedRow(
+    album_group: WantedAlbumGroup,
     latest_jobs: HashMap<yoink_shared::Uuid, DownloadJob>,
 ) -> impl IntoView {
+    let album = album_group.album;
     let album_title = album.title.clone();
-    let release_date = album
-        .release_date
-        .clone()
-        .unwrap_or_else(|| "\u{2014}".to_string());
-    let is_explicit = album.explicit;
-
-    let cover_url = album_cover_url(&album, 160);
+    let release_date = album.release_date.clone().unwrap_or_else(|| "—".to_string());
+    let cover_url = album_cover_url(&album, 120);
     let fallback_initial = album_title
         .chars()
         .next()
@@ -353,7 +417,6 @@ fn WantedRow(
 
     let latest_job = latest_jobs.get(&album.id).cloned();
     let job_status = latest_job.as_ref().map(|j| j.status.clone());
-    let job_error = latest_job.as_ref().and_then(|j| j.error.clone());
     let is_failed = matches!(job_status, Some(DownloadStatus::Failed));
     let is_queueable = job_status.is_none()
         || matches!(
@@ -361,89 +424,78 @@ fn WantedRow(
             Some(DownloadStatus::Failed) | Some(DownloadStatus::Completed)
         );
 
-    let sc = match &job_status {
-        Some(s) => status_class(s).to_string(),
-        None => "pill".to_string(),
-    };
-    let status_text = match &job_status {
-        Some(s) => s.as_str().to_string(),
-        None => "not queued".to_string(),
-    };
-
-    let error_class = if is_failed {
-        "text-[11px] text-red-600 dark:text-red-400"
-    } else {
-        "text-[11px] text-red-600 dark:text-red-400 hidden"
-    };
-    let error_text = job_error.unwrap_or_else(|| "Download failed".to_string());
-    let explicit_label = if is_explicit { " [E]" } else { "" };
-    let meta_text = format!("{release_date}{explicit_label}");
+    let status_class_name = job_status
+        .as_ref()
+        .map(status_class)
+        .unwrap_or("pill")
+        .to_string();
+    let status_text = job_status
+        .as_ref()
+        .map(|s| s.as_str().to_string())
+        .unwrap_or_else(|| "not queued".to_string());
 
     let album_id = album.id;
+    let unmonitor_action = if album.monitored {
+        ServerAction::ToggleAlbumMonitor {
+            album_id,
+            monitored: false,
+        }
+    } else {
+        ServerAction::BulkToggleTrackMonitor {
+            album_id,
+            monitored: false,
+        }
+    };
 
     view! {
-        <div class=WANTED_CARD data-album-id=album_id.to_string()>
-            // Cover thumbnail
+        <>
             {match cover_url {
                 Some(url) => view! {
-                    <img class=WANTED_THUMB src=url alt="" />
+                    <img class="size-10 rounded-md object-cover shrink-0 bg-zinc-200 dark:bg-zinc-800" src=url alt="" />
                 }.into_any(),
                 None => view! {
-                    <div class=WANTED_THUMB_FALLBACK>{fallback_initial}</div>
+                    <div class="size-10 rounded-md inline-flex items-center justify-center bg-zinc-200 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-600 font-bold text-sm shrink-0">{fallback_initial}</div>
                 }.into_any(),
             }}
-
-            // Album info
             <div class="flex-1 min-w-0">
-                <div class="text-sm font-semibold text-zinc-900 dark:text-zinc-100 whitespace-nowrap overflow-hidden text-ellipsis">
-                    {album_title.clone()}
-                </div>
-                <div class="text-xs text-zinc-500 dark:text-zinc-400">{meta_text}</div>
-                <small class=error_class>{error_text}</small>
+                <div class="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate">{album_title}</div>
+                <div class="text-xs text-zinc-500 dark:text-zinc-400">{release_date}</div>
             </div>
-
-            // Status pill
-            <span class=sc>{status_text}</span>
-
-            // Actions
+            <span class=status_class_name>{status_text}</span>
             <div class="flex gap-1.5 shrink-0 items-center">
                 {if is_failed {
                     view! {
                         <button type="button" class={cls(BTN_DANGER, "px-2.5 py-0.5 text-xs")}
                             on:click=move |_| {
-                                dispatch_with_toast(
-                                    ServerAction::RetryDownload { album_id },
-                                    "Download queued for retry",
-                                );
-                            }>"Retry"</button>
+                                dispatch_with_toast(ServerAction::RetryDownload { album_id }, "Download queued for retry");
+                            }>
+                            "Retry"
+                        </button>
                     }.into_any()
                 } else if is_queueable {
                     view! {
                         <button type="button" class={cls(BTN, "px-2.5 py-0.5 text-xs")}
                             on:click=move |_| {
-                                dispatch_with_toast(
-                                    ServerAction::RetryDownload { album_id },
-                                    "Download queued",
-                                );
-                            }>"Download"</button>
+                                dispatch_with_toast(ServerAction::RetryDownload { album_id }, "Download queued");
+                            }>
+                            "Download"
+                        </button>
                     }.into_any()
                 } else {
                     view! { <span></span> }.into_any()
                 }}
-                {
-                    view! {
-                        <button type="button" class=ICON_BTN title="Unmonitor" aria-label="Unmonitor album"
-                            on:click=move |_| {
-                                dispatch_with_toast(
-                                    ServerAction::ToggleAlbumMonitor { album_id, monitored: false },
-                                    "Album unmonitored",
-                                );
-                            }>
-                            <X size=14 />
-                        </button>
+                <button
+                    type="button"
+                    class=ICON_BTN
+                    title="Unmonitor"
+                    aria-label="Unmonitor"
+                    on:click=move |_| {
+                        dispatch_with_toast(unmonitor_action.clone(), "Item unmonitored");
                     }
-                }
+                >
+                    <X size=14 />
+                </button>
             </div>
-        </div>
+        </>
     }
 }

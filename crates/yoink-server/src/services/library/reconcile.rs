@@ -6,13 +6,48 @@ use uuid::Uuid;
 
 use crate::{db, services::downloads::sanitize_path_component, state::AppState};
 
-use super::{album_dir_has_downloaded_audio, normalize_text, parse_release_year, update_wanted};
+use super::{
+    album_dir_has_downloaded_audio, normalize_text, parse_release_year,
+    recompute_partially_wanted, update_wanted,
+};
 
 pub(crate) async fn reconcile_library_files(state: &AppState) -> Result<usize, String> {
     let artists = state.monitored_artists.read().await.clone();
     let artist_names: HashMap<Uuid, String> = artists.into_iter().map(|a| (a.id, a.name)).collect();
     let albums_snapshot = state.monitored_albums.read().await.clone();
 
+    // ── Track-level reconciliation ──────────────────────────────────
+    // For every track marked as acquired, verify the file still exists.
+    let mut track_changes = 0usize;
+    for album in albums_snapshot.iter() {
+        let tracks = db::load_tracks_for_album(&state.db, album.id)
+            .await
+            .unwrap_or_default();
+
+        for track in tracks.iter().filter(|t| t.acquired) {
+            let file_exists = if let Some(ref rel_path) = track.file_path {
+                let abs = state.music_root.join(rel_path);
+                fs::try_exists(&abs).await.unwrap_or(false)
+            } else {
+                false
+            };
+
+            if !file_exists {
+                let _ =
+                    db::update_track_flags(&state.db, track.id, track.monitored, false).await;
+                track_changes += 1;
+            }
+        }
+    }
+
+    if track_changes > 0 {
+        info!(
+            updated_tracks = track_changes,
+            "Reconciled missing track files"
+        );
+    }
+
+    // ── Album-level reconciliation ──────────────────────────────────
     let mut missing_ids = HashSet::new();
     for album in albums_snapshot.iter().filter(|a| a.acquired) {
         let Some(artist_name) = artist_names.get(&album.artist_id) else {
@@ -33,6 +68,16 @@ pub(crate) async fn reconcile_library_files(state: &AppState) -> Result<usize, S
             )));
 
         if album_dir_has_downloaded_audio(&album_dir).await {
+            // Directory exists — but for partially-wanted albums, verify via
+            // track-level flags (some tracks may have been removed).
+            if !album.monitored {
+                let all_ok = db::all_monitored_tracks_acquired(&state.db, album.id)
+                    .await
+                    .unwrap_or(true);
+                if !all_ok {
+                    missing_ids.insert(album.id);
+                }
+            }
             continue;
         }
 
@@ -66,7 +111,7 @@ pub(crate) async fn reconcile_library_files(state: &AppState) -> Result<usize, S
         missing_ids.insert(album.id);
     }
 
-    if missing_ids.is_empty() {
+    if missing_ids.is_empty() && track_changes == 0 {
         return Ok(0);
     }
 
@@ -76,6 +121,7 @@ pub(crate) async fn reconcile_library_files(state: &AppState) -> Result<usize, S
         if missing_ids.contains(&album.id) && album.acquired {
             album.acquired = false;
             update_wanted(album);
+            recompute_partially_wanted(&state.db, album).await;
             let _ = db::update_album_flags(
                 &state.db,
                 album.id,
@@ -88,15 +134,17 @@ pub(crate) async fn reconcile_library_files(state: &AppState) -> Result<usize, S
         }
     }
 
-    if changed > 0 {
+    let total_changes = changed + track_changes;
+    if total_changes > 0 {
         info!(
             updated_albums = changed,
+            updated_tracks = track_changes,
             "Reconciled missing files in library"
         );
         state.notify_sse();
     }
 
-    Ok(changed)
+    Ok(total_changes)
 }
 
 /// Scan the artist directory for a folder that matches the album title and

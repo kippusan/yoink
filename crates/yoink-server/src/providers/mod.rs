@@ -124,6 +124,39 @@ pub(crate) struct ProviderTrack {
     pub extra: HashMap<String, Value>,
 }
 
+/// An album returned by a provider search (includes artist context).
+#[derive(Debug, Clone)]
+pub(crate) struct ProviderSearchAlbum {
+    pub external_id: String,
+    pub title: String,
+    pub album_type: Option<String>,
+    pub release_date: Option<String>,
+    pub cover_ref: Option<String>,
+    pub url: Option<String>,
+    pub explicit: bool,
+    /// Primary artist info for display in search results.
+    pub artist_name: String,
+    pub artist_external_id: String,
+}
+
+/// A track returned by a provider search (includes artist + album context).
+#[derive(Debug, Clone)]
+pub(crate) struct ProviderSearchTrack {
+    pub external_id: String,
+    pub title: String,
+    pub version: Option<String>,
+    pub duration_secs: u32,
+    pub isrc: Option<String>,
+    pub explicit: bool,
+    /// Display-ready track artist string.
+    pub artist_name: String,
+    pub artist_external_id: String,
+    /// Album info for display.
+    pub album_title: String,
+    pub album_external_id: String,
+    pub album_cover_ref: Option<String>,
+}
+
 /// Resolved playback info for downloading a track.
 #[derive(Debug, Clone)]
 pub(crate) enum PlaybackInfo {
@@ -247,6 +280,24 @@ pub(crate) trait MetadataProvider: Send + Sync {
     /// Default returns `None`; providers can override to source from Wikipedia etc.
     async fn fetch_artist_bio(&self, _external_artist_id: &str) -> Option<String> {
         None
+    }
+
+    /// Search for albums by query string.
+    /// Default returns empty; providers can override.
+    async fn search_albums(
+        &self,
+        _query: &str,
+    ) -> Result<Vec<ProviderSearchAlbum>, ProviderError> {
+        Ok(vec![])
+    }
+
+    /// Search for tracks by query string.
+    /// Default returns empty; providers can override.
+    async fn search_tracks(
+        &self,
+        _query: &str,
+    ) -> Result<Vec<ProviderSearchTrack>, ProviderError> {
+        Ok(vec![])
     }
 }
 

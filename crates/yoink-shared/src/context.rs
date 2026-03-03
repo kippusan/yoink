@@ -4,8 +4,8 @@ use uuid::Uuid;
 
 use crate::{
     ArtistImageOption, DownloadJob, ImportConfirmation, ImportPreviewItem, ImportResultSummary,
-    MatchSuggestion, MonitoredAlbum, MonitoredArtist, ProviderLink, SearchArtistResult,
-    ServerAction, TrackInfo,
+    LibraryTrack, MatchSuggestion, MonitoredAlbum, MonitoredArtist, ProviderLink,
+    SearchAlbumResult, SearchArtistResult, SearchTrackResult, ServerAction, TrackInfo,
 };
 
 type AsyncFnResult<T> =
@@ -46,6 +46,15 @@ pub type ConfirmImportFn = std::sync::Arc<
 pub type FetchArtistImagesFn =
     std::sync::Arc<dyn Fn(Uuid) -> AsyncFnResult<Vec<ArtistImageOption>> + Send + Sync>;
 
+pub type SearchAlbumsFn =
+    std::sync::Arc<dyn Fn(String) -> AsyncFnResult<Vec<SearchAlbumResult>> + Send + Sync>;
+
+pub type SearchTracksFn =
+    std::sync::Arc<dyn Fn(String) -> AsyncFnResult<Vec<SearchTrackResult>> + Send + Sync>;
+
+pub type FetchLibraryTracksFn =
+    std::sync::Arc<dyn Fn() -> AsyncFnResult<Vec<LibraryTrack>> + Send + Sync>;
+
 /// Holds the shared in-memory state that server functions need to read.
 ///
 /// Provided via `leptos::context::provide_context` in main.rs and consumed via
@@ -67,4 +76,7 @@ pub struct ServerContext {
     pub preview_import: PreviewImportFn,
     pub confirm_import: ConfirmImportFn,
     pub fetch_artist_images: FetchArtistImagesFn,
+    pub search_albums: SearchAlbumsFn,
+    pub search_tracks: SearchTracksFn,
+    pub fetch_library_tracks: FetchLibraryTracksFn,
 }

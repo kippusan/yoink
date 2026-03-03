@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT\n            id as \"id!: Uuid\",\n            artist_id as \"artist_id!: Uuid\",\n            title, album_type, release_date, cover_url,\n            explicit as \"explicit!: bool\",\n            monitored as \"monitored!: bool\",\n            acquired as \"acquired!: bool\",\n            wanted as \"wanted!: bool\",\n            added_at as \"added_at!: chrono::DateTime<chrono::Utc>\",\n            artist_credits\n         FROM albums ORDER BY release_date DESC",
+  "query": "SELECT\n            a.id as \"id!: Uuid\",\n            a.artist_id as \"artist_id!: Uuid\",\n            a.title, a.album_type, a.release_date, a.cover_url,\n            a.explicit as \"explicit!: bool\",\n            a.monitored as \"monitored!: bool\",\n            a.acquired as \"acquired!: bool\",\n            a.wanted as \"wanted!: bool\",\n            CASE WHEN a.monitored = 0 AND EXISTS (\n                SELECT 1 FROM tracks t WHERE t.album_id = a.id AND t.monitored = 1 AND t.acquired = 0\n            ) THEN 1 ELSE 0 END as \"partially_wanted!: bool\",\n            a.added_at as \"added_at!: chrono::DateTime<chrono::Utc>\",\n            a.artist_credits\n         FROM albums a ORDER BY a.release_date DESC",
   "describe": {
     "columns": [
       {
@@ -54,13 +54,18 @@
         "type_info": "Integer"
       },
       {
-        "name": "added_at!: chrono::DateTime<chrono::Utc>",
+        "name": "partially_wanted!: bool",
         "ordinal": 10,
+        "type_info": "Integer"
+      },
+      {
+        "name": "added_at!: chrono::DateTime<chrono::Utc>",
+        "ordinal": 11,
         "type_info": "Text"
       },
       {
         "name": "artist_credits",
-        "ordinal": 11,
+        "ordinal": 12,
         "type_info": "Text"
       }
     ],
@@ -79,8 +84,9 @@
       false,
       false,
       false,
+      false,
       true
     ]
   },
-  "hash": "34854daa8bb96188e03c183c8254b3bab92b4f8f31dce4ef45f4df907b6d7cd8"
+  "hash": "bddcb33af06b0c28e7bb6ff784f5878e6464fb11c1300f6b92ea1a3e94c03b6e"
 }

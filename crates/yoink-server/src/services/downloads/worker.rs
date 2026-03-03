@@ -83,6 +83,56 @@ pub(crate) async fn download_album_job(state: &AppState, job: DownloadJob) -> Re
         return Err("Album has no downloadable tracks".to_string());
     }
 
+    // Save the full album track count for metadata tagging (track N of M).
+    let full_album_track_count = provider_tracks.len();
+
+    // When the album is not fully monitored (partially_wanted), filter to only
+    // the individually monitored tracks. Matching is done by ISRC or
+    // (disc, track_number) position.
+    let album_is_fully_monitored = {
+        let albums = state.monitored_albums.read().await;
+        albums
+            .iter()
+            .find(|a| a.id == job.album_id)
+            .map(|a| a.monitored)
+            .unwrap_or(false)
+    };
+
+    let provider_tracks = if album_is_fully_monitored {
+        provider_tracks
+    } else {
+        // Load monitored tracks from DB to know which ones to download
+        let monitored_tracks = db::load_monitored_tracks_for_album(&state.db, job.album_id)
+            .await
+            .unwrap_or_default();
+
+        if monitored_tracks.is_empty() {
+            return Err("No monitored tracks to download".to_string());
+        }
+
+        provider_tracks
+            .into_iter()
+            .filter(|pt| {
+                monitored_tracks.iter().any(|mt| {
+                    // Match by ISRC first (most reliable)
+                    if let (Some(pt_isrc), Some(mt_isrc)) = (&pt.isrc, &mt.isrc)
+                        && pt_isrc.eq_ignore_ascii_case(mt_isrc)
+                    {
+                        return true;
+                    }
+                    // Fallback: match by disc + track number
+                    let pt_disc = super::metadata::extract_disc_number(&pt.extra, None)
+                        .unwrap_or(1);
+                    mt.disc_number == pt_disc && mt.track_number == pt.track_number
+                })
+            })
+            .collect::<Vec<_>>()
+    };
+
+    if provider_tracks.is_empty() {
+        return Err("No matching provider tracks for monitored tracks".to_string());
+    }
+
     let total_tracks = provider_tracks.len();
     update_job_progress(
         state,
@@ -153,6 +203,7 @@ pub(crate) async fn download_album_job(state: &AppState, job: DownloadJob) -> Re
         let album_extra_clone = album_extra.clone();
         let cover_art_clone = cover_art.clone();
 
+        let full_count = full_album_track_count;
         join_set.spawn(async move {
             process_track_download(
                 state_clone,
@@ -168,6 +219,7 @@ pub(crate) async fn download_album_job(state: &AppState, job: DownloadJob) -> Re
                 album_extra_clone,
                 cover_art_clone,
                 total_tracks,
+                full_count,
             )
             .await
         });
@@ -206,6 +258,7 @@ pub(crate) async fn download_album_job(state: &AppState, job: DownloadJob) -> Re
                     let album_dir_clone = album_dir.clone();
                     let album_extra_clone = album_extra.clone();
                     let cover_art_clone = cover_art.clone();
+                    let full_count = full_album_track_count;
 
                     join_set.spawn(async move {
                         process_track_download(
@@ -222,6 +275,7 @@ pub(crate) async fn download_album_job(state: &AppState, job: DownloadJob) -> Re
                             album_extra_clone,
                             cover_art_clone,
                             total_tracks,
+                            full_count,
                         )
                         .await
                     });
@@ -249,7 +303,10 @@ async fn process_track_download(
     album_dir: std::path::PathBuf,
     album_extra: std::collections::HashMap<String, serde_json::Value>,
     cover_art: Option<Vec<u8>>,
-    total_tracks: usize,
+    _total_tracks: usize,
+    // Full album track count for metadata tagging (track N of M).
+    // May differ from the download count when only a subset is being downloaded.
+    full_album_track_count: usize,
 ) -> Result<(), String> {
     let base_name = format!(
         "{:02} - {}",
@@ -280,7 +337,7 @@ async fn process_track_download(
         album_title: job.album_title.clone(),
         track_title: track.title.clone(),
         track_number: Some(track.track_number),
-        album_track_count: Some(total_tracks),
+        album_track_count: Some(full_album_track_count),
         duration_secs: Some(track.duration_secs),
     };
 
@@ -421,7 +478,7 @@ async fn process_track_download(
         album: &job.album_title,
         track_number,
         disc_number,
-        total_tracks: total_tracks as u32,
+        total_tracks: full_album_track_count as u32,
         release_date: &release_suffix,
         track_extra: &track.extra,
         album_extra: &album_extra,
@@ -477,6 +534,22 @@ async fn process_track_download(
         .flatten()
         .unwrap_or_else(uuid::Uuid::now_v7)
     };
+
+    // Preserve existing monitored flag if the track already exists in DB.
+    // For fully-monitored albums all tracks inherit album-level monitoring;
+    // for partially-wanted albums only explicitly-monitored tracks are downloaded,
+    // so existing flag is always correct.
+    let existing_monitored = {
+        let tracks = db::load_tracks_for_album(&state.db, job.album_id)
+            .await
+            .unwrap_or_default();
+        tracks
+            .iter()
+            .find(|t| t.id == local_track_id)
+            .map(|t| t.monitored)
+            .unwrap_or(false)
+    };
+
     let track_info = yoink_shared::TrackInfo {
         id: local_track_id,
         title: track.title.clone(),
@@ -489,6 +562,8 @@ async fn process_track_download(
         explicit,
         track_artist: Some(track_artist.clone()),
         file_path: Some(relative_path),
+        monitored: existing_monitored,
+        acquired: true, // Just downloaded — mark as acquired
     };
     let _ = db::upsert_track(&state.db, &track_info, job.album_id).await;
     let _ = db::upsert_track_provider_link(

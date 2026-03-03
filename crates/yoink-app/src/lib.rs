@@ -44,7 +44,12 @@ pub fn App() -> impl IntoView {
                 <KeyboardShortcuts />
                 <Routes fallback=pages::not_found::NotFoundPage>
                     <Route path=path!("/") view=pages::dashboard::DashboardPage />
-                    <Route path=path!("/artists") view=pages::artists::ArtistsPage />
+                    <Route path=path!("/library") view=pages::library::LibraryPage />
+                    <Route path=path!("/library/artists") view=pages::library::LibraryPage />
+                    <Route path=path!("/library/albums") view=pages::library_albums::LibraryAlbumsPage />
+                    <Route path=path!("/library/tracks") view=pages::library_tracks::LibraryTracksPage />
+                    <Route path=path!("/search") view=pages::search::SearchPage />
+                    <Route path=path!("/artists") view=pages::library::LibraryPage />
                     <Route path=path!("/artists/:id") view=pages::artist_detail::ArtistDetailPage />
                     <Route path=path!("/artists/:id/merge-albums") view=pages::merge_albums::MergeAlbumsPage />
                     <Route path=path!("/artists/:artist_id/albums/:album_id") view=pages::album_detail::AlbumDetailPage />
@@ -108,7 +113,11 @@ fn KeyboardShortcuts() -> impl IntoView {
                             return;
                         }
                         "a" => {
-                            navigate("/artists", Default::default());
+                            navigate("/library/artists", Default::default());
+                            return;
+                        }
+                        "s" => {
+                            navigate("/search", Default::default());
                             return;
                         }
                         "w" => {

@@ -544,13 +544,13 @@ pub fn MergeAlbumsPage() -> impl IntoView {
 
     view! {
         <div class="flex min-h-screen">
-            <Sidebar active="artists" />
+            <Sidebar active="library-artists" />
             <div class="ml-[220px] max-md:ml-0 flex-1 min-h-screen overflow-x-hidden">
                 <Transition fallback=move || view! {
                     <div>
                         <div class=HEADER_BAR>
                             <nav class=BREADCRUMB_NAV aria-label="Breadcrumb"><MobileMenuButton />
-                                <a href="/artists" class=BREADCRUMB_LINK>"Artists"</a>
+                                <a href="/library" class=BREADCRUMB_LINK>"Library"</a>
                                 <span class=BREADCRUMB_SEP><ChevronRight /></span>
                                 <div class="h-4 w-20 bg-zinc-200 dark:bg-zinc-700 rounded animate-pulse"></div>
                                 <span class=BREADCRUMB_SEP><ChevronRight /></span>
@@ -607,7 +607,7 @@ pub fn MergeAlbumsPage() -> impl IntoView {
                             <div>
                                 <div class=HEADER_BAR>
                                     <nav class=BREADCRUMB_NAV aria-label="Breadcrumb"><MobileMenuButton />
-                                        <a href="/artists" class=BREADCRUMB_LINK>"Artists"</a>
+                                        <a href="/library" class=BREADCRUMB_LINK>"Library"</a>
                                         <span class=BREADCRUMB_SEP><ChevronRight /></span>
                                         <span class=BREADCRUMB_CURRENT>"Merge Albums"</span>
                                     </nav>
@@ -635,7 +635,7 @@ pub fn MergeAlbumsPage() -> impl IntoView {
                                 // Sticky header with breadcrumb
                                 <div class=HEADER_BAR>
                                     <nav class=BREADCRUMB_NAV aria-label="Breadcrumb"><MobileMenuButton />
-                                        <a href="/artists" class=BREADCRUMB_LINK>"Artists"</a>
+                                        <a href="/library" class=BREADCRUMB_LINK>"Library"</a>
                                         <span class=BREADCRUMB_SEP><ChevronRight /></span>
                                         <a href=artist_link class=BREADCRUMB_LINK>{artist_name.clone()}</a>
                                         <span class=BREADCRUMB_SEP><ChevronRight /></span>

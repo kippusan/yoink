@@ -6,7 +6,10 @@ use serde::Deserialize;
 use serde_json::Value;
 use tracing::warn;
 
-use super::{MetadataProvider, ProviderAlbum, ProviderArtist, ProviderError, ProviderTrack};
+use super::{
+    MetadataProvider, ProviderAlbum, ProviderArtist, ProviderError, ProviderSearchAlbum,
+    ProviderSearchTrack, ProviderTrack,
+};
 
 // ── Deezer API base ─────────────────────────────────────────────────
 
@@ -93,6 +96,71 @@ struct DeezerTrack {
 #[derive(Debug, Clone, Deserialize)]
 struct DeezerTrackArtist {
     name: String,
+}
+
+/// An album returned by `/search/album` — includes embedded artist info.
+#[derive(Debug, Deserialize)]
+struct DeezerSearchAlbum {
+    id: u64,
+    title: String,
+    #[serde(default)]
+    record_type: Option<String>,
+    #[serde(default)]
+    release_date: Option<String>,
+    #[serde(default)]
+    md5_image: Option<String>,
+    #[serde(default)]
+    explicit_lyrics: bool,
+    /// Album link on Deezer.
+    #[serde(default)]
+    link: Option<String>,
+    /// Primary artist embedded in album search results.
+    #[serde(default)]
+    artist: Option<DeezerSearchAlbumArtist>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct DeezerSearchAlbumArtist {
+    id: u64,
+    name: String,
+}
+
+/// A track returned by `/search/track` — includes embedded artist + album info.
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+struct DeezerSearchTrack {
+    id: u64,
+    title: String,
+    #[serde(default)]
+    title_version: Option<String>,
+    #[serde(default)]
+    isrc: Option<String>,
+    /// Duration in seconds.
+    duration: u32,
+    #[serde(default)]
+    explicit_lyrics: bool,
+    #[serde(default)]
+    link: Option<String>,
+    /// Artist for this track.
+    #[serde(default)]
+    artist: Option<DeezerSearchTrackArtist>,
+    /// Album this track belongs to.
+    #[serde(default)]
+    album: Option<DeezerSearchTrackAlbum>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct DeezerSearchTrackArtist {
+    id: u64,
+    name: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct DeezerSearchTrackAlbum {
+    id: u64,
+    title: String,
+    #[serde(default)]
+    md5_image: Option<String>,
 }
 
 // ── DeezerProvider ──────────────────────────────────────────────────
@@ -442,6 +510,84 @@ impl MetadataProvider for DeezerProvider {
                 .or(artist.picture_medium.as_deref()),
         )
         .map(|md5| format!("artist:{md5}"))
+    }
+
+    async fn search_albums(
+        &self,
+        query: &str,
+    ) -> Result<Vec<ProviderSearchAlbum>, ProviderError> {
+        let url = Self::api_url("/search/album", &[("q", query), ("limit", "25")]);
+        let albums: DeezerList<DeezerSearchAlbum> = self.deezer_get(&url).await?;
+
+        Ok(albums
+            .data
+            .into_iter()
+            .map(|a| {
+                let (artist_name, artist_external_id) = a
+                    .artist
+                    .map(|ar| (ar.name, ar.id.to_string()))
+                    .unwrap_or_else(|| ("Unknown Artist".to_string(), String::new()));
+
+                let album_type = a
+                    .record_type
+                    .as_deref()
+                    .map(|rt| map_record_type(rt).to_string());
+
+                let url = a
+                    .link
+                    .or_else(|| Some(format!("https://www.deezer.com/album/{}", a.id)));
+
+                ProviderSearchAlbum {
+                    external_id: a.id.to_string(),
+                    title: a.title,
+                    album_type,
+                    release_date: a.release_date,
+                    cover_ref: a.md5_image,
+                    url,
+                    explicit: a.explicit_lyrics,
+                    artist_name,
+                    artist_external_id,
+                }
+            })
+            .collect())
+    }
+
+    async fn search_tracks(
+        &self,
+        query: &str,
+    ) -> Result<Vec<ProviderSearchTrack>, ProviderError> {
+        let url = Self::api_url("/search/track", &[("q", query), ("limit", "25")]);
+        let tracks: DeezerList<DeezerSearchTrack> = self.deezer_get(&url).await?;
+
+        Ok(tracks
+            .data
+            .into_iter()
+            .map(|t| {
+                let (artist_name, artist_external_id) = t
+                    .artist
+                    .map(|ar| (ar.name, ar.id.to_string()))
+                    .unwrap_or_else(|| ("Unknown Artist".to_string(), String::new()));
+
+                let (album_title, album_external_id, album_cover_ref) = t
+                    .album
+                    .map(|al| (al.title, al.id.to_string(), al.md5_image))
+                    .unwrap_or_else(|| ("Unknown Album".to_string(), String::new(), None));
+
+                ProviderSearchTrack {
+                    external_id: t.id.to_string(),
+                    title: t.title,
+                    version: t.title_version.filter(|v| !v.is_empty()),
+                    duration_secs: t.duration,
+                    isrc: t.isrc.filter(|s| !s.is_empty()),
+                    explicit: t.explicit_lyrics,
+                    artist_name,
+                    artist_external_id,
+                    album_title,
+                    album_external_id,
+                    album_cover_ref,
+                }
+            })
+            .collect())
     }
 }
 

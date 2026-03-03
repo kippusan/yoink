@@ -93,4 +93,44 @@ pub enum ServerAction {
     FetchArtistBio {
         artist_id: Uuid,
     },
+    /// Toggle whether an artist is fully monitored (discography synced).
+    /// When promoted to monitored, triggers a full discography sync.
+    ToggleArtistMonitor {
+        artist_id: Uuid,
+        monitored: bool,
+    },
+    /// Toggle monitoring for an individual track.
+    /// When monitored, the track will be downloaded independently.
+    ToggleTrackMonitor {
+        track_id: Uuid,
+        album_id: Uuid,
+        monitored: bool,
+    },
+    /// Add an album directly from search results.
+    /// Creates a lightweight (unmonitored) artist if one doesn't exist,
+    /// fetches full album metadata + tracks from the provider, and stores them.
+    AddAlbum {
+        provider: String,
+        external_album_id: String,
+        /// Provider-specific external artist ID.
+        artist_external_id: String,
+        artist_name: String,
+        /// If true, monitor all tracks on the album for download.
+        monitor_all: bool,
+    },
+    /// Add a single track from search results.
+    /// Creates the parent album + lightweight artist as needed,
+    /// and marks just this track as monitored.
+    AddTrack {
+        provider: String,
+        external_track_id: String,
+        external_album_id: String,
+        artist_external_id: String,
+        artist_name: String,
+    },
+    /// Set monitoring for all tracks on an album at once.
+    BulkToggleTrackMonitor {
+        album_id: Uuid,
+        monitored: bool,
+    },
 }

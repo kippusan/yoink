@@ -21,17 +21,22 @@ use crate::{
     state::AppState,
 };
 
-use super::library::update_wanted;
+use super::library::{recompute_partially_wanted, update_wanted};
 use io::{parse_track_number_from_path, sanitize_path_component as sanitize};
 use metadata::{build_full_artist_string, extract_disc_number};
 use worker::download_album_job;
 
 pub(crate) async fn enqueue_album_download(state: &AppState, album: &MonitoredAlbum) {
-    if !album.monitored || album.acquired {
+    // Enqueue if the album is fully wanted (monitored && !acquired)
+    // OR partially wanted (has individually monitored tracks not yet acquired).
+    let dominated = album.monitored && !album.acquired;
+    let partial = album.partially_wanted;
+    if !dominated && !partial {
         debug!(
             album_id = %album.id,
             monitored = album.monitored,
             acquired = album.acquired,
+            partially_wanted = album.partially_wanted,
             "Skipping enqueue because album is not wanted"
         );
         return;
@@ -178,8 +183,21 @@ pub(crate) async fn download_worker_loop(state: AppState) {
                 );
                 let mut albums = state.monitored_albums.write().await;
                 if let Some(album) = albums.iter_mut().find(|album| album.id == job.album_id) {
-                    album.acquired = true;
+                    if album.monitored {
+                        // Fully monitored album: all tracks were downloaded
+                        album.acquired = true;
+                    } else {
+                        // Partially wanted album: acquired only if every
+                        // monitored track is now acquired.
+                        album.acquired = db::all_monitored_tracks_acquired(
+                            &state.db,
+                            album.id,
+                        )
+                        .await
+                        .unwrap_or(false);
+                    }
                     update_wanted(album);
+                    recompute_partially_wanted(&state.db, album).await;
                     let _ = db::update_album_flags(
                         &state.db,
                         album.id,
@@ -206,6 +224,7 @@ pub(crate) async fn download_worker_loop(state: AppState) {
                 if let Some(album) = albums.iter_mut().find(|album| album.id == job.album_id) {
                     album.acquired = false;
                     update_wanted(album);
+                    recompute_partially_wanted(&state.db, album).await;
                     let _ = db::update_album_flags(
                         &state.db,
                         album.id,

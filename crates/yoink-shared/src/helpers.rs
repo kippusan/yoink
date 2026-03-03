@@ -2,7 +2,20 @@ use std::collections::HashMap;
 
 use uuid::Uuid;
 
-use crate::{DownloadJob, DownloadStatus, MonitoredAlbum, MonitoredArtist};
+use crate::{DownloadJob, DownloadStatus, MonitoredAlbum, MonitoredArtist, TrackInfo};
+
+#[derive(Debug, Clone)]
+pub struct WantedAlbumGroup {
+    pub album: MonitoredAlbum,
+    pub wanted_tracks: Vec<TrackInfo>,
+}
+
+#[derive(Debug, Clone)]
+pub struct WantedArtistGroup {
+    pub artist_id: Uuid,
+    pub artist_name: String,
+    pub albums: Vec<WantedAlbumGroup>,
+}
 
 // ── Data helpers (pure transforms) ──────────────────────────
 
@@ -48,6 +61,75 @@ pub fn build_latest_jobs(jobs: Vec<DownloadJob>) -> HashMap<Uuid, DownloadJob> {
 /// Map artist id -> name for display.
 pub fn build_artist_names(artists: &[MonitoredArtist]) -> HashMap<Uuid, String> {
     artists.iter().map(|a| (a.id, a.name.clone())).collect()
+}
+
+/// Build hierarchical wanted data: artist > album > wanted tracks.
+///
+/// - Includes albums that are fully wanted (`album.wanted`) or partially wanted.
+/// - For fully monitored albums, `wanted_tracks` is empty (UI can show "full album").
+/// - For partially wanted albums, `wanted_tracks` includes tracks where
+///   `track.monitored && !track.acquired`.
+pub fn build_wanted_tree(
+    artists: &[MonitoredArtist],
+    albums_with_tracks: Vec<(MonitoredAlbum, Vec<TrackInfo>)>,
+) -> Vec<WantedArtistGroup> {
+    let names = build_artist_names(artists);
+    let mut by_artist: HashMap<Uuid, Vec<WantedAlbumGroup>> = HashMap::new();
+
+    for (album, tracks) in albums_with_tracks {
+        if !(album.wanted || album.partially_wanted) {
+            continue;
+        }
+
+        let wanted_tracks = if album.monitored {
+            Vec::new()
+        } else {
+            tracks
+                .into_iter()
+                .filter(|t| t.monitored && !t.acquired)
+                .collect::<Vec<_>>()
+        };
+
+        if !album.monitored && wanted_tracks.is_empty() {
+            continue;
+        }
+
+        by_artist
+            .entry(album.artist_id)
+            .or_default()
+            .push(WantedAlbumGroup {
+                album,
+                wanted_tracks,
+            });
+    }
+
+    for albums in by_artist.values_mut() {
+        albums.sort_by(|a, b| {
+            b.album
+                .release_date
+                .cmp(&a.album.release_date)
+                .then_with(|| a.album.title.cmp(&b.album.title))
+        });
+    }
+
+    let mut groups = by_artist
+        .into_iter()
+        .map(|(artist_id, albums)| WantedArtistGroup {
+            artist_id,
+            artist_name: names
+                .get(&artist_id)
+                .cloned()
+                .unwrap_or_else(|| format!("Unknown ({artist_id})")),
+            albums,
+        })
+        .collect::<Vec<_>>();
+
+    groups.sort_by(|a, b| {
+        a.artist_name
+            .to_lowercase()
+            .cmp(&b.artist_name.to_lowercase())
+    });
+    groups
 }
 
 // ── Display helpers ─────────────────────────────────────────

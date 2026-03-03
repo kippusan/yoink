@@ -99,12 +99,50 @@ pub(crate) struct HifiArtistRole {
 #[derive(Debug, Deserialize)]
 pub(crate) struct SearchData {
     pub artists: Option<PagedArtists>,
+    pub albums: Option<PagedAlbums>,
+    pub tracks: Option<PagedTracks>,
     pub items: Option<Vec<HifiArtist>>,
 }
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct PagedArtists {
     pub items: Vec<HifiArtist>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct PagedAlbums {
+    pub items: Vec<HifiAlbum>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct PagedTracks {
+    pub items: Vec<HifiSearchTrack>,
+}
+
+/// Track result from search (includes album info).
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct HifiSearchTrack {
+    pub id: i64,
+    pub title: String,
+    pub version: Option<String>,
+    pub duration: Option<u32>,
+    pub explicit: Option<bool>,
+    /// Track-level artists.
+    #[serde(default)]
+    pub artists: Vec<HifiAlbumArtist>,
+    /// Album this track belongs to.
+    pub album: Option<HifiSearchTrackAlbum>,
+    #[allow(dead_code)]
+    #[serde(flatten)]
+    pub extra: std::collections::HashMap<String, serde_json::Value>,
+}
+
+/// Minimal album info embedded in track search results.
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct HifiSearchTrackAlbum {
+    pub id: i64,
+    pub title: String,
+    pub cover: Option<String>,
 }
 
 // ── Playback / manifest ─────────────────────────────────────────────

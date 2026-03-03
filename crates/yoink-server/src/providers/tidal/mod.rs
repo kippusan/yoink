@@ -17,7 +17,7 @@ use self::{
 };
 use super::{
     DownloadSource, DownloadTrackContext, MetadataProvider, PlaybackInfo, ProviderAlbum,
-    ProviderArtist, ProviderError, ProviderTrack, Quality,
+    ProviderArtist, ProviderError, ProviderSearchAlbum, ProviderSearchTrack, ProviderTrack, Quality,
 };
 
 // ── TidalProvider ───────────────────────────────────────────────────
@@ -272,6 +272,85 @@ impl MetadataProvider for TidalProvider {
             .into_iter()
             .find(|a| a.id.to_string() == external_artist_id)
             .and_then(|a| a.picture.or(a.selected_album_cover_fallback))
+    }
+
+    async fn search_albums(
+        &self,
+        query: &str,
+    ) -> Result<Vec<ProviderSearchAlbum>, ProviderError> {
+        // The hifi API /search/ endpoint returns albums when queried.
+        // We use the same endpoint but extract the albums section.
+        let parsed = self
+            .hifi_get::<HifiResponse>("/search/", vec![("a".to_string(), query.to_string())])
+            .await
+            .map_err(ProviderError::from)?;
+
+        let albums = parsed.data.albums.map(|p| p.items).unwrap_or_default();
+
+        Ok(albums
+            .into_iter()
+            .map(|a| {
+                let (artist_name, artist_external_id) = a
+                    .artists
+                    .first()
+                    .map(|ar| (ar.name.clone(), ar.id.to_string()))
+                    .unwrap_or_else(|| ("Unknown Artist".to_string(), String::new()));
+
+                ProviderSearchAlbum {
+                    external_id: a.id.to_string(),
+                    title: a.title,
+                    album_type: a.album_type,
+                    release_date: a.release_date,
+                    cover_ref: a.cover,
+                    url: a.url,
+                    explicit: a.explicit.unwrap_or(false),
+                    artist_name,
+                    artist_external_id,
+                }
+            })
+            .collect())
+    }
+
+    async fn search_tracks(
+        &self,
+        query: &str,
+    ) -> Result<Vec<ProviderSearchTrack>, ProviderError> {
+        let parsed = self
+            .hifi_get::<HifiResponse>("/search/", vec![("a".to_string(), query.to_string())])
+            .await
+            .map_err(ProviderError::from)?;
+
+        let tracks = parsed.data.tracks.map(|p| p.items).unwrap_or_default();
+
+        Ok(tracks
+            .into_iter()
+            .map(|t| {
+                let (artist_name, artist_external_id) = t
+                    .artists
+                    .first()
+                    .map(|ar| (ar.name.clone(), ar.id.to_string()))
+                    .unwrap_or_else(|| ("Unknown Artist".to_string(), String::new()));
+
+                let (album_title, album_external_id, album_cover_ref) = t
+                    .album
+                    .map(|al| (al.title, al.id.to_string(), al.cover))
+                    .unwrap_or_else(|| ("Unknown Album".to_string(), String::new(), None));
+
+                ProviderSearchTrack {
+                    external_id: t.id.to_string(),
+                    title: t.title,
+                    version: t.version,
+                    duration_secs: t.duration.unwrap_or(0),
+                    isrc: None,
+                    explicit: t.explicit.unwrap_or(false),
+                    artist_name,
+                    artist_external_id,
+                    album_title,
+                    album_external_id,
+                    album_cover_ref,
+                }
+            })
+            .collect())
     }
 }
 

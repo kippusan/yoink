@@ -6,14 +6,17 @@ use musicbrainz_rs::{
     entity::{
         artist::{Artist as MbArtist, ArtistSearchQuery},
         release::Release as MbRelease,
-        release_group::{ReleaseGroup, ReleaseGroupPrimaryType},
+        release_group::{ReleaseGroup, ReleaseGroupPrimaryType, ReleaseGroupSearchQuery},
     },
     prelude::*,
 };
 use serde_json::Value;
 use tracing::{debug, warn};
 
-use super::{MetadataProvider, ProviderAlbum, ProviderArtist, ProviderError, ProviderTrack};
+use super::{
+    MetadataProvider, ProviderAlbum, ProviderArtist, ProviderError, ProviderSearchAlbum,
+    ProviderTrack,
+};
 
 // ── MusicBrainzProvider ─────────────────────────────────────────────
 
@@ -583,5 +586,56 @@ impl MetadataProvider for MusicBrainzProvider {
 
     async fn fetch_artist_bio(&self, external_artist_id: &str) -> Option<String> {
         self.fetch_wikipedia_extract(external_artist_id).await
+    }
+
+    async fn search_albums(
+        &self,
+        query: &str,
+    ) -> Result<Vec<ProviderSearchAlbum>, ProviderError> {
+        let lucene_query = ReleaseGroupSearchQuery::query_builder()
+            .release_group(query)
+            .build();
+
+        let result = ReleaseGroup::search(lucene_query)
+            .execute_with_client(&self.client)
+            .await
+            .map_err(|e| ProviderError(format!("MusicBrainz release group search: {e}")))?;
+
+        Ok(result
+            .entities
+            .into_iter()
+            .take(25)
+            .map(|rg| {
+                let album_type = rg
+                    .primary_type
+                    .as_ref()
+                    .map(|pt| primary_type_str(pt).to_string());
+
+                let release_date = rg.first_release_date.map(|d| d.0);
+
+                let cover_ref = Some(rg.id.clone());
+                let url = Some(format!("https://musicbrainz.org/release-group/{}", &rg.id));
+
+                // Extract primary artist from artist credits.
+                let (artist_name, artist_external_id) = rg
+                    .artist_credit
+                    .as_ref()
+                    .and_then(|credits| credits.first())
+                    .map(|ac| (ac.name.clone(), ac.artist.id.clone()))
+                    .unwrap_or_else(|| ("Unknown Artist".to_string(), String::new()));
+
+                ProviderSearchAlbum {
+                    external_id: rg.id,
+                    title: rg.title,
+                    album_type,
+                    release_date,
+                    cover_ref,
+                    url,
+                    explicit: false,
+                    artist_name,
+                    artist_external_id,
+                }
+            })
+            .collect())
     }
 }

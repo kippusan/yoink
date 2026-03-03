@@ -1,5 +1,5 @@
 use leptos::prelude::*;
-use lucide_leptos::{FolderDown, Heart, House, Menu, MicVocal, SunMoon, X};
+use lucide_leptos::{FolderDown, Headphones, Heart, House, Menu, Search, SunMoon, X};
 
 // ── Mobile menu context ─────────────────────────────────────
 
@@ -38,6 +38,8 @@ pub fn MobileMenuButton() -> impl IntoView {
 
 const NAV_BASE: &str = "flex items-center gap-3 py-2.5 px-4 text-zinc-400/90 no-underline text-sm font-medium border-l-3 border-transparent transition-[background,color,border-color] duration-150 hover:bg-white/[.04] hover:text-zinc-200 [&_svg]:size-[18px] [&_svg]:shrink-0";
 const NAV_ACTIVE: &str = "flex items-center gap-3 py-2.5 px-4 text-zinc-100 no-underline text-sm font-medium border-l-3 border-blue-500 bg-blue-500/[.08] transition-[background,color,border-color] duration-150 hover:bg-white/[.04] hover:text-zinc-200 [&_svg]:size-[18px] [&_svg]:shrink-0";
+const NAV_CHILD_BASE: &str = "flex items-center gap-2 py-1.5 pr-4 pl-11 text-zinc-400/90 no-underline text-xs font-medium border-l-3 border-transparent transition-[background,color,border-color] duration-150 hover:bg-white/[.03] hover:text-zinc-200";
+const NAV_CHILD_ACTIVE: &str = "flex items-center gap-2 py-1.5 pr-4 pl-11 text-zinc-100 no-underline text-xs font-semibold border-l-3 border-blue-500 bg-blue-500/[.06] transition-[background,color,border-color] duration-150";
 
 // ── Theme toggle helpers (client-only) ──────────────────────
 
@@ -77,7 +79,11 @@ fn toggle_dark_mode() -> bool {
 #[component]
 fn SidebarNav(
     dashboard_class: &'static str,
-    artists_class: &'static str,
+    library_class: &'static str,
+    library_artists_class: &'static str,
+    library_albums_class: &'static str,
+    library_tracks_class: &'static str,
+    search_class: &'static str,
     wanted_class: &'static str,
     import_class: &'static str,
     theme_label: Signal<&'static str>,
@@ -104,9 +110,22 @@ fn SidebarNav(
                 <House />
                 "Dashboard"
             </a>
-            <a href="/artists" class=artists_class on:click=nav_click>
-                <MicVocal />
+            <a href="/library/artists" class=library_class on:click=nav_click>
+                <Headphones />
+                "Library"
+            </a>
+            <a href="/library/artists" class=library_artists_class on:click=nav_click>
                 "Artists"
+            </a>
+            <a href="/library/albums" class=library_albums_class on:click=nav_click>
+                "Albums"
+            </a>
+            <a href="/library/tracks" class=library_tracks_class on:click=nav_click>
+                "Tracks"
+            </a>
+            <a href="/search" class=search_class on:click=nav_click>
+                <Search />
+                "Search"
             </a>
             <a href="/wanted" class=wanted_class on:click=nav_click>
                 <Heart />
@@ -140,7 +159,27 @@ pub fn Sidebar(#[prop(into)] active: String) -> impl IntoView {
     } else {
         NAV_BASE
     };
-    let artists_class = if active == "artists" {
+    let library_class = if active.starts_with("library") {
+        NAV_ACTIVE
+    } else {
+        NAV_BASE
+    };
+    let library_artists_class = if active == "library-artists" {
+        NAV_CHILD_ACTIVE
+    } else {
+        NAV_CHILD_BASE
+    };
+    let library_albums_class = if active == "library-albums" {
+        NAV_CHILD_ACTIVE
+    } else {
+        NAV_CHILD_BASE
+    };
+    let library_tracks_class = if active == "library-tracks" {
+        NAV_CHILD_ACTIVE
+    } else {
+        NAV_CHILD_BASE
+    };
+    let search_class = if active == "search" {
         NAV_ACTIVE
     } else {
         NAV_BASE
@@ -176,8 +215,8 @@ pub fn Sidebar(#[prop(into)] active: String) -> impl IntoView {
         // OS theme sync: listen to prefers-color-scheme changes.
         // Only apply when the user hasn't explicitly set a theme in localStorage.
         {
-            use wasm_bindgen::JsCast;
             use wasm_bindgen::prelude::*;
+            use wasm_bindgen::JsCast;
 
             let win = leptos::prelude::window();
             if let Ok(Some(mql)) = win.match_media("(prefers-color-scheme: dark)") {
@@ -251,7 +290,11 @@ pub fn Sidebar(#[prop(into)] active: String) -> impl IntoView {
         <aside class="fixed inset-y-0 left-0 w-[220px] bg-[rgba(10,10,15,.92)] backdrop-blur-[20px] border-r border-white/[.06] flex flex-col z-50 overflow-y-auto max-md:hidden" aria-label="Sidebar">
             <SidebarNav
                 dashboard_class=dashboard_class
-                artists_class=artists_class
+                library_class=library_class
+                library_artists_class=library_artists_class
+                library_albums_class=library_albums_class
+                library_tracks_class=library_tracks_class
+                search_class=search_class
                 wanted_class=wanted_class
                 import_class=import_class
                 theme_label=theme_label
@@ -284,7 +327,11 @@ pub fn Sidebar(#[prop(into)] active: String) -> impl IntoView {
                 </div>
                 <SidebarNav
                     dashboard_class=dashboard_class
-                    artists_class=artists_class
+                    library_class=library_class
+                    library_artists_class=library_artists_class
+                    library_albums_class=library_albums_class
+                    library_tracks_class=library_tracks_class
+                    search_class=search_class
                     wanted_class=wanted_class
                     import_class=import_class
                     theme_label=theme_label

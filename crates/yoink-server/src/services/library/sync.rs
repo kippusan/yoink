@@ -10,7 +10,20 @@ use crate::{db, models::MonitoredAlbum, providers::ProviderAlbum, state::AppStat
 /// Groups incoming albums by identity key (title + year), merges all provider
 /// links onto a single local album per key, and picks the best provider source
 /// for display metadata.
+///
+/// For unmonitored (lightweight) artists, this still syncs albums from providers
+/// but does NOT remove stale albums (albums that no longer appear from providers)
+/// since they may have been explicitly added by the user.
 pub(crate) async fn sync_artist_albums(state: &AppState, artist_id: Uuid) -> Result<(), String> {
+    let artist_monitored = {
+        let artists = state.monitored_artists.read().await;
+        artists
+            .iter()
+            .find(|a| a.id == artist_id)
+            .map(|a| a.monitored)
+            .unwrap_or(true) // default to true for safety
+    };
+
     let links = db::load_artist_provider_links(&state.db, artist_id)
         .await
         .map_err(|e| format!("failed to load provider links: {e}"))?;
@@ -150,6 +163,7 @@ pub(crate) async fn sync_artist_albums(state: &AppState, artist_id: Uuid) -> Res
                 monitored: false,
                 acquired: false,
                 wanted: false,
+                partially_wanted: false,
                 added_at: Utc::now(),
             };
             let _ = db::upsert_album(&state.db, &album).await;
@@ -185,10 +199,9 @@ pub(crate) async fn sync_artist_albums(state: &AppState, artist_id: Uuid) -> Res
             for (prov, ext_id) in &extra_artist_ext_ids {
                 if let Ok(Some(other_artist_id)) =
                     db::find_artist_by_provider_link(&state.db, prov, ext_id).await
+                    && !resolved_ids.contains(&other_artist_id)
                 {
-                    if !resolved_ids.contains(&other_artist_id) {
-                        resolved_ids.push(other_artist_id);
-                    }
+                    resolved_ids.push(other_artist_id);
                 }
             }
             if resolved_ids.len() > 1 {
@@ -202,21 +215,26 @@ pub(crate) async fn sync_artist_albums(state: &AppState, artist_id: Uuid) -> Res
     }
 
     // ── 4. Remove stale albums ──────────────────────────────────────────
-    let mut ids_to_remove = Vec::new();
-    for album in albums
-        .iter()
-        .filter(|a| a.artist_id == artist_id || a.artist_ids.contains(&artist_id))
-    {
-        let key = album_identity_key(&album.title, album.release_date.as_deref());
-        if !incoming_keys.contains(&key) {
-            ids_to_remove.push(album.id);
+    // Only remove stale albums for fully monitored artists.
+    // Lightweight (unmonitored) artists may have explicitly-added albums that
+    // don't come from provider syncs, so we must not delete them.
+    if artist_monitored {
+        let mut ids_to_remove = Vec::new();
+        for album in albums
+            .iter()
+            .filter(|a| a.artist_id == artist_id || a.artist_ids.contains(&artist_id))
+        {
+            let key = album_identity_key(&album.title, album.release_date.as_deref());
+            if !incoming_keys.contains(&key) {
+                ids_to_remove.push(album.id);
+            }
         }
-    }
 
-    for id in &ids_to_remove {
-        let _ = db::delete_album(&state.db, *id).await;
+        for id in &ids_to_remove {
+            let _ = db::delete_album(&state.db, *id).await;
+        }
+        albums.retain(|album| !ids_to_remove.contains(&album.id));
     }
-    albums.retain(|album| !ids_to_remove.contains(&album.id));
 
     Ok(())
 }

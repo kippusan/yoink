@@ -7,6 +7,8 @@ use crate::models::MonitoredAlbum;
 
 pub(crate) async fn load_albums(pool: &SqlitePool) -> Result<Vec<MonitoredAlbum>, sqlx::Error> {
     // 1. Load the raw album rows (artist_id = legacy primary artist).
+    //    partially_wanted is derived: album is NOT fully monitored but has
+    //    individually monitored tracks that are not yet acquired.
     struct AlbumRow {
         id: Uuid,
         artist_id: Uuid,
@@ -18,6 +20,7 @@ pub(crate) async fn load_albums(pool: &SqlitePool) -> Result<Vec<MonitoredAlbum>
         monitored: bool,
         acquired: bool,
         wanted: bool,
+        partially_wanted: bool,
         added_at: chrono::DateTime<chrono::Utc>,
         artist_credits: Option<String>,
     }
@@ -25,16 +28,19 @@ pub(crate) async fn load_albums(pool: &SqlitePool) -> Result<Vec<MonitoredAlbum>
     let rows = sqlx::query_as!(
         AlbumRow,
         r#"SELECT
-            id as "id!: Uuid",
-            artist_id as "artist_id!: Uuid",
-            title, album_type, release_date, cover_url,
-            explicit as "explicit!: bool",
-            monitored as "monitored!: bool",
-            acquired as "acquired!: bool",
-            wanted as "wanted!: bool",
-            added_at as "added_at!: chrono::DateTime<chrono::Utc>",
-            artist_credits
-         FROM albums ORDER BY release_date DESC"#
+            a.id as "id!: Uuid",
+            a.artist_id as "artist_id!: Uuid",
+            a.title, a.album_type, a.release_date, a.cover_url,
+            a.explicit as "explicit!: bool",
+            a.monitored as "monitored!: bool",
+            a.acquired as "acquired!: bool",
+            a.wanted as "wanted!: bool",
+            CASE WHEN a.monitored = 0 AND EXISTS (
+                SELECT 1 FROM tracks t WHERE t.album_id = a.id AND t.monitored = 1 AND t.acquired = 0
+            ) THEN 1 ELSE 0 END as "partially_wanted!: bool",
+            a.added_at as "added_at!: chrono::DateTime<chrono::Utc>",
+            a.artist_credits
+         FROM albums a ORDER BY a.release_date DESC"#
     )
     .fetch_all(pool)
     .await?;
@@ -71,6 +77,7 @@ pub(crate) async fn load_albums(pool: &SqlitePool) -> Result<Vec<MonitoredAlbum>
                 monitored: r.monitored,
                 acquired: r.acquired,
                 wanted: r.wanted,
+                partially_wanted: r.partially_wanted,
                 added_at: r.added_at,
             }
         })

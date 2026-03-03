@@ -152,14 +152,14 @@ pub fn ArtistDetailPage() -> impl IntoView {
 
     view! {
         <div class="flex min-h-screen">
-            <Sidebar active="artists" />
+            <Sidebar active="library-artists" />
             <div class="ml-[220px] max-md:ml-0 flex-1 min-h-screen overflow-x-hidden">
                 // Skeleton — shown only until first data arrives
                 <Show when=move || !has_loaded.get()>
                     <div>
                         <div class=HEADER_BAR>
                             <nav class=BREADCRUMB_NAV aria-label="Breadcrumb"><MobileMenuButton />
-                                <a href="/artists" class=BREADCRUMB_LINK>"Artists"</a>
+                                <a href="/library" class=BREADCRUMB_LINK>"Library"</a>
                                 <span class=BREADCRUMB_SEP><ChevronRight /></span>
                                 <div class="h-4 w-28 bg-zinc-200 dark:bg-zinc-700 rounded animate-pulse"></div>
                             </nav>
@@ -220,16 +220,16 @@ pub fn ArtistDetailPage() -> impl IntoView {
                     <div>
                         <div class=HEADER_BAR>
                             <nav class=BREADCRUMB_NAV aria-label="Breadcrumb"><MobileMenuButton />
-                                <a href="/artists" class=BREADCRUMB_LINK>"Artists"</a>
+                                <a href="/library" class=BREADCRUMB_LINK>"Library"</a>
                                 <span class=BREADCRUMB_SEP><ChevronRight /></span>
                                 <span class=BREADCRUMB_CURRENT>"Not Found"</span>
                             </nav>
                         </div>
                         <div class="p-6 max-md:p-4">
                             <div class="text-zinc-500">"Artist not found."</div>
-                            <a href="/artists" class={cls(BTN, "mt-4 inline-flex items-center gap-1.5")}>
+                            <a href="/library" class={cls(BTN, "mt-4 inline-flex items-center gap-1.5")}>
                                 <ArrowLeft size=14 />
-                                "All Artists"
+                                "Library"
                             </a>
                         </div>
                     </div>
@@ -273,6 +273,7 @@ fn ArtistDetailContent(
 
     // Loading state signals for async buttons
     let sync_loading = RwSignal::new(false);
+    let promote_loading = RwSignal::new(false);
     let monitor_all_loading = RwSignal::new(false);
     let removing_artist = RwSignal::new(false);
 
@@ -286,7 +287,7 @@ fn ArtistDetailContent(
             view! {
                 <div class=HEADER_BAR>
                     <nav class=BREADCRUMB_NAV aria-label="Breadcrumb"><MobileMenuButton />
-                        <a href="/artists" class=BREADCRUMB_LINK>"Artists"</a>
+                        <a href="/library" class=BREADCRUMB_LINK>"Library"</a>
                         <span class=BREADCRUMB_SEP><ChevronRight /></span>
                         <span class=BREADCRUMB_CURRENT>{a.name}</span>
                     </nav>
@@ -309,6 +310,7 @@ fn ArtistDetailContent(
                     .unwrap_or_else(|| "?".to_string());
 
                 let artist_id = a.id;
+                let artist_monitored = a.monitored;
 
                 view! {
                     <div class={cls(GLASS, "mb-5")}>
@@ -325,7 +327,30 @@ fn ArtistDetailContent(
                                 <div class="text-[22px] font-bold mb-1">{a.name.clone()}</div>
                                 <div class={cls(MUTED, "text-[13px] mb-2 flex flex-wrap items-center gap-2")}>
                                     <span>{format!("{album_count} albums \u{00b7} {monitored_count} monitored \u{00b7} {acquired_count} acquired \u{00b7} {wanted_count} wanted")}</span>
+                                    {if artist_monitored {
+                                        view! {
+                                            <span class="inline-flex items-center px-1.5 py-px text-[10px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-500/[.08] border border-blue-500/20 rounded">
+                                                "Monitored"
+                                            </span>
+                                        }.into_any()
+                                    } else {
+                                        view! {
+                                            <span class="inline-flex items-center px-1.5 py-px text-[10px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-500/[.08] border border-amber-500/20 rounded">
+                                                "Lightweight"
+                                            </span>
+                                        }.into_any()
+                                    }}
                                 </div>
+
+                                {if !artist_monitored {
+                                    view! {
+                                        <div class="text-[12px] text-amber-700 dark:text-amber-300 mb-2">
+                                            "This artist is lightweight. Promote to monitored to sync full discography automatically."
+                                        </div>
+                                    }.into_any()
+                                } else {
+                                    view! { <span></span> }.into_any()
+                                }}
 
                                 // Linked providers — inline chips with icons
                                 {move || {
@@ -395,17 +420,37 @@ fn ArtistDetailContent(
                                         }>
                                         "Edit"
                                     </button>
-                                    <button type="button"
-                                        class=move || btn_cls(BTN, "px-2.5 py-0.5 text-xs", sync_loading.get())
-                                        disabled=move || sync_loading.get()
-                                        on:click={
-
-                                            move |_| {
-                                                dispatch_with_toast_loading(ServerAction::SyncArtistAlbums { artist_id }, "Album sync started", Some(sync_loading));
-                                            }
-                                        }>
-                                        {move || if sync_loading.get() { "Syncing\u{2026}" } else { "Sync Albums" }}
-                                    </button>
+                                    {if artist_monitored {
+                                        view! {
+                                            <button type="button"
+                                                class=move || btn_cls(BTN, "px-2.5 py-0.5 text-xs", sync_loading.get())
+                                                disabled=move || sync_loading.get()
+                                                on:click={
+                                                    move |_| {
+                                                        dispatch_with_toast_loading(ServerAction::SyncArtistAlbums { artist_id }, "Album sync started", Some(sync_loading));
+                                                    }
+                                                }>
+                                                {move || if sync_loading.get() { "Syncing\u{2026}" } else { "Sync Albums" }}
+                                            </button>
+                                        }.into_any()
+                                    } else {
+                                        view! {
+                                            <button type="button"
+                                                class=move || btn_cls(BTN_PRIMARY, "px-2.5 py-0.5 text-xs", promote_loading.get())
+                                                disabled=move || promote_loading.get()
+                                                on:click={
+                                                    move |_| {
+                                                        dispatch_with_toast_loading(
+                                                            ServerAction::ToggleArtistMonitor { artist_id, monitored: true },
+                                                            "Artist promoted to monitored",
+                                                            Some(promote_loading),
+                                                        );
+                                                    }
+                                                }>
+                                                {move || if promote_loading.get() { "Promoting\u{2026}" } else { "Monitor Artist" }}
+                                            </button>
+                                        }.into_any()
+                                    }}
                                     <a
                                         href={
                                             format!("/artists/{}/merge-albums", artist_id)
@@ -675,7 +720,7 @@ fn ArtistDetailContent(
                                             .with_position(ToastPosition::BottomRight)
                                             .with_expiry(Some(4_000)),
                                     );
-                                    navigate("/artists", Default::default());
+                                    navigate("/library", Default::default());
                                 }
                                 Err(e) => {
                                     toaster.toast(

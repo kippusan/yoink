@@ -43,6 +43,9 @@ pub(crate) fn build_server_context(state: &AppState) -> yoink_shared::ServerCont
     let preview_import_fn = build_preview_import_fn(state);
     let confirm_import_fn = build_confirm_import_fn(state);
     let fetch_artist_images_fn = build_fetch_artist_images_fn(state);
+    let search_albums_fn = build_search_albums_fn(state);
+    let search_tracks_fn = build_search_tracks_fn(state);
+    let fetch_library_tracks_fn = build_fetch_library_tracks_fn(state);
 
     yoink_shared::ServerContext {
         monitored_artists: state.monitored_artists.clone(),
@@ -60,6 +63,9 @@ pub(crate) fn build_server_context(state: &AppState) -> yoink_shared::ServerCont
         preview_import: preview_import_fn,
         confirm_import: confirm_import_fn,
         fetch_artist_images: fetch_artist_images_fn,
+        search_albums: search_albums_fn,
+        search_tracks: search_tracks_fn,
+        fetch_library_tracks: fetch_library_tracks_fn,
     }
 }
 
@@ -222,6 +228,8 @@ fn build_fetch_tracks_fn(state: &AppState) -> yoink_shared::FetchTracksFn {
                                 explicit: t.explicit,
                                 track_artist: t.artists,
                                 file_path: None,
+                                monitored: false,
+                                acquired: false,
                             };
 
                             let _ = db::upsert_track(&s.db, &track_info, album_id).await;
@@ -537,6 +545,106 @@ fn build_fetch_artist_images_fn(state: &AppState) -> yoink_shared::FetchArtistIm
             );
 
             Ok(images)
+        })
+    })
+}
+
+fn build_search_albums_fn(state: &AppState) -> yoink_shared::SearchAlbumsFn {
+    let s = state.clone();
+    std::sync::Arc::new(move |query: String| {
+        let s = s.clone();
+        Box::pin(async move {
+            let all_results = s.registry.search_albums_all(&query).await;
+            let mut results = Vec::new();
+
+            for (provider_id, albums) in all_results {
+                for a in albums {
+                    let cover_url = a
+                        .cover_ref
+                        .as_deref()
+                        .map(|c| yoink_shared::provider_image_url(&provider_id, c, 320));
+
+                    results.push(yoink_shared::SearchAlbumResult {
+                        provider: provider_id.clone(),
+                        external_id: a.external_id,
+                        title: a.title,
+                        album_type: a.album_type,
+                        release_date: a.release_date,
+                        cover_url,
+                        url: a.url,
+                        explicit: a.explicit,
+                        artist_name: a.artist_name,
+                        artist_external_id: a.artist_external_id,
+                    });
+                }
+            }
+
+            Ok(results)
+        })
+    })
+}
+
+fn build_search_tracks_fn(state: &AppState) -> yoink_shared::SearchTracksFn {
+    let s = state.clone();
+    std::sync::Arc::new(move |query: String| {
+        let s = s.clone();
+        Box::pin(async move {
+            let all_results = s.registry.search_tracks_all(&query).await;
+            let mut results = Vec::new();
+
+            for (provider_id, tracks) in all_results {
+                for t in tracks {
+                    let secs = t.duration_secs;
+                    let mins = secs / 60;
+                    let rem = secs % 60;
+
+                    let album_cover_url = t
+                        .album_cover_ref
+                        .as_deref()
+                        .map(|c| yoink_shared::provider_image_url(&provider_id, c, 160));
+
+                    results.push(yoink_shared::SearchTrackResult {
+                        provider: provider_id.clone(),
+                        external_id: t.external_id,
+                        title: t.title,
+                        version: t.version,
+                        duration_secs: t.duration_secs,
+                        duration_display: format!("{mins}:{rem:02}"),
+                        isrc: t.isrc,
+                        explicit: t.explicit,
+                        artist_name: t.artist_name,
+                        artist_external_id: t.artist_external_id,
+                        album_title: t.album_title,
+                        album_external_id: t.album_external_id,
+                        album_cover_url,
+                    });
+                }
+            }
+
+            Ok(results)
+        })
+    })
+}
+
+fn build_fetch_library_tracks_fn(state: &AppState) -> yoink_shared::FetchLibraryTracksFn {
+    let s = state.clone();
+    std::sync::Arc::new(move || {
+        let s = s.clone();
+        Box::pin(async move {
+            let rows = db::load_all_tracks(&s.db)
+                .await
+                .map_err(|e| format!("Failed to load library tracks: {e}"))?;
+
+            Ok(rows
+                .into_iter()
+                .map(|(track, album_id, album_title, artist_id, artist_name)| yoink_shared::LibraryTrack {
+                    track,
+                    album_id,
+                    album_title,
+                    artist_id,
+                    artist_name,
+                })
+                .collect())
         })
     })
 }

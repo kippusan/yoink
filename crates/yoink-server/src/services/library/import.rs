@@ -480,6 +480,7 @@ async fn ensure_monitored_artist(
         name: artist.name.clone(),
         image_url,
         bio: None,
+        monitored: true, // Imported artists are fully monitored
         added_at: Utc::now(),
     };
     let _ = db::upsert_artist(&state.db, &monitored).await;

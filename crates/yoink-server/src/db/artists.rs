@@ -6,7 +6,9 @@ use crate::models::MonitoredArtist;
 pub(crate) async fn load_artists(pool: &SqlitePool) -> Result<Vec<MonitoredArtist>, sqlx::Error> {
     sqlx::query_as!(
         MonitoredArtist,
-        r#"SELECT id as "id!: Uuid", name, image_url, bio, added_at as "added_at!: chrono::DateTime<chrono::Utc>"
+        r#"SELECT id as "id!: Uuid", name, image_url, bio,
+                  monitored as "monitored!: bool",
+                  added_at as "added_at!: chrono::DateTime<chrono::Utc>"
            FROM artists ORDER BY name COLLATE NOCASE"#
     )
     .fetch_all(pool)
@@ -18,17 +20,35 @@ pub(crate) async fn upsert_artist(
     artist: &MonitoredArtist,
 ) -> Result<(), sqlx::Error> {
     sqlx::query!(
-        "INSERT INTO artists (id, name, image_url, bio, added_at)
-         VALUES ($1, $2, $3, $4, $5)
+        "INSERT INTO artists (id, name, image_url, bio, monitored, added_at)
+         VALUES ($1, $2, $3, $4, $5, $6)
          ON CONFLICT(id) DO UPDATE SET
            name = excluded.name,
            image_url = excluded.image_url,
-           bio = COALESCE(excluded.bio, artists.bio)",
+           bio = COALESCE(excluded.bio, artists.bio),
+           monitored = excluded.monitored",
         artist.id,
         artist.name,
         artist.image_url,
         artist.bio,
+        artist.monitored,
         artist.added_at,
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Update only the monitored flag for an artist.
+pub(crate) async fn update_artist_monitored(
+    pool: &SqlitePool,
+    artist_id: Uuid,
+    monitored: bool,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        "UPDATE artists SET monitored = $1 WHERE id = $2",
+        monitored,
+        artist_id
     )
     .execute(pool)
     .await?;

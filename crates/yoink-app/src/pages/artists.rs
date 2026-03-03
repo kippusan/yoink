@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use leptos::prelude::*;
-use lucide_leptos::X;
+use lucide_leptos::{ChevronRight, X};
 
 use yoink_shared::{
     MonitoredAlbum, MonitoredArtist, SearchArtistResult, ServerAction, build_albums_by_artist,
@@ -11,11 +11,12 @@ use yoink_shared::{
 use leptoaster::{ToastBuilder, ToastLevel, ToastPosition, expect_toaster};
 
 use crate::actions::dispatch_action;
+use crate::components::toast::dispatch_with_toast;
 use crate::components::{ErrorPanel, MobileMenuButton, Sidebar};
 use crate::hooks::{set_page_title, use_sse_version};
 use crate::styles::{
-    BREADCRUMB_CURRENT, BREADCRUMB_NAV, BTN_PRIMARY, EMPTY, GLASS, GLASS_BODY, GLASS_HEADER,
-    GLASS_TITLE, HEADER_BAR, MUTED, SELECT, btn_cls, cls,
+    BREADCRUMB_CURRENT, BREADCRUMB_LINK, BREADCRUMB_NAV, BREADCRUMB_SEP, BTN_PRIMARY, EMPTY,
+    GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, HEADER_BAR, MUTED, SELECT, btn_cls, cls,
 };
 
 // ── Page-specific Tailwind class constants ──────────────────
@@ -151,12 +152,14 @@ pub fn ArtistsPage() -> impl IntoView {
 
     view! {
         <div class="flex min-h-screen">
-            <Sidebar active="artists" />
+            <Sidebar active="library-artists" />
             <div class="ml-[220px] max-md:ml-0 flex-1 min-h-screen overflow-x-hidden">
                 <Transition fallback=move || view! {
                     <div>
                         <div class=HEADER_BAR>
                             <nav class=BREADCRUMB_NAV aria-label="Breadcrumb"><MobileMenuButton />
+                                <a href="/library" class=BREADCRUMB_LINK>"Library"</a>
+                                <span class=BREADCRUMB_SEP><ChevronRight /></span>
                                 <span class=BREADCRUMB_CURRENT>"Artists"</span>
                             </nav>
                         </div>
@@ -192,12 +195,20 @@ pub fn ArtistsPage() -> impl IntoView {
                                     <ErrorPanel
                                         message="Failed to load artists."
                                         details=e.to_string()
-                                        retry_href="/artists"
+                                        retry_href="/library"
                                     />
                                 </div>
                             }.into_any(),
                             Ok(data) => {
-                                view! { <ArtistsContent data=data query=query set_query=set_query search_result=search_result /> }.into_any()
+                                view! {
+                                    <ArtistsContent
+                                        data=data
+                                        query=query
+                                        set_query=set_query
+                                        search_result=search_result
+                                        show_header=true
+                                    />
+                                }.into_any()
                             }
                         })
                     }}
@@ -208,11 +219,127 @@ pub fn ArtistsPage() -> impl IntoView {
 }
 
 #[component]
+pub fn ArtistsTabContent(show_header: bool) -> impl IntoView {
+    let version = use_sse_version();
+    let data = Resource::new(move || version.get(), |_| get_artists_data());
+
+    let url_query = leptos_router::hooks::use_query_map();
+    let initial_q = url_query.read_untracked().get("q").unwrap_or_default();
+
+    let (query, set_query) = signal(initial_q.clone());
+    let (debounced_query, set_debounced_query) = signal(initial_q);
+
+    #[cfg(feature = "hydrate")]
+    {
+        use std::cell::Cell;
+        use std::rc::Rc;
+        use wasm_bindgen::JsCast;
+        let timer_id: Rc<Cell<Option<i32>>> = Rc::new(Cell::new(None));
+        Effect::new({
+            let timer_id = timer_id.clone();
+            move |_| {
+                let val = query.get();
+                if let Some(id) = timer_id.get() {
+                    leptos::prelude::window().clear_timeout_with_handle(id);
+                }
+                let set_dq = set_debounced_query;
+                let timer_id_inner = timer_id.clone();
+                let cb = wasm_bindgen::closure::Closure::once_into_js(move || {
+                    set_dq.set(val);
+                    timer_id_inner.set(None);
+                });
+                if let Ok(id) = leptos::prelude::window()
+                    .set_timeout_with_callback_and_timeout_and_arguments_0(
+                        cb.as_ref().unchecked_ref(),
+                        300,
+                    )
+                {
+                    timer_id.set(Some(id));
+                }
+            }
+        });
+    }
+
+    #[cfg(not(feature = "hydrate"))]
+    {
+        Effect::new(move |_| {
+            set_debounced_query.set(query.get());
+        });
+    }
+
+    let search_result: Resource<Result<SearchResult, ServerFnError>> = Resource::new(
+        move || debounced_query.get(),
+        |q| async move {
+            if q.trim().is_empty() {
+                Ok(SearchResult {
+                    results: vec![],
+                    error: None,
+                })
+            } else {
+                search_artists(q).await
+            }
+        },
+    );
+
+    view! {
+        <Transition fallback=move || view! {
+            <div class="p-6 max-md:p-4">
+                <div class="mb-5 bg-white/70 dark:bg-zinc-800/60 rounded-xl border border-black/[.06] dark:border-white/[.08] p-4">
+                    <div class="h-9 w-full max-w-[360px] bg-zinc-200 dark:bg-zinc-700 rounded-lg animate-pulse"></div>
+                </div>
+                <div class="bg-white/70 dark:bg-zinc-800/60 rounded-xl border border-black/[.06] dark:border-white/[.08] overflow-hidden">
+                    <div class="px-5 py-3 border-b border-black/[.06] dark:border-white/[.06]">
+                        <div class="h-4 w-28 bg-zinc-200 dark:bg-zinc-700 rounded animate-pulse"></div>
+                    </div>
+                    <div class="p-4 grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
+                        {(0..8).map(|_| view! {
+                            <div class="rounded-xl p-4 flex items-center gap-3.5 border border-black/[.04] dark:border-white/[.04] animate-pulse">
+                                <div class="size-12 rounded-full bg-zinc-200 dark:bg-zinc-700 shrink-0"></div>
+                                <div class="flex-1 min-w-0">
+                                    <div class="h-4 w-28 bg-zinc-200 dark:bg-zinc-700 rounded mb-2"></div>
+                                    <div class="h-3 w-40 bg-zinc-200 dark:bg-zinc-700 rounded"></div>
+                                </div>
+                            </div>
+                        }).collect_view()}
+                    </div>
+                </div>
+            </div>
+        }>
+            {move || {
+                data.get().map(|result| match result {
+                    Err(e) => view! {
+                        <div class="p-6 max-md:p-4">
+                            <ErrorPanel
+                                message="Failed to load artists."
+                                details=e.to_string()
+                                retry_href="/library"
+                            />
+                        </div>
+                    }.into_any(),
+                    Ok(data) => {
+                        view! {
+                            <ArtistsContent
+                                data=data
+                                query=query
+                                set_query=set_query
+                                search_result=search_result
+                                show_header=show_header
+                            />
+                        }.into_any()
+                    }
+                })
+            }}
+        </Transition>
+    }
+}
+
+#[component]
 fn ArtistsContent(
     data: ArtistsData,
     query: ReadSignal<String>,
     set_query: WriteSignal<String>,
     search_result: Resource<Result<SearchResult, ServerFnError>>,
+    show_header: bool,
 ) -> impl IntoView {
     let monitored_count = data.monitored.len();
     let monitored_names: HashSet<String> = data
@@ -240,13 +367,16 @@ fn ArtistsContent(
     let artists_with_albums = StoredValue::new(artists_with_albums);
 
     view! {
-        // Header
-        <div class=HEADER_BAR>
-            <nav class=BREADCRUMB_NAV aria-label="Breadcrumb"><MobileMenuButton />
-                <span class=BREADCRUMB_CURRENT>"Artists"</span>
-            </nav>
-            <span class={cls(MUTED, "text-[13px]")}>{format!("{monitored_count} monitored")}</span>
-        </div>
+        <Show when=move || show_header>
+            <div class=HEADER_BAR>
+                <nav class=BREADCRUMB_NAV aria-label="Breadcrumb"><MobileMenuButton />
+                    <a href="/library" class=BREADCRUMB_LINK>"Library"</a>
+                    <span class=BREADCRUMB_SEP><ChevronRight /></span>
+                    <span class=BREADCRUMB_CURRENT>"Artists"</span>
+                </nav>
+                <span class={cls(MUTED, "text-[13px]")}>{format!("{monitored_count} monitored")}</span>
+            </div>
+        </Show>
 
         <div class="p-6 max-md:p-4">
             // Search panel with clear button (#13)
@@ -544,7 +674,7 @@ fn SearchResultRow(artist: SearchArtistResult, set_query: WriteSignal<String>) -
                                         .with_expiry(Some(4_000)),
                                 );
                                 set_query.set(String::new());
-                                navigate("/artists", Default::default());
+                                navigate("/library", Default::default());
                             }
                             Err(e) => {
                                 toaster.toast(
@@ -580,21 +710,59 @@ fn ArtistCard(artist: MonitoredArtist, albums: Vec<MonitoredAlbum>) -> impl Into
         .unwrap_or_else(|| "?".to_string());
     let artist_img = artist.image_url.clone();
     let detail_href = format!("/artists/{}", artist.id);
+    let is_monitored = artist.monitored;
+    let artist_id = artist.id;
 
     view! {
-        <a href=detail_href class=ARTIST_CARD>
-            {match artist_img {
-                Some(url) => view! {
-                    <img class=ARTIST_AVATAR src=url alt="" />
-                }.into_any(),
-                None => view! {
-                    <div class=ARTIST_FALLBACK>{fallback_initial}</div>
-                }.into_any(),
+        <div class=ARTIST_CARD>
+            <a href=detail_href class="flex items-center gap-3.5 flex-1 min-w-0 no-underline">
+                {match artist_img {
+                    Some(url) => view! {
+                        <img class=ARTIST_AVATAR src=url alt="" />
+                    }.into_any(),
+                    None => view! {
+                        <div class=ARTIST_FALLBACK>{fallback_initial}</div>
+                    }.into_any(),
+                }}
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2">
+                        <div class="text-[15px] font-bold text-zinc-900 dark:text-zinc-100 whitespace-nowrap overflow-hidden text-ellipsis">{artist.name}</div>
+                        {if is_monitored {
+                            view! {
+                                <span class="inline-flex items-center px-1.5 py-px text-[10px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-500/[.08] border border-blue-500/20 rounded">
+                                    "Monitored"
+                                </span>
+                            }.into_any()
+                        } else {
+                            view! {
+                                <span class="inline-flex items-center px-1.5 py-px text-[10px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-500/[.08] border border-amber-500/20 rounded">
+                                    "Lightweight"
+                                </span>
+                            }.into_any()
+                        }}
+                    </div>
+                    <div class="text-xs text-zinc-500 dark:text-zinc-400">{album_count_text}</div>
+                </div>
+            </a>
+            {if !is_monitored {
+                view! {
+                    <button
+                        type="button"
+                        class="inline-flex items-center justify-center px-2 py-1 text-[11px] font-medium rounded-md border border-amber-500/30 bg-amber-500/[.08] text-amber-700 dark:text-amber-300 hover:bg-amber-500/[.14] transition-colors duration-150"
+                        on:click=move |ev| {
+                            ev.stop_propagation();
+                            dispatch_with_toast(
+                                ServerAction::ToggleArtistMonitor { artist_id, monitored: true },
+                                "Artist promoted to monitored",
+                            );
+                        }
+                    >
+                        "Monitor"
+                    </button>
+                }.into_any()
+            } else {
+                view! { <span></span> }.into_any()
             }}
-            <div class="flex-1 min-w-0">
-                <div class="text-[15px] font-bold text-zinc-900 dark:text-zinc-100 whitespace-nowrap overflow-hidden text-ellipsis">{artist.name}</div>
-                <div class="text-xs text-zinc-500 dark:text-zinc-400">{album_count_text}</div>
-            </div>
-        </a>
+        </div>
     }
 }

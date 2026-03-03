@@ -1,9 +1,9 @@
 use leptos::prelude::*;
-use lucide_leptos::{ArrowLeft, ChevronRight};
+use lucide_leptos::{ArrowLeft, Bookmark, Check, ChevronRight};
 
 use yoink_shared::{
     DownloadJob, DownloadStatus, MatchSuggestion, MonitoredAlbum, MonitoredArtist, ProviderLink,
-    ServerAction, TrackInfo, album_cover_url, album_type_label, build_latest_jobs,
+    ServerAction, TrackInfo, Uuid, album_cover_url, album_type_label, build_latest_jobs,
     provider_display_name, status_class, status_label_text,
 };
 
@@ -170,13 +170,13 @@ pub fn AlbumDetailPage() -> impl IntoView {
 
     view! {
         <div class="flex min-h-screen">
-            <Sidebar active="artists" />
+            <Sidebar active="library-artists" />
             <div class="ml-[220px] max-md:ml-0 flex-1 min-h-screen overflow-x-hidden">
                 <Transition fallback=move || view! {
                     <div>
                         <div class=HEADER_BAR>
                             <nav class=BREADCRUMB_NAV aria-label="Breadcrumb"><MobileMenuButton />
-                                <a href="/artists" class=BREADCRUMB_LINK>"Artists"</a>
+                                <a href="/library" class=BREADCRUMB_LINK>"Library"</a>
                                 <span class=BREADCRUMB_SEP><ChevronRight /></span>
                                 <div class="h-4 w-20 bg-zinc-200 dark:bg-zinc-700 rounded animate-pulse"></div>
                                 <span class=BREADCRUMB_SEP><ChevronRight /></span>
@@ -241,7 +241,7 @@ pub fn AlbumDetailPage() -> impl IntoView {
                                         <div>
                                             <div class=HEADER_BAR>
                                                 <nav class=BREADCRUMB_NAV aria-label="Breadcrumb"><MobileMenuButton />
-                                                    <a href="/artists" class=BREADCRUMB_LINK>"Artists"</a>
+                                                    <a href="/library" class=BREADCRUMB_LINK>"Library"</a>
                                                     <span class=BREADCRUMB_SEP><ChevronRight /></span>
                                                     <a href=back_href class=BREADCRUMB_LINK>"Artist"</a>
                                                     <span class=BREADCRUMB_SEP><ChevronRight /></span>
@@ -250,9 +250,9 @@ pub fn AlbumDetailPage() -> impl IntoView {
                                             </div>
                                             <div class="p-6 max-md:p-4">
                                                 <div class="text-zinc-500">"Album not found."</div>
-                                                <a href="/artists" class={cls(BTN, "mt-4 inline-flex items-center gap-1.5")}>
+                                                <a href="/library" class={cls(BTN, "mt-4 inline-flex items-center gap-1.5")}>
                                                     <ArrowLeft size=14 />
-                                                    "All Artists"
+                                                    "Library"
                                                 </a>
                                             </div>
                                         </div>
@@ -307,6 +307,7 @@ fn AlbumDetailContent(
     let is_monitored = album.monitored;
     let is_wanted = album.wanted;
     let is_acquired = album.acquired;
+    let is_partially_wanted = album.partially_wanted;
 
     let cover_url = album_cover_url(&album, 640);
 
@@ -383,7 +384,7 @@ fn AlbumDetailContent(
         // ── Sticky header with breadcrumb ───────────────────
         <div class=HEADER_BAR>
             <nav class=BREADCRUMB_NAV aria-label="Breadcrumb"><MobileMenuButton />
-                <a href="/artists" class=BREADCRUMB_LINK>"Artists"</a>
+                <a href="/library" class=BREADCRUMB_LINK>"Library"</a>
                 <span class=BREADCRUMB_SEP><ChevronRight /></span>
                 <a href=artist_link.clone() class=BREADCRUMB_LINK>
                     {artist_name.clone()}
@@ -574,6 +575,8 @@ fn AlbumDetailContent(
                     <div class="flex flex-wrap items-center gap-2 mb-3">
                         {if is_wanted && !is_acquired {
                             view! { <span class="pill" style="background:rgba(245,158,11,.12);color:#f59e0b">"Wanted"</span> }.into_any()
+                        } else if is_partially_wanted {
+                            view! { <span class="pill" style="background:rgba(245,158,11,.08);color:#d97706">"Partially Wanted"</span> }.into_any()
                         } else if is_acquired {
                             view! { <span class="pill" style="background:rgba(34,197,94,.12);color:#22c55e">"Acquired"</span> }.into_any()
                         } else {
@@ -714,8 +717,54 @@ fn AlbumDetailContent(
             // ── Tracklist card ───────────────────────────────
             <div class=GLASS>
                 <div class=GLASS_HEADER>
-                    <h2 class=GLASS_TITLE>"Tracklist"</h2>
-                    <span class={cls(MUTED, "text-xs")}>{format!("{track_count} tracks \u{00b7} {duration_display}")}</span>
+                    <div class="flex items-center gap-3">
+                        <h2 class=GLASS_TITLE>"Tracklist"</h2>
+                        <span class={cls(MUTED, "text-xs")}>{format!("{track_count} tracks \u{00b7} {duration_display}")}</span>
+                    </div>
+                    {if !tracks.is_empty() {
+                        let any_unmonitored = tracks.iter().any(|t| !t.monitored);
+                        let any_monitored = tracks.iter().any(|t| t.monitored);
+                        view! {
+                            <div class="flex items-center gap-1.5">
+                                {if any_unmonitored {
+                                    view! {
+                                        <button type="button"
+                                            class={cls(BTN, "px-2.5 py-1 text-[11px]")}
+                                            title="Monitor all tracks for download"
+                                            on:click=move |_| {
+                                                dispatch_with_toast(
+                                                    ServerAction::BulkToggleTrackMonitor { album_id, monitored: true },
+                                                    "All tracks monitored",
+                                                );
+                                            }>
+                                            "Monitor All"
+                                        </button>
+                                    }.into_any()
+                                } else {
+                                    view! { <span></span> }.into_any()
+                                }}
+                                {if any_monitored {
+                                    view! {
+                                        <button type="button"
+                                            class={cls(BTN, "px-2.5 py-1 text-[11px]")}
+                                            title="Unmonitor all tracks"
+                                            on:click=move |_| {
+                                                dispatch_with_toast(
+                                                    ServerAction::BulkToggleTrackMonitor { album_id, monitored: false },
+                                                    "All tracks unmonitored",
+                                                );
+                                            }>
+                                            "Unmonitor All"
+                                        </button>
+                                    }.into_any()
+                                } else {
+                                    view! { <span></span> }.into_any()
+                                }}
+                            </div>
+                        }.into_any()
+                    } else {
+                        view! { <span></span> }.into_any()
+                    }}
                 </div>
                 {if tracks.is_empty() {
                     view! {
@@ -736,6 +785,7 @@ fn AlbumDetailContent(
                                 {
                                     let has_multiple_discs = tracks.iter().any(|t| t.disc_number > 1);
                                     tracks.iter().map(|t| {
+                                        let track_id = t.id;
                                         let num = t.track_number;
                                         let disc = t.disc_number;
                                         let title = t.title.clone();
@@ -745,6 +795,8 @@ fn AlbumDetailContent(
                                         let isrc = t.isrc.clone();
                                         let track_artist = t.track_artist.clone();
                                         let file_path = t.file_path.clone();
+                                        let track_monitored = t.monitored;
+                                        let track_acquired = t.acquired;
                                         let track_num_display = if has_multiple_discs {
                                             format!("{disc}-{num}")
                                         } else {
@@ -762,6 +814,13 @@ fn AlbumDetailContent(
                                             .unwrap_or(false);
                                         view! {
                                             <div class="flex items-center gap-3 px-5 py-2.5 transition-colors duration-100 hover:bg-blue-500/[.03] dark:hover:bg-blue-500/[.05]">
+                                                // Track status indicator
+                                                <TrackStatusIndicator
+                                                    track_id=track_id
+                                                    album_id=album_id
+                                                    monitored=track_monitored
+                                                    acquired=track_acquired
+                                                />
                                                 <span class="w-8 text-right text-xs tabular-nums text-zinc-400 dark:text-zinc-500 shrink-0">{track_num_display}</span>
                                                 <div class="flex-1 min-w-0">
                                                     <div class="flex items-center gap-1.5 flex-wrap">
@@ -864,5 +923,73 @@ fn AlbumDetailContent(
                 />
             }
         }}
+    }
+}
+
+// ── Track status indicator ──────────────────────────────────
+
+/// A small icon button that shows the track's monitored/acquired status
+/// and toggles monitoring on click.
+///
+/// States:
+/// - Acquired (downloaded): green check icon (non-interactive)
+/// - Monitored (wanted): filled bookmark icon, amber — click to unmonitor
+/// - Not monitored: outline bookmark icon, muted — click to monitor
+#[component]
+fn TrackStatusIndicator(
+    track_id: Uuid,
+    album_id: Uuid,
+    monitored: bool,
+    acquired: bool,
+) -> impl IntoView {
+    if acquired {
+        // Acquired: green check, not clickable
+        view! {
+            <span
+                class="shrink-0 flex items-center justify-center w-5 h-5 text-green-500 dark:text-green-400"
+                title="Acquired"
+            >
+                <Check size=14 />
+            </span>
+        }
+        .into_any()
+    } else if monitored {
+        // Monitored but not acquired: filled bookmark, amber — click to unmonitor
+        view! {
+            <button
+                type="button"
+                class="shrink-0 flex items-center justify-center w-5 h-5 text-amber-500 dark:text-amber-400 bg-transparent border-none cursor-pointer p-0 transition-colors duration-150 hover:text-amber-600 dark:hover:text-amber-300"
+                title="Monitored for download \u{2014} click to unmonitor"
+                on:click=move |e| {
+                    e.stop_propagation();
+                    dispatch_with_toast(
+                        ServerAction::ToggleTrackMonitor { track_id, album_id, monitored: false },
+                        "Track unmonitored",
+                    );
+                }
+            >
+                <Bookmark size=14 fill="currentColor" />
+            </button>
+        }
+        .into_any()
+    } else {
+        // Not monitored: outline bookmark, muted — click to monitor
+        view! {
+            <button
+                type="button"
+                class="shrink-0 flex items-center justify-center w-5 h-5 text-zinc-300 dark:text-zinc-600 bg-transparent border-none cursor-pointer p-0 transition-colors duration-150 hover:text-amber-500 dark:hover:text-amber-400"
+                title="Not monitored \u{2014} click to monitor"
+                on:click=move |e| {
+                    e.stop_propagation();
+                    dispatch_with_toast(
+                        ServerAction::ToggleTrackMonitor { track_id, album_id, monitored: true },
+                        "Track monitored",
+                    );
+                }
+            >
+                <Bookmark size=14 />
+            </button>
+        }
+        .into_any()
     }
 }

@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use better_config::{EnvConfig, env};
 
 use crate::config::DEFAULT_QUALITY;
+use crate::providers::Quality;
 
 const DEFAULT_MUSIC_ROOT: &str = "./music";
 const DEFAULT_DATABASE_URL: &str = "sqlite:./yoink.db?mode=rwc";
@@ -13,7 +14,7 @@ const DEFAULT_SLSKD_DOWNLOADS_DIR: &str = "./development/slskd-data/downloads";
 
 #[derive(Debug)]
 #[env(EnvConfig)]
-pub(crate) struct AppConfig {
+struct RawAppConfig {
     /// Base URL for the Tidal hifi-api proxy.
     #[conf(from = "TIDAL_API_BASE_URL", default = "")]
     pub(crate) tidal_api_base_url: String,
@@ -57,7 +58,7 @@ pub(crate) struct AppConfig {
     pub(crate) music_root: String,
 
     #[conf(from = "DEFAULT_QUALITY", default = "LOSSLESS")]
-    pub(crate) default_quality: String,
+    default_quality: String,
 
     #[conf(from = "DATABASE_URL", default = "sqlite:./yoink.db?mode=rwc")]
     pub(crate) database_url: String,
@@ -73,38 +74,79 @@ pub(crate) struct AppConfig {
 
     /// Maximum number of tracks to download in parallel per album job.
     #[conf(from = "DOWNLOAD_MAX_PARALLEL_TRACKS", default = "1")]
+    download_max_parallel_tracks: usize,
+}
+
+#[derive(Debug)]
+pub(crate) struct AppConfig {
+    pub(crate) tidal_api_base_url: String,
+    pub(crate) tidal_enabled: bool,
+    pub(crate) musicbrainz_enabled: bool,
+    pub(crate) deezer_enabled: bool,
+    pub(crate) soulseek_enabled: bool,
+    pub(crate) slskd_base_url: String,
+    pub(crate) slskd_username: String,
+    pub(crate) slskd_password: String,
+    pub(crate) slskd_downloads_dir: String,
+    pub(crate) music_root: String,
+    pub(crate) default_quality: Quality,
+    pub(crate) default_quality_used_fallback: bool,
+    pub(crate) database_url: String,
+    pub(crate) leptos_site_root: String,
+    pub(crate) log_format: String,
+    pub(crate) download_lyrics: bool,
     pub(crate) download_max_parallel_tracks: usize,
 }
 
 impl AppConfig {
     pub(crate) fn from_env() -> Result<Self, better_config::Error> {
-        let mut cfg = Self::builder().build()?;
-        cfg.normalize();
-        Ok(cfg)
+        let raw = RawAppConfig::builder().build()?;
+        Ok(Self::from_raw(raw))
     }
 
     pub(crate) fn music_root_path(&self) -> PathBuf {
         PathBuf::from(&self.music_root)
     }
 
-    fn normalize(&mut self) {
-        self.tidal_api_base_url = normalize_string_opt(&self.tidal_api_base_url)
+    fn from_raw(raw: RawAppConfig) -> Self {
+        let tidal_api_base_url = normalize_string_opt(&raw.tidal_api_base_url)
             .map(|s| s.trim_end_matches('/').to_string())
             .unwrap_or_default();
-        self.slskd_base_url = normalize_string(&self.slskd_base_url, DEFAULT_SLSKD_BASE_URL)
+        let slskd_base_url = normalize_string(&raw.slskd_base_url, DEFAULT_SLSKD_BASE_URL)
             .trim_end_matches('/')
             .to_string();
-        self.slskd_downloads_dir =
-            normalize_string(&self.slskd_downloads_dir, DEFAULT_SLSKD_DOWNLOADS_DIR);
-        self.slskd_username = normalize_string_opt(&self.slskd_username).unwrap_or_default();
-        self.slskd_password = normalize_string_opt(&self.slskd_password).unwrap_or_default();
-        self.music_root = normalize_string(&self.music_root, DEFAULT_MUSIC_ROOT);
-        self.default_quality = normalize_string(&self.default_quality, DEFAULT_QUALITY);
-        self.database_url = normalize_string(&self.database_url, DEFAULT_DATABASE_URL);
-        self.leptos_site_root = normalize_string(&self.leptos_site_root, DEFAULT_SITE_ROOT);
-        self.log_format =
-            normalize_string(&self.log_format, DEFAULT_LOG_FORMAT).to_ascii_lowercase();
-        self.download_max_parallel_tracks = self.download_max_parallel_tracks.clamp(1, 16);
+        let slskd_downloads_dir =
+            normalize_string(&raw.slskd_downloads_dir, DEFAULT_SLSKD_DOWNLOADS_DIR);
+        let slskd_username = normalize_string_opt(&raw.slskd_username).unwrap_or_default();
+        let slskd_password = normalize_string_opt(&raw.slskd_password).unwrap_or_default();
+        let music_root = normalize_string(&raw.music_root, DEFAULT_MUSIC_ROOT);
+        let normalized_default_quality = normalize_string(&raw.default_quality, DEFAULT_QUALITY);
+        let (default_quality, default_quality_used_fallback) =
+            Quality::from_env_with_fallback(&normalized_default_quality);
+        let database_url = normalize_string(&raw.database_url, DEFAULT_DATABASE_URL);
+        let leptos_site_root = normalize_string(&raw.leptos_site_root, DEFAULT_SITE_ROOT);
+        let log_format = normalize_string(&raw.log_format, DEFAULT_LOG_FORMAT).to_ascii_lowercase();
+        let download_max_parallel_tracks = raw.download_max_parallel_tracks.clamp(1, 16);
+
+        Self {
+            tidal_api_base_url,
+            tidal_enabled: raw.tidal_enabled,
+            musicbrainz_enabled: raw.musicbrainz_enabled,
+            deezer_enabled: raw.deezer_enabled,
+            soulseek_enabled: raw.soulseek_enabled,
+            slskd_base_url,
+            slskd_username,
+            slskd_password,
+            slskd_downloads_dir,
+            music_root,
+            default_quality,
+            default_quality_used_fallback,
+            database_url,
+            leptos_site_root,
+            log_format,
+            download_lyrics: raw.download_lyrics,
+            download_max_parallel_tracks,
+        }
     }
 }
 
@@ -148,11 +190,24 @@ mod tests {
     #[serial]
     fn uses_defaults_for_empty_values() {
         with_env_vars(&[("MUSIC_ROOT", ""), ("DEFAULT_QUALITY", "   ")], || {
-            let mut cfg = AppConfig::builder().build().expect("config parse");
-            cfg.normalize();
+            let raw = RawAppConfig::builder().build().expect("config parse");
+            let cfg = AppConfig::from_raw(raw);
 
             assert_eq!(cfg.music_root, DEFAULT_MUSIC_ROOT);
-            assert_eq!(cfg.default_quality, DEFAULT_QUALITY);
+            assert_eq!(cfg.default_quality, Quality::Lossless);
+            assert!(!cfg.default_quality_used_fallback);
+        });
+    }
+
+    #[test]
+    #[serial]
+    fn falls_back_for_invalid_quality_values() {
+        with_env_vars(&[("DEFAULT_QUALITY", "not-real-quality")], || {
+            let raw = RawAppConfig::builder().build().expect("config parse");
+            let cfg = AppConfig::from_raw(raw);
+
+            assert_eq!(cfg.default_quality, Quality::Lossless);
+            assert!(cfg.default_quality_used_fallback);
         });
     }
 
@@ -162,8 +217,8 @@ mod tests {
         with_env_vars(
             &[("TIDAL_API_BASE_URL", "http://localhost:8000///")],
             || {
-                let mut cfg = AppConfig::builder().build().expect("config parse");
-                cfg.normalize();
+                let raw = RawAppConfig::builder().build().expect("config parse");
+                let cfg = AppConfig::from_raw(raw);
 
                 assert_eq!(cfg.tidal_api_base_url, "http://localhost:8000");
             },

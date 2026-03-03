@@ -27,8 +27,8 @@ use crate::{
     config::QUALITY_WARNING,
     logging::init_logging,
     providers::{
-        deezer::DeezerProvider, musicbrainz::MusicBrainzProvider, registry::ProviderRegistry,
-        soulseek::SoulSeekSource, tidal::TidalProvider,
+        Quality, deezer::DeezerProvider, musicbrainz::MusicBrainzProvider,
+        registry::ProviderRegistry, soulseek::SoulSeekSource, tidal::TidalProvider,
     },
     routes::build_router,
     server_context::build_server_context,
@@ -51,7 +51,14 @@ async fn main() {
 
     let music_root = app_config.music_root_path();
     let default_quality = app_config.default_quality.clone();
-    let quality_warning = if default_quality == "LOSSLESS" {
+    if app_config.default_quality_used_fallback {
+        warn!(
+            fallback_quality = %default_quality,
+            "Invalid DEFAULT_QUALITY, falling back to LOSSLESS"
+        );
+    }
+
+    let quality_warning = if default_quality == Quality::Lossless {
         QUALITY_WARNING
     } else {
         ""

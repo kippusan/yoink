@@ -36,7 +36,10 @@ pub(crate) async fn load_all_album_artist_ids(
     )
     .fetch_all(pool)
     .await?;
-    Ok(rows.into_iter().map(|r| (r.album_id, r.artist_id)).collect())
+    Ok(rows
+        .into_iter()
+        .map(|r| (r.album_id, r.artist_id))
+        .collect())
 }
 
 /// Replace the full set of artists for an album.
@@ -114,11 +117,8 @@ pub(crate) async fn delete_album_artists_by_artist(
     pool: &SqlitePool,
     artist_id: Uuid,
 ) -> Result<(), sqlx::Error> {
-    sqlx::query!(
-        "DELETE FROM album_artists WHERE artist_id = $1",
-        artist_id,
-    )
-    .execute(pool)
-    .await?;
+    sqlx::query!("DELETE FROM album_artists WHERE artist_id = $1", artist_id,)
+        .execute(pool)
+        .await?;
     Ok(())
 }

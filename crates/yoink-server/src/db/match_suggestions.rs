@@ -124,13 +124,27 @@ pub(crate) async fn upsert_match_suggestion(
             popularity = excluded.popularity,
             updated_at = excluded.updated_at
          WHERE match_suggestions.status != 'dismissed' AND match_suggestions.status != 'accepted'",
-        s.id, s.scope_type, s.scope_id,
-        s.left_provider, s.left_external_id,
-        s.right_provider, s.right_external_id,
-        s.match_kind, confidence, s.explanation,
-        s.external_name, s.external_url, s.image_ref,
-        s.disambiguation, s.artist_type, s.country, tags_json, popularity,
-        s.status, s.created_at, s.updated_at,
+        s.id,
+        s.scope_type,
+        s.scope_id,
+        s.left_provider,
+        s.left_external_id,
+        s.right_provider,
+        s.right_external_id,
+        s.match_kind,
+        confidence,
+        s.explanation,
+        s.external_name,
+        s.external_url,
+        s.image_ref,
+        s.disambiguation,
+        s.artist_type,
+        s.country,
+        tags_json,
+        popularity,
+        s.status,
+        s.created_at,
+        s.updated_at,
     )
     .execute(pool)
     .await?;
@@ -145,7 +159,8 @@ pub(crate) async fn clear_pending_match_suggestions(
     let result = sqlx::query!(
         "DELETE FROM match_suggestions
          WHERE scope_type = $1 AND scope_id = $2 AND status = 'pending'",
-        scope_type, scope_id,
+        scope_type,
+        scope_id,
     )
     .execute(pool)
     .await?;
@@ -175,7 +190,8 @@ pub(crate) async fn load_match_suggestions_for_scope(
          FROM match_suggestions
          WHERE scope_type = $1 AND scope_id = $2
          ORDER BY status ASC, confidence DESC, created_at DESC"#,
-        scope_type, scope_id,
+        scope_type,
+        scope_id,
     )
     .fetch_all(pool)
     .await?;
@@ -222,7 +238,9 @@ pub(crate) async fn set_match_suggestion_status(
         "UPDATE match_suggestions
          SET status = $1, updated_at = $2
          WHERE id = $3",
-        status, now, suggestion_id,
+        status,
+        now,
+        suggestion_id,
     )
     .execute(pool)
     .await?;

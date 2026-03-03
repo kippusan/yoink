@@ -73,7 +73,8 @@ pub(crate) async fn find_artist_by_provider_link(
     sqlx::query_scalar!(
         r#"SELECT artist_id as "artist_id!: Uuid"
            FROM artist_provider_links WHERE provider = $1 AND external_id = $2"#,
-        provider, external_id,
+        provider,
+        external_id,
     )
     .fetch_optional(pool)
     .await
@@ -137,7 +138,8 @@ pub(crate) async fn find_album_by_provider_link(
     sqlx::query_scalar!(
         r#"SELECT album_id as "album_id!: Uuid"
            FROM album_provider_links WHERE provider = $1 AND external_id = $2"#,
-        provider, external_id,
+        provider,
+        external_id,
     )
     .fetch_optional(pool)
     .await
@@ -158,7 +160,10 @@ pub(crate) async fn upsert_track_provider_link(
          VALUES ($1, $2, $3, $4)
          ON CONFLICT(provider, external_id) DO UPDATE SET
            track_id = excluded.track_id",
-        link_id, track_id, provider, external_id,
+        link_id,
+        track_id,
+        provider,
+        external_id,
     )
     .execute(pool)
     .await?;

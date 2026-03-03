@@ -425,10 +425,7 @@ fn ArtistsContent(
 
 /// A single search result row with an "Add" button.
 #[component]
-fn SearchResultRow(
-    artist: SearchArtistResult,
-    set_query: WriteSignal<String>,
-) -> impl IntoView {
+fn SearchResultRow(artist: SearchArtistResult, set_query: WriteSignal<String>) -> impl IntoView {
     let navigate = leptos_router::hooks::use_navigate();
     let image_url = artist.image_url.clone();
     let profile_url = artist.url.clone().unwrap_or_default();

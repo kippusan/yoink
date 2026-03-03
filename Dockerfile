@@ -1,5 +1,5 @@
 # ── Stage 1: Chef — compute recipe ───────────────────────────
-FROM rustlang/rust:nightly-bookworm AS chef
+FROM rust:1.93 AS chef
 
 RUN apt-get update -y && \
     apt-get install -y --no-install-recommends binaryen && \
@@ -20,13 +20,26 @@ RUN cargo chef prepare --recipe-path recipe.json
 # ── Stage 3: Builder — cache deps, then build ───────────────
 FROM chef AS builder
 
+# Leptos env vars must be set before cooking so that dependency fingerprints
+# match what cargo-leptos will use, preventing unnecessary recompilation.
+ENV LEPTOS_OUTPUT_NAME=yoink
+ENV LEPTOS_SITE_ROOT=target/site
+ENV LEPTOS_SITE_PKG_DIR=pkg
+ENV LEPTOS_SITE_ADDR=127.0.0.1:3000
+ENV LEPTOS_RELOAD_PORT=3001
+ENV LEPTOS_LIB_DIR=crates/yoink-client
+ENV LEPTOS_BIN_DIR=crates/yoink-server
+ENV LEPTOS_JS_MINIFY=true
+ENV LEPTOS_HASH_FILES=false
+ENV SQLX_OFFLINE=true
+
 COPY --from=planner /app/recipe.json recipe.json
-RUN cargo chef cook --release --package yoink-server --recipe-path recipe.json
+RUN cargo chef cook --release --package yoink-server --no-default-features --recipe-path recipe.json
+
+RUN cargo chef cook --release --package yoink-client --no-default-features --target wasm32-unknown-unknown --target-dir target/front --recipe-path recipe.json
 
 COPY . .
 
-ENV SQLX_OFFLINE=true
-ENV LEPTOS_OUTPUT_NAME=yoink
 RUN cargo leptos build --release -vv
 
 # ── Stage 4: Runtime ─────────────────────────────────────────

@@ -383,7 +383,10 @@ fn build_fetch_artist_images_fn(state: &AppState) -> yoink_shared::FetchArtistIm
             // that need to search by name (e.g. Tidal).
             let artist_name = {
                 let artists = s.monitored_artists.read().await;
-                artists.iter().find(|a| a.id == artist_id).map(|a| a.name.clone())
+                artists
+                    .iter()
+                    .find(|a| a.id == artist_id)
+                    .map(|a| a.name.clone())
             };
 
             let links = db::load_artist_provider_links(&s.db, artist_id)
@@ -438,8 +441,9 @@ fn build_fetch_artist_images_fn(state: &AppState) -> yoink_shared::FetchArtistIm
                     %external_id,
                     "Attempting fresh image ref fetch from provider"
                 );
-                if let Some(image_ref) =
-                    provider.fetch_artist_image_ref(external_id, artist_name.as_deref()).await
+                if let Some(image_ref) = provider
+                    .fetch_artist_image_ref(external_id, artist_name.as_deref())
+                    .await
                 {
                     let url = yoink_shared::provider_image_url(provider_id, &image_ref, 640);
                     tracing::debug!(
@@ -496,8 +500,7 @@ fn build_fetch_artist_images_fn(state: &AppState) -> yoink_shared::FetchArtistIm
                     };
 
                     if let Some(raw_ref) = raw_ref {
-                        let url =
-                            yoink_shared::provider_image_url(provider_id, &raw_ref, 640);
+                        let url = yoink_shared::provider_image_url(provider_id, &raw_ref, 640);
                         tracing::debug!(
                             %artist_id,
                             provider = %provider_id,

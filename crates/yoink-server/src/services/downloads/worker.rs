@@ -279,6 +279,8 @@ async fn process_track_download(
         artist_name: artist_name.clone(),
         album_title: job.album_title.clone(),
         track_title: track.title.clone(),
+        track_number: Some(track.track_number),
+        album_track_count: Some(total_tracks),
         duration_secs: Some(track.duration_secs),
     };
 
@@ -453,22 +455,28 @@ async fn process_track_download(
         .to_string_lossy()
         .to_string();
     let explicit = track.explicit;
-    let local_track_id =
-        if let Ok(Some(id)) = db::find_track_by_provider_link(&state.db, &metadata_provider_id, &track.external_id).await {
-            id
-        } else if let Some(ref isrc) = track.isrc {
-            db::find_track_by_album_isrc(&state.db, job.album_id, isrc)
-                .await
-                .ok()
-                .flatten()
-                .unwrap_or_else(uuid::Uuid::now_v7)
-        } else {
-            db::find_track_by_album_position(&state.db, job.album_id, disc_number.unwrap_or(1), track_number)
-                .await
-                .ok()
-                .flatten()
-                .unwrap_or_else(uuid::Uuid::now_v7)
-        };
+    let local_track_id = if let Ok(Some(id)) =
+        db::find_track_by_provider_link(&state.db, &metadata_provider_id, &track.external_id).await
+    {
+        id
+    } else if let Some(ref isrc) = track.isrc {
+        db::find_track_by_album_isrc(&state.db, job.album_id, isrc)
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_else(uuid::Uuid::now_v7)
+    } else {
+        db::find_track_by_album_position(
+            &state.db,
+            job.album_id,
+            disc_number.unwrap_or(1),
+            track_number,
+        )
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_else(uuid::Uuid::now_v7)
+    };
     let track_info = yoink_shared::TrackInfo {
         id: local_track_id,
         title: track.title.clone(),

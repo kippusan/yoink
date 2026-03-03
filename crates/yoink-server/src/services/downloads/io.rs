@@ -148,20 +148,6 @@ pub(crate) fn sanitize_path_component(input: &str) -> String {
     }
 }
 
-pub(crate) fn normalize_quality(raw: &str) -> String {
-    let upper = raw.trim().to_ascii_uppercase();
-    match upper.as_str() {
-        "HI_RES_LOSSLESS" | "HI_RES_LOSLESS" | "HIRES_LOSSLESS" | "HIRES" => {
-            "HI_RES_LOSSLESS".to_string()
-        }
-        "LOSSLESS" | "HIGH" | "LOW" => upper,
-        _ => {
-            tracing::warn!(quality = %raw, normalized = "LOSSLESS", "Unknown quality requested, using LOSSLESS");
-            "LOSSLESS".to_string()
-        }
-    }
-}
-
 pub(crate) fn parse_track_number_from_path(path: &Path) -> Option<u32> {
     let stem = path.file_stem()?.to_str()?.trim();
     let digits = stem

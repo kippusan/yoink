@@ -10,8 +10,7 @@ use super::{album_dir_has_downloaded_audio, normalize_text, parse_release_year, 
 
 pub(crate) async fn reconcile_library_files(state: &AppState) -> Result<usize, String> {
     let artists = state.monitored_artists.read().await.clone();
-    let artist_names: HashMap<Uuid, String> =
-        artists.into_iter().map(|a| (a.id, a.name)).collect();
+    let artist_names: HashMap<Uuid, String> = artists.into_iter().map(|a| (a.id, a.name)).collect();
     let albums_snapshot = state.monitored_albums.read().await.clone();
 
     let mut missing_ids = HashSet::new();
@@ -53,8 +52,13 @@ pub(crate) async fn reconcile_library_files(state: &AppState) -> Result<usize, S
         }
 
         // Fallback: scan the artist directory for a case-insensitive / fuzzy match
-        if find_album_dir_fuzzy(state, artist_name, &album.title, album.release_date.as_deref())
-            .await
+        if find_album_dir_fuzzy(
+            state,
+            artist_name,
+            &album.title,
+            album.release_date.as_deref(),
+        )
+        .await
         {
             continue;
         }
@@ -108,9 +112,7 @@ async fn find_album_dir_fuzzy(
     let target_year = release_date.and_then(parse_release_year);
 
     // Try both the sanitized artist name and the raw name (for user-created folders)
-    let sanitized_artist_dir = state
-        .music_root
-        .join(sanitize_path_component(artist_name));
+    let sanitized_artist_dir = state.music_root.join(sanitize_path_component(artist_name));
     let raw_artist_dir = state.music_root.join(artist_name);
 
     for artist_dir in [&sanitized_artist_dir, &raw_artist_dir] {

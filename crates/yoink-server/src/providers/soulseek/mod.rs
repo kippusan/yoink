@@ -1,4 +1,5 @@
 use std::{
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     time::Duration,
 };
@@ -228,6 +229,61 @@ impl SoulSeekSource {
         Ok(Vec::new())
     }
 
+    async fn search_album_queries(
+        &self,
+        ctx: &DownloadTrackContext,
+        quality: &Quality,
+    ) -> Result<Vec<SlskdSearchResponse>, ProviderError> {
+        let expected_tracks = ctx.album_track_count.unwrap_or(0);
+        if expected_tracks == 0 {
+            return Ok(Vec::new());
+        }
+
+        let mut queries = Vec::new();
+        let artist = ctx.artist_name.trim();
+        let album = ctx.album_title.trim();
+        if artist.is_empty() || album.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        queries.push(format!("{artist} {album}"));
+        queries.push(format!("{album} {artist}"));
+        let quality_hint = match quality {
+            Quality::HiRes | Quality::Lossless => "flac",
+        };
+        queries.push(format!("{artist} {album} {quality_hint}"));
+
+        let album_norm = normalize(album);
+        if !album_norm.is_empty() && album_norm != album.to_ascii_lowercase() {
+            queries.push(format!("{artist} {album_norm}"));
+        }
+
+        let mut deduped = Vec::new();
+        for q in queries {
+            let q = q.trim().to_string();
+            if q.is_empty() || deduped.iter().any(|existing: &String| existing == &q) {
+                continue;
+            }
+            deduped.push(q);
+        }
+
+        for query in deduped {
+            let search = self.start_search(&query).await?;
+            let responses = self.poll_search_responses(&search.id, 75).await?;
+            if !responses.is_empty() {
+                debug!(
+                    query = %query,
+                    responses = responses.len(),
+                    "SoulSeek album search returned responses"
+                );
+                return Ok(responses);
+            }
+            debug!(query = %query, "SoulSeek album search returned no responses");
+        }
+
+        Ok(Vec::new())
+    }
+
     async fn poll_search_responses(
         &self,
         search_id: &str,
@@ -421,20 +477,32 @@ impl DownloadSource for SoulSeekSource {
             ProviderError("SoulSeek requires track context for search/matching".to_string())
         })?;
 
-        let responses = self.search_with_fallback_queries(ctx).await?;
-        if responses.is_empty() {
-            return Err(ProviderError(format!(
-                "No SoulSeek search responses for track '{}'",
-                ctx.track_title
-            )));
-        }
+        let album_responses = self.search_album_queries(ctx, quality).await?;
+        let candidate = if album_responses.is_empty() {
+            None
+        } else {
+            pick_track_from_complete_album_bundle(&album_responses, ctx, quality)
+        };
 
-        let candidate = pick_best_candidate(&responses, ctx, quality).ok_or_else(|| {
-            ProviderError(format!(
-                "No suitable SoulSeek candidate for '{}'",
-                ctx.track_title
-            ))
-        })?;
+        let candidate = match candidate {
+            Some(c) => c,
+            None => {
+                let responses = self.search_with_fallback_queries(ctx).await?;
+                if responses.is_empty() {
+                    return Err(ProviderError(format!(
+                        "No SoulSeek search responses for track '{}'",
+                        ctx.track_title
+                    )));
+                }
+
+                pick_best_candidate(&responses, ctx, quality).ok_or_else(|| {
+                    ProviderError(format!(
+                        "No suitable SoulSeek candidate for '{}'",
+                        ctx.track_title
+                    ))
+                })?
+            }
+        };
 
         self.enqueue_download(&candidate.username, &candidate.filename, candidate.size)
             .await?;
@@ -545,6 +613,198 @@ fn pick_best_candidate(
     }
 
     best
+}
+
+#[derive(Debug, Clone)]
+struct AlbumBundleFile {
+    username: String,
+    filename: String,
+    size: i64,
+    extension: String,
+    normalized_filename: String,
+    track_number: Option<u32>,
+}
+
+fn pick_track_from_complete_album_bundle(
+    responses: &[SlskdSearchResponse],
+    ctx: &DownloadTrackContext,
+    quality: &Quality,
+) -> Option<SoulSeekCandidate> {
+    let expected_tracks = ctx.album_track_count?;
+    if expected_tracks == 0 {
+        return None;
+    }
+
+    let mut bundles: HashMap<(String, String), Vec<AlbumBundleFile>> = HashMap::new();
+
+    for resp in responses {
+        for file in &resp.files {
+            let Some(extension) = detect_audio_extension(file) else {
+                continue;
+            };
+            let parent = normalized_parent_dir(&file.filename);
+            if parent.is_empty() {
+                continue;
+            }
+
+            bundles
+                .entry((resp.username.clone(), parent))
+                .or_default()
+                .push(AlbumBundleFile {
+                    username: resp.username.clone(),
+                    filename: file.filename.clone(),
+                    size: file.size,
+                    extension,
+                    normalized_filename: normalize(&file.filename),
+                    track_number: parse_track_number_from_filename(&file.filename),
+                });
+        }
+    }
+
+    let artist = normalize(&ctx.artist_name);
+    let album = normalize(&ctx.album_title);
+
+    let mut best_bundle: Option<((String, String), Vec<AlbumBundleFile>, i32)> = None;
+    for (key, files) in bundles {
+        let unique_track_numbers: HashSet<u32> =
+            files.iter().filter_map(|f| f.track_number).collect();
+        let inferred_tracks = if unique_track_numbers.is_empty() {
+            files.len()
+        } else {
+            unique_track_numbers.len()
+        };
+        if inferred_tracks < expected_tracks {
+            continue;
+        }
+
+        let parent_norm = normalize(&key.1);
+        let mut score = 0i32;
+        if !artist.is_empty() && parent_norm.contains(&artist) {
+            score += 35;
+        }
+        if !album.is_empty() && parent_norm.contains(&album) {
+            score += 50;
+        }
+
+        let flac_count = files.iter().filter(|f| f.extension == "flac").count() as i32;
+        score += flac_count * 2;
+        score -= (inferred_tracks as i32 - expected_tracks as i32).abs();
+
+        if best_bundle
+            .as_ref()
+            .is_none_or(|(_, _, best_score)| score > *best_score)
+        {
+            best_bundle = Some((key, files, score));
+        }
+    }
+
+    let (_, files, _) = best_bundle?;
+    let chosen = choose_track_from_bundle(&files, ctx, quality)?;
+
+    Some(SoulSeekCandidate {
+        username: chosen.username.clone(),
+        filename: chosen.filename.clone(),
+        size: chosen.size,
+        score: 10_000,
+    })
+}
+
+fn choose_track_from_bundle<'a>(
+    files: &'a [AlbumBundleFile],
+    ctx: &DownloadTrackContext,
+    quality: &Quality,
+) -> Option<&'a AlbumBundleFile> {
+    let by_quality = |f: &&AlbumBundleFile| extension_quality_score(&f.extension, quality);
+
+    if let Some(track_number) = ctx.track_number {
+        let mut numbered_matches: Vec<&AlbumBundleFile> = files
+            .iter()
+            .filter(|f| f.track_number == Some(track_number))
+            .collect();
+        numbered_matches.sort_by_key(by_quality);
+        numbered_matches.reverse();
+        if let Some(best) = numbered_matches.first() {
+            return Some(best);
+        }
+    }
+
+    let title = normalize(&ctx.track_title);
+    if !title.is_empty() {
+        let mut title_matches: Vec<&AlbumBundleFile> = files
+            .iter()
+            .filter(|f| f.normalized_filename.contains(&title))
+            .collect();
+        title_matches.sort_by_key(by_quality);
+        title_matches.reverse();
+        if let Some(best) = title_matches.first() {
+            // TODO: add fuzzy title matching within selected album bundle.
+            return Some(best);
+        }
+    }
+
+    let mut all_files: Vec<&AlbumBundleFile> = files.iter().collect();
+    all_files.sort_by_key(by_quality);
+    all_files.reverse();
+    all_files.first().copied()
+}
+
+fn extension_quality_score(ext: &str, quality: &Quality) -> i32 {
+    match quality {
+        Quality::HiRes | Quality::Lossless => match ext {
+            "flac" => 100,
+            "m4a" | "alac" => 60,
+            "wav" => 40,
+            "aac" | "ogg" | "mp3" => 10,
+            _ => 0,
+        },
+    }
+}
+
+fn detect_audio_extension(file: &SlskdSearchFile) -> Option<String> {
+    let ext = file
+        .extension
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| s.to_ascii_lowercase())
+        .or_else(|| {
+            Path::new(&file.filename)
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|s| s.to_ascii_lowercase())
+        })?;
+
+    if is_audio_extension(&ext) {
+        Some(ext)
+    } else {
+        None
+    }
+}
+
+fn is_audio_extension(ext: &str) -> bool {
+    matches!(ext, "flac" | "m4a" | "alac" | "mp3" | "ogg" | "wav" | "aac")
+}
+
+fn normalized_parent_dir(filename: &str) -> String {
+    let normalized = filename.replace('\\', "/");
+    Path::new(&normalized)
+        .parent()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default()
+}
+
+fn parse_track_number_from_filename(filename: &str) -> Option<u32> {
+    let normalized = filename.replace('\\', "/");
+    let stem = Path::new(&normalized).file_stem()?.to_str()?;
+    let digits = stem
+        .chars()
+        .skip_while(|c| !c.is_ascii_digit())
+        .take_while(|c| c.is_ascii_digit())
+        .collect::<String>();
+    if digits.is_empty() {
+        None
+    } else {
+        digits.parse::<u32>().ok()
+    }
 }
 
 fn normalize(input: &str) -> String {
@@ -730,6 +990,34 @@ struct SlskdTransfer {
 mod tests {
     use super::*;
 
+    fn test_context(
+        track_title: &str,
+        track_number: u32,
+        album_track_count: usize,
+    ) -> DownloadTrackContext {
+        DownloadTrackContext {
+            artist_name: "The Artist".to_string(),
+            album_title: "The Album".to_string(),
+            track_title: track_title.to_string(),
+            track_number: Some(track_number),
+            album_track_count: Some(album_track_count),
+            duration_secs: None,
+        }
+    }
+
+    fn search_file(filename: &str, size: i64) -> SlskdSearchFile {
+        SlskdSearchFile {
+            filename: filename.to_string(),
+            size,
+            length: None,
+            bit_rate: None,
+            extension: Path::new(filename)
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|s| s.to_string()),
+        }
+    }
+
     fn transfer_with_state(state: &str) -> SlskdTransfer {
         SlskdTransfer {
             filename: "track.flac".to_string(),
@@ -795,5 +1083,53 @@ mod tests {
     fn sanitize_relative_path_strips_parent_segments() {
         let cleaned = sanitize_relative_path("../../bad\\../music/track.flac");
         assert_eq!(cleaned, PathBuf::from("bad/music/track.flac"));
+    }
+
+    #[test]
+    fn album_bundle_selection_requires_complete_track_count() {
+        let ctx = test_context("Song Two", 2, 3);
+        let responses = vec![SlskdSearchResponse {
+            username: "user1".to_string(),
+            files: vec![
+                search_file("The Artist/The Album/01 - Song One.flac", 100),
+                search_file("The Artist/The Album/02 - Song Two.flac", 100),
+            ],
+        }];
+
+        let candidate = pick_track_from_complete_album_bundle(&responses, &ctx, &Quality::Lossless);
+        assert!(candidate.is_none());
+    }
+
+    #[test]
+    fn album_bundle_selection_picks_requested_track_from_complete_bundle() {
+        let ctx = test_context("Song Two", 2, 2);
+        let responses = vec![SlskdSearchResponse {
+            username: "user1".to_string(),
+            files: vec![
+                search_file("The Artist/The Album/01 - Song One.flac", 100),
+                search_file("The Artist/The Album/02 - Song Two.flac", 100),
+            ],
+        }];
+
+        let candidate = pick_track_from_complete_album_bundle(&responses, &ctx, &Quality::Lossless)
+            .expect("expected complete album candidate");
+        assert_eq!(candidate.username, "user1");
+        assert!(candidate.filename.contains("02 - Song Two"));
+    }
+
+    #[test]
+    fn album_bundle_selection_prefers_track_number_over_title() {
+        let ctx = test_context("Song One", 2, 2);
+        let responses = vec![SlskdSearchResponse {
+            username: "user1".to_string(),
+            files: vec![
+                search_file("The Artist/The Album/01 - Song One.flac", 100),
+                search_file("The Artist/The Album/02 - Interlude.flac", 100),
+            ],
+        }];
+
+        let candidate = pick_track_from_complete_album_bundle(&responses, &ctx, &Quality::Lossless)
+            .expect("expected complete album candidate");
+        assert!(candidate.filename.contains("02 - Interlude"));
     }
 }

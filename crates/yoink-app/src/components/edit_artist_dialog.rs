@@ -16,7 +16,8 @@ const BTN_CANCEL: &str = "inline-flex items-center justify-center gap-1.5 px-3.5
 const BTN_SAVE: &str = "inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 bg-blue-500 backdrop-blur-[8px] border border-blue-500 rounded-lg font-inherit text-[13px] font-medium cursor-pointer text-white no-underline transition-all duration-150 whitespace-nowrap shadow-[0_2px_12px_rgba(59,130,246,.25)] hover:bg-blue-400 hover:border-blue-400 hover:shadow-[0_4px_20px_rgba(59,130,246,.35)]";
 const BTN_SECONDARY: &str = "inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-white/60 dark:bg-zinc-800/60 backdrop-blur-[8px] border border-black/[.08] dark:border-white/10 rounded-lg font-inherit text-[12px] font-medium cursor-pointer text-zinc-600 dark:text-zinc-300 no-underline transition-all duration-150 whitespace-nowrap hover:bg-white/85 hover:border-blue-500/20 dark:hover:bg-zinc-800/85 dark:hover:border-blue-500/30";
 
-const IMG_OPTION: &str = "relative cursor-pointer rounded-xl overflow-hidden border-2 transition-all duration-150";
+const IMG_OPTION: &str =
+    "relative cursor-pointer rounded-xl overflow-hidden border-2 transition-all duration-150";
 const IMG_OPTION_SELECTED: &str = "border-blue-500 shadow-[0_0_0_2px_rgba(59,130,246,.25)]";
 const IMG_OPTION_UNSELECTED: &str = "border-transparent hover:border-blue-500/30";
 const IMG_THUMB: &str = "size-20 object-cover bg-zinc-200 dark:bg-zinc-800";
@@ -108,7 +109,11 @@ pub fn EditArtistDialog(
             }
             ImageSource::Custom => {
                 let url = custom_url_input.get();
-                if url.trim().is_empty() { None } else { Some(url.trim().to_string()) }
+                if url.trim().is_empty() {
+                    None
+                } else {
+                    Some(url.trim().to_string())
+                }
             }
             ImageSource::None => None,
         }
@@ -136,8 +141,8 @@ pub fn EditArtistDialog(
             ImageSource::None => Some(String::new()), // clear
         };
 
-        let image_changed = new_image_url.is_some()
-            && new_image_url.as_deref() != orig_image.as_deref();
+        let image_changed =
+            new_image_url.is_some() && new_image_url.as_deref() != orig_image.as_deref();
 
         if !name_changed && !image_changed {
             open.set(false);

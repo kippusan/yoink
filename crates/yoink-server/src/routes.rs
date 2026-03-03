@@ -213,7 +213,10 @@ async fn proxy_image_impl(
 ) -> axum::response::Response {
     // Validate size
     if ![160, 320, 640, 750, 1080].contains(&size) {
-        debug!(provider, image_id, size, "Image proxy rejected: invalid size");
+        debug!(
+            provider,
+            image_id, size, "Image proxy rejected: invalid size"
+        );
         return (StatusCode::BAD_REQUEST, "invalid size").into_response();
     }
 
@@ -249,7 +252,13 @@ async fn proxy_image_impl(
                 .to_string();
             match upstream.bytes().await {
                 Ok(bytes) => {
-                    debug!(provider, image_id, size, bytes = bytes.len(), "Image proxy success");
+                    debug!(
+                        provider,
+                        image_id,
+                        size,
+                        bytes = bytes.len(),
+                        "Image proxy success"
+                    );
                     (
                         StatusCode::OK,
                         [

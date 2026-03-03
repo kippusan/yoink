@@ -8,7 +8,7 @@ use tracing::info;
 use crate::{
     db,
     models::{DownloadJob, MonitoredAlbum, MonitoredArtist},
-    providers::registry::ProviderRegistry,
+    providers::{Quality, registry::ProviderRegistry},
 };
 
 #[derive(Clone)]
@@ -21,7 +21,7 @@ pub(crate) struct AppState {
     pub(crate) download_notify: Arc<Notify>,
     pub(crate) sse_tx: broadcast::Sender<()>,
     pub(crate) music_root: PathBuf,
-    pub(crate) default_quality: String,
+    pub(crate) default_quality: Quality,
     pub(crate) download_lyrics: bool,
     pub(crate) download_max_parallel_tracks: usize,
     pub(crate) registry: Arc<ProviderRegistry>,
@@ -30,7 +30,7 @@ pub(crate) struct AppState {
 impl AppState {
     pub(crate) async fn new(
         music_root: PathBuf,
-        default_quality: String,
+        default_quality: Quality,
         download_lyrics: bool,
         download_max_parallel_tracks: usize,
         db_url: &str,

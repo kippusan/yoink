@@ -57,8 +57,16 @@ pub fn ResolveArtistDialog(
     #[prop(into, optional)] credit_external_id: String,
 ) -> impl IntoView {
     let credit_name_stored = StoredValue::new(credit_name.clone());
-    let credit_provider_stored = StoredValue::new(if credit_provider.is_empty() { None } else { Some(credit_provider) });
-    let credit_external_id_stored = StoredValue::new(if credit_external_id.is_empty() { None } else { Some(credit_external_id) });
+    let credit_provider_stored = StoredValue::new(if credit_provider.is_empty() {
+        None
+    } else {
+        Some(credit_provider)
+    });
+    let credit_external_id_stored = StoredValue::new(if credit_external_id.is_empty() {
+        None
+    } else {
+        Some(credit_external_id)
+    });
     let album_id_stored = StoredValue::new(album_id);
 
     let adding_new = RwSignal::new(false);

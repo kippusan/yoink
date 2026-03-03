@@ -203,9 +203,10 @@ pub(crate) async fn sync_artist_albums(state: &AppState, artist_id: Uuid) -> Res
 
     // ── 4. Remove stale albums ──────────────────────────────────────────
     let mut ids_to_remove = Vec::new();
-    for album in albums.iter().filter(|a| {
-        a.artist_id == artist_id || a.artist_ids.contains(&artist_id)
-    }) {
+    for album in albums
+        .iter()
+        .filter(|a| a.artist_id == artist_id || a.artist_ids.contains(&artist_id))
+    {
         let key = album_identity_key(&album.title, album.release_date.as_deref());
         if !incoming_keys.contains(&key) {
             ids_to_remove.push(album.id);

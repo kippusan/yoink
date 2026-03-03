@@ -613,7 +613,7 @@ pub(crate) async fn dispatch_action_impl(
                 }) {
                     let previous_quality = job.quality.clone();
                     job.status = yoink_shared::DownloadStatus::Queued;
-                    job.quality = state.default_quality.clone();
+                    job.quality = state.default_quality.as_str().to_string();
                     job.error = None;
                     job.updated_at = Utc::now();
                     let _ = db::update_job(&state.db, job).await;

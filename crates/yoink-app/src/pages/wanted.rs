@@ -12,7 +12,8 @@ use crate::components::toast::dispatch_with_toast;
 use crate::components::{ErrorPanel, MobileMenuButton, Sidebar};
 use crate::hooks::{set_page_title, use_sse_version};
 use crate::styles::{
-    BTN, BTN_DANGER, BTN_PRIMARY, EMPTY, GLASS, GLASS_HEADER, GLASS_TITLE, HEADER_BAR, MUTED, btn_cls, cls,
+    BTN, BTN_DANGER, BTN_PRIMARY, EMPTY, GLASS, GLASS_HEADER, GLASS_TITLE, HEADER_BAR, MUTED,
+    btn_cls, cls,
 };
 
 #[cfg(feature = "hydrate")]

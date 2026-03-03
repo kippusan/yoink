@@ -22,7 +22,7 @@ use crate::{
 };
 
 use super::library::update_wanted;
-use io::{normalize_quality, parse_track_number_from_path, sanitize_path_component as sanitize};
+use io::{parse_track_number_from_path, sanitize_path_component as sanitize};
 use metadata::{build_full_artist_string, extract_disc_number};
 use worker::download_album_job;
 
@@ -52,7 +52,7 @@ pub(crate) async fn enqueue_album_download(state: &AppState, album: &MonitoredAl
         return;
     }
 
-    let requested_quality = normalize_quality(&state.default_quality);
+    let requested_quality = state.default_quality.clone();
 
     // Resolve artist name for denormalization
     let artist_name = {
@@ -101,7 +101,7 @@ pub(crate) async fn enqueue_album_download(state: &AppState, album: &MonitoredAl
         album_title: album.title.clone(),
         artist_name,
         status: DownloadStatus::Queued,
-        quality: requested_quality.clone(),
+        quality: requested_quality.as_str().to_string(),
         total_tracks: 0,
         completed_tracks: 0,
         error: None,
@@ -227,8 +227,7 @@ pub(crate) async fn retag_existing_files(
     let artists = state.monitored_artists.read().await.clone();
     let albums = state.monitored_albums.read().await.clone();
 
-    let artist_names: HashMap<Uuid, String> =
-        artists.into_iter().map(|a| (a.id, a.name)).collect();
+    let artist_names: HashMap<Uuid, String> = artists.into_iter().map(|a| (a.id, a.name)).collect();
 
     let mut tagged_files = 0usize;
     let mut missing_files = 0usize;

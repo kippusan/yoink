@@ -9,7 +9,9 @@ use yoink_shared::{
 
 use super::provider_icon_svg;
 use crate::components::toast::{dispatch_with_toast, dispatch_with_toast_loading};
-use crate::components::{ConfirmDialog, ErrorPanel, MobileMenuButton, ResolveArtistDialog, Sidebar};
+use crate::components::{
+    ConfirmDialog, ErrorPanel, MobileMenuButton, ResolveArtistDialog, Sidebar,
+};
 use crate::hooks::{set_page_title, use_sse_version};
 use crate::styles::{
     BREADCRUMB_CURRENT, BREADCRUMB_LINK, BREADCRUMB_NAV, BREADCRUMB_SEP, BTN, BTN_DANGER,
@@ -60,43 +62,59 @@ pub async fn get_album_detail(album_id: String) -> Result<AlbumDetailData, Serve
         let albums = ctx.monitored_albums.read().await;
         let album = albums.iter().find(|a| a.id == album_uuid).cloned();
         let artist_id = album.as_ref().map(|a| a.artist_id);
-        let all_artist_ids = album.as_ref().map(|a| a.artist_ids.clone()).unwrap_or_default();
-        let credits = album.as_ref().map(|a| a.artist_credits.clone()).unwrap_or_default();
+        let all_artist_ids = album
+            .as_ref()
+            .map(|a| a.artist_ids.clone())
+            .unwrap_or_default();
+        let credits = album
+            .as_ref()
+            .map(|a| a.artist_credits.clone())
+            .unwrap_or_default();
         drop(albums);
 
         let monitored_artists = ctx.monitored_artists.read().await;
-        let artist = artist_id.and_then(|aid| {
-            monitored_artists.iter().find(|ar| ar.id == aid).cloned()
-        });
+        let artist =
+            artist_id.and_then(|aid| monitored_artists.iter().find(|ar| ar.id == aid).cloned());
 
         // Build resolved album artist list.
         // If we have artist_credits from the provider, use those (richer info).
         // Otherwise fall back to the linked artist_ids.
         let album_artists: Vec<ResolvedArtistCredit> = if !credits.is_empty() {
-            credits.iter().map(|c| {
-                // Try to resolve to a local monitored artist via provider link
-                let local_id = all_artist_ids.iter().find(|&aid| {
-                    monitored_artists.iter().any(|ar| ar.id == *aid && ar.name == c.name)
-                }).copied();
-                ResolvedArtistCredit {
-                    name: c.name.clone(),
-                    artist_id: local_id,
-                    provider: c.provider.clone(),
-                    external_id: c.external_id.clone(),
-                }
-            }).collect()
-        } else {
-            // No provider credits — build from linked artist_ids
-            all_artist_ids.iter().filter_map(|aid| {
-                monitored_artists.iter().find(|ar| ar.id == *aid).map(|ar| {
+            credits
+                .iter()
+                .map(|c| {
+                    // Try to resolve to a local monitored artist via provider link
+                    let local_id = all_artist_ids
+                        .iter()
+                        .find(|&aid| {
+                            monitored_artists
+                                .iter()
+                                .any(|ar| ar.id == *aid && ar.name == c.name)
+                        })
+                        .copied();
                     ResolvedArtistCredit {
-                        name: ar.name.clone(),
-                        artist_id: Some(ar.id),
-                        provider: None,
-                        external_id: None,
+                        name: c.name.clone(),
+                        artist_id: local_id,
+                        provider: c.provider.clone(),
+                        external_id: c.external_id.clone(),
                     }
                 })
-            }).collect()
+                .collect()
+        } else {
+            // No provider credits — build from linked artist_ids
+            all_artist_ids
+                .iter()
+                .filter_map(|aid| {
+                    monitored_artists.iter().find(|ar| ar.id == *aid).map(|ar| {
+                        ResolvedArtistCredit {
+                            name: ar.name.clone(),
+                            artist_id: Some(ar.id),
+                            provider: None,
+                            external_id: None,
+                        }
+                    })
+                })
+                .collect()
         };
 
         (album, artist, album_artists)

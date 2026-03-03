@@ -77,10 +77,7 @@ pub async fn get_merge_albums_data(artist_id: String) -> Result<MergeAlbumsData,
         album_by_id.insert(album.id, album.clone());
         let links = (ctx.fetch_album_links)(album.id).await.unwrap_or_default();
         for link in &links {
-            pair_to_album.insert(
-                (link.provider.clone(), link.external_id.clone()),
-                album.id,
-            );
+            pair_to_album.insert((link.provider.clone(), link.external_id.clone()), album.id);
         }
         links_by_album.insert(album.id, links);
         tracks_by_album.insert(
@@ -123,10 +120,7 @@ pub async fn get_merge_albums_data(artist_id: String) -> Result<MergeAlbumsData,
                 (other_album_id, album.id)
             };
 
-            suggestion_ids_map
-                .entry(key)
-                .or_default()
-                .push(s.id);
+            suggestion_ids_map.entry(key).or_default().push(s.id);
 
             pair_meta.entry(key).or_insert(PairMeta {
                 match_kind: s.match_kind.clone(),

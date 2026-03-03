@@ -34,8 +34,7 @@ pub type FetchArtistMatchSuggestionsFn =
 pub type FetchAlbumMatchSuggestionsFn =
     std::sync::Arc<dyn Fn(Uuid) -> AsyncFnResult<Vec<MatchSuggestion>> + Send + Sync>;
 
-pub type DispatchActionFn =
-    std::sync::Arc<dyn Fn(ServerAction) -> AsyncFnResult<()> + Send + Sync>;
+pub type DispatchActionFn = std::sync::Arc<dyn Fn(ServerAction) -> AsyncFnResult<()> + Send + Sync>;
 
 pub type PreviewImportFn =
     std::sync::Arc<dyn Fn() -> AsyncFnResult<Vec<ImportPreviewItem>> + Send + Sync>;

@@ -130,9 +130,10 @@ pub(crate) async fn preview_import_library(
         if let Some((artist_id, artist_name)) = artist_names_lower.get(&needle) {
             let target_title = normalize_text(&local.album_title);
 
-            for album in albums.iter().filter(|a| {
-                a.artist_id == *artist_id || a.artist_ids.contains(artist_id)
-            }) {
+            for album in albums
+                .iter()
+                .filter(|a| a.artist_id == *artist_id || a.artist_ids.contains(artist_id))
+            {
                 let album_title_norm = normalize_text(&album.title);
                 let album_year = album.release_date.as_deref().and_then(parse_release_year);
 
@@ -226,10 +227,7 @@ pub(crate) async fn preview_import_library(
 
         // A folder is "already imported" when its best match is already acquired.
         // One folder = one album on disk. If the top candidate is acquired, it's done.
-        let already_imported = candidates
-            .first()
-            .map(|c| c.acquired)
-            .unwrap_or(false);
+        let already_imported = candidates.first().map(|c| c.acquired).unwrap_or(false);
 
         let selected_candidate = if !candidates.is_empty() && !already_imported {
             Some(0)

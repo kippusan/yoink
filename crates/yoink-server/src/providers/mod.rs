@@ -141,6 +141,8 @@ pub(crate) struct DownloadTrackContext {
     pub artist_name: String,
     pub album_title: String,
     pub track_title: String,
+    pub track_number: Option<u32>,
+    pub album_track_count: Option<usize>,
     pub duration_secs: Option<u32>,
 }
 
@@ -162,9 +164,17 @@ impl Quality {
     }
 
     pub fn from_str_lossy(s: &str) -> Self {
-        match s.to_ascii_uppercase().as_str() {
-            "HI_RES_LOSSLESS" | "HI_RES" | "HIRES" => Quality::HiRes,
-            _ => Quality::Lossless,
+        Self::from_env_with_fallback(s).0
+    }
+
+    pub fn from_env_with_fallback(s: &str) -> (Self, bool) {
+        let upper = s.trim().to_ascii_uppercase();
+        match upper.as_str() {
+            "HI_RES_LOSSLESS" | "HI_RES_LOSLESS" | "HIRES_LOSSLESS" | "HI_RES" | "HIRES" => {
+                (Quality::HiRes, false)
+            }
+            "LOSSLESS" | "HIGH" | "LOW" => (Quality::Lossless, false),
+            _ => (Quality::Lossless, true),
         }
     }
 }
@@ -258,4 +268,24 @@ pub(crate) trait DownloadSource: Send + Sync {
         quality: &Quality,
         context: Option<&DownloadTrackContext>,
     ) -> Result<PlaybackInfo, ProviderError>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Quality;
+
+    #[test]
+    fn quality_env_parser_handles_aliases_and_fallback() {
+        let (q, used_fallback) = Quality::from_env_with_fallback("hires");
+        assert_eq!(q, Quality::HiRes);
+        assert!(!used_fallback);
+
+        let (q, used_fallback) = Quality::from_env_with_fallback("high");
+        assert_eq!(q, Quality::Lossless);
+        assert!(!used_fallback);
+
+        let (q, used_fallback) = Quality::from_env_with_fallback("definitely-not-a-quality");
+        assert_eq!(q, Quality::Lossless);
+        assert!(used_fallback);
+    }
 }

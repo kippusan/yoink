@@ -33,10 +33,7 @@ impl MusicBrainzProvider {
             .user_agent(&user_agent)
             .build()
             .expect("failed to build HTTP client");
-        Self {
-            client,
-            http,
-        }
+        Self { client, http }
     }
 
     /// Browse all release groups for an artist, paginating through 100 at a time.
@@ -116,7 +113,10 @@ impl MusicBrainzProvider {
     /// Steps: fetch artist with URL rels → find Wikipedia/Wikidata link → get summary.
     async fn fetch_wikipedia_extract(&self, mbid: &str) -> Option<String> {
         // Fetch artist with URL relations to find Wikipedia link
-        debug!(mbid, "Fetching MusicBrainz artist with URL relations for bio");
+        debug!(
+            mbid,
+            "Fetching MusicBrainz artist with URL relations for bio"
+        );
         let artist = match MbArtist::fetch()
             .id(mbid)
             .with_url_relations()
@@ -241,8 +241,7 @@ impl MusicBrainzProvider {
         let page_title = parts[1];
         let lang = wiki_url.strip_prefix("https://")?.split('.').next()?;
 
-        let api_url =
-            format!("https://{lang}.wikipedia.org/api/rest_v1/page/summary/{page_title}");
+        let api_url = format!("https://{lang}.wikipedia.org/api/rest_v1/page/summary/{page_title}");
 
         debug!(mbid, %api_url, "Fetching Wikipedia summary");
 

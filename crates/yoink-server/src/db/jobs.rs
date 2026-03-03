@@ -59,10 +59,7 @@ pub(crate) async fn load_jobs(pool: &SqlitePool) -> Result<Vec<DownloadJob>, sql
     Ok(rows.into_iter().map(DownloadJob::from).collect())
 }
 
-pub(crate) async fn insert_job(
-    pool: &SqlitePool,
-    job: &DownloadJob,
-) -> Result<Uuid, sqlx::Error> {
+pub(crate) async fn insert_job(pool: &SqlitePool, job: &DownloadJob) -> Result<Uuid, sqlx::Error> {
     let status = job.status.as_str();
     let total = job.total_tracks as i32;
     let completed = job.completed_tracks as i32;
@@ -86,7 +83,12 @@ pub(crate) async fn update_job(pool: &SqlitePool, job: &DownloadJob) -> Result<(
         "UPDATE download_jobs SET status = $1, total_tracks = $2, completed_tracks = $3,
                                   error = $4, updated_at = $5
          WHERE id = $6",
-        status, total, completed, job.error, job.updated_at, job.id,
+        status,
+        total,
+        completed,
+        job.error,
+        job.updated_at,
+        job.id,
     )
     .execute(pool)
     .await?;

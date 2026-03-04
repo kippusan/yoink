@@ -1,3 +1,8 @@
+//! Low-level HTTP helpers for talking to hifi-api instances.
+//!
+//! The single public function [`hifi_get_json`] performs a `GET` request,
+//! automatically trying each candidate instance URL until one succeeds.
+
 use std::{sync::Arc, time::Duration};
 
 use serde::de::DeserializeOwned;
@@ -6,7 +11,13 @@ use tracing::{debug, warn};
 
 use super::instances::{self, InstanceCache};
 
-/// Generic JSON GET against the hifi API, with instance failover.
+/// Perform a JSON `GET` against the hifi-api, with automatic instance failover.
+///
+/// Candidate URLs are resolved via [`instances::candidate_base_urls`] and tried
+/// in order. The first instance that returns a valid, deserializable response is
+/// promoted to the active instance in the cache.
+///
+/// Returns `Err(String)` with a human-readable message when all candidates fail.
 pub(crate) async fn hifi_get_json<T: DeserializeOwned>(
     http: &reqwest::Client,
     manual_base_url: Option<&str>,

@@ -1,3 +1,10 @@
+//! Tidal music provider implementation.
+//!
+//! Communicates with the hifi-api proxy layer to search, fetch metadata,
+//! resolve playback streams, and download cover art from Tidal.
+//! Includes automatic instance discovery and failover across multiple
+//! upstream hifi-api hosts.
+
 pub(crate) mod api;
 pub(crate) mod instances;
 pub(crate) mod manifest;
@@ -23,13 +30,23 @@ use super::{
 
 // ── TidalProvider ───────────────────────────────────────────────────
 
+/// Tidal metadata and download provider.
+///
+/// Wraps an HTTP client and an [`InstanceCache`] to communicate with
+/// upstream hifi-api instances. Supports an optional manual base URL
+/// override; when set it is tried first before discovered instances.
 pub(crate) struct TidalProvider {
+    /// Shared HTTP client used for all upstream requests.
     pub http: reqwest::Client,
+    /// Optional user-configured base URL that takes priority over discovery.
     pub manual_base_url: Option<String>,
+    /// Cached list of healthy hifi-api instances, refreshed periodically.
     pub instance_cache: Arc<RwLock<InstanceCache>>,
 }
 
 impl TidalProvider {
+    /// Create a new Tidal provider with the given HTTP client and optional
+    /// manual base URL override for the hifi-api proxy.
     pub fn new(http: reqwest::Client, manual_base_url: Option<String>) -> Self {
         Self {
             http,
@@ -54,7 +71,7 @@ impl TidalProvider {
         .await
     }
 
-    /// Get the instances payload for the /api/tidal/instances debug endpoint.
+    /// Build the instances payload for the `/api/tidal/instances` endpoint.
     pub async fn list_instances_payload(&self) -> models::InstancesResponse {
         instances::list_instances_payload(
             self.manual_base_url.as_deref(),

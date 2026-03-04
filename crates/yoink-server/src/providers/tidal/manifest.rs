@@ -1,3 +1,13 @@
+//! Manifest decoding for Tidal playback responses.
+//!
+//! Tidal returns playback information as a base64-encoded manifest whose
+//! format is indicated by a MIME type. Two formats are supported:
+//!
+//! * **BTS** (`application/vnd.tidal.bts`) – a JSON envelope containing
+//!   one or more direct download URLs.
+//! * **DASH** (`application/dash+xml`) – an MPEG-DASH MPD document from
+//!   which segment or base URLs are extracted.
+
 use base64::Engine;
 use roxmltree::{Document, Node};
 use tracing::warn;
@@ -5,6 +15,11 @@ use tracing::warn;
 use super::models::{BtsManifest, HifiPlaybackData};
 use crate::providers::PlaybackInfo;
 
+/// Decode the base64 manifest from a playback response and extract a
+/// [`PlaybackInfo`] containing the download URL(s).
+///
+/// Returns an error string when the manifest cannot be decoded, parsed,
+/// or contains no usable URLs.
 pub(crate) fn extract_download_payload(
     playback: &HifiPlaybackData,
 ) -> Result<PlaybackInfo, String> {
@@ -47,6 +62,11 @@ pub(crate) fn extract_download_payload(
     }
 }
 
+/// Parse a DASH MPD document and resolve all segment URLs from the
+/// highest-bandwidth audio `Representation`.
+///
+/// Returns the initialization URL (if present) followed by all media
+/// segment URLs derived from the `SegmentTimeline`.
 fn extract_dash_segment_urls(xml: &str) -> Result<Vec<String>, String> {
     let doc = Document::parse(xml).map_err(|err| format!("failed to parse DASH XML: {err}"))?;
 
@@ -190,6 +210,8 @@ fn extract_dash_segment_urls(xml: &str) -> Result<Vec<String>, String> {
     Ok(urls)
 }
 
+/// Expand a DASH URL template by replacing `$RepresentationID$`, `$Number$`,
+/// and `$Time$` placeholders (including zero-padded variants).
 fn resolve_dash_template(template: &str, rep_id: &str, number: u64, time: u64) -> String {
     let mut out = String::with_capacity(template.len() + 16);
     let bytes = template.as_bytes();
@@ -243,6 +265,8 @@ fn resolve_dash_template(template: &str, rep_id: &str, number: u64, time: u64) -
     out
 }
 
+/// Join a base URL and a relative segment path, handling absolute URLs
+/// and trailing-slash edge cases.
 fn join_dash_url(base: &str, part: &str) -> String {
     if part.starts_with("http://") || part.starts_with("https://") {
         return part.to_string();
@@ -257,6 +281,8 @@ fn join_dash_url(base: &str, part: &str) -> String {
     }
 }
 
+/// Fallback extractor: scan the DASH XML for the first absolute `<BaseURL>`
+/// element, or failing that, the first bare `https://` URL in the document.
 fn extract_dash_base_url(xml: &str) -> Result<String, String> {
     let mut scan_from = 0usize;
     while let Some(tag_start_rel) = xml[scan_from..].find("<BaseURL") {
@@ -299,6 +325,8 @@ fn extract_dash_base_url(xml: &str) -> Result<String, String> {
     Err("no absolute URL found in DASH manifest".to_string())
 }
 
+/// Produce a compact, single-line summary of a playback manifest for
+/// structured log output (element counts, byte size, MIME type).
 pub(crate) fn summarize_manifest_for_logs(playback: &HifiPlaybackData) -> String {
     let decoded =
         match base64::engine::general_purpose::STANDARD.decode(playback.manifest.as_bytes()) {

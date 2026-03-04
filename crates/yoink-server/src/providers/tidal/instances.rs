@@ -1,3 +1,9 @@
+//! Hifi-api instance discovery, caching, and ranking.
+//!
+//! Periodically fetches uptime feeds that list known hifi-api instances,
+//! filters out down hosts, and ranks the remainder so the provider can
+//! fail over transparently.
+
 use std::{
     collections::{HashMap, HashSet},
     time::{Duration, Instant},
@@ -9,8 +15,10 @@ use tracing::{debug, info};
 
 use super::models::{DownInstance, FeedInstance, InstancesResponse, RankedInstance, UptimeFeed};
 
+/// How long cached instance data is considered fresh before a re-fetch.
 const INSTANCE_CACHE_TTL: Duration = Duration::from_secs(300);
 
+/// Known uptime feed URLs polled to discover hifi-api instances.
 pub(crate) const UPTIME_FEEDS: [&str; 2] = [
     "https://tidal-uptime.jiffy-puffs-1j.workers.dev/",
     "https://tidal-uptime.props-76styles.workers.dev/",
@@ -18,6 +26,10 @@ pub(crate) const UPTIME_FEEDS: [&str; 2] = [
 
 // ── Instance cache ──────────────────────────────────────────────────
 
+/// In-memory cache of discovered hifi-api instances and their health status.
+///
+/// Protected by an [`RwLock`] at the provider level and refreshed when
+/// [`is_stale`](Self::is_stale) returns `true`.
 #[derive(Debug, Clone)]
 pub(crate) struct InstanceCache {
     pub last_refresh: Option<DateTime<Utc>>,
@@ -30,6 +42,7 @@ pub(crate) struct InstanceCache {
 }
 
 impl InstanceCache {
+    /// Create an empty, immediately-stale cache.
     pub fn new() -> Self {
         Self {
             last_refresh: None,
@@ -42,6 +55,8 @@ impl InstanceCache {
         }
     }
 
+    /// Returns `true` when the cache has never been populated or has exceeded
+    /// [`INSTANCE_CACHE_TTL`].
     pub fn is_stale(&self) -> bool {
         match self.last_refresh_instant {
             Some(last) => last.elapsed() > INSTANCE_CACHE_TTL,
@@ -52,6 +67,9 @@ impl InstanceCache {
 
 // ── Instance management functions ───────────────────────────────────
 
+/// Build a deduplicated, priority-ordered list of base URLs to try.
+///
+/// Order: manual override → last-known active instance → ranked discovered instances.
 pub(crate) async fn candidate_base_urls(
     manual_base_url: Option<&str>,
     cache: &RwLock<InstanceCache>,
@@ -77,6 +95,7 @@ pub(crate) async fn candidate_base_urls(
     candidates
 }
 
+/// Refresh the instance cache if it is stale (no-op when still fresh).
 pub(crate) async fn ensure_instances_fresh(cache: &RwLock<InstanceCache>, http: &reqwest::Client) {
     let should_refresh = {
         let c = cache.read().await;
@@ -87,11 +106,14 @@ pub(crate) async fn ensure_instances_fresh(cache: &RwLock<InstanceCache>, http: 
     }
 }
 
+/// Record `base_url` as the currently active (last successful) instance.
 pub(crate) async fn set_active_instance(cache: &RwLock<InstanceCache>, base_url: &str) {
     let mut c = cache.write().await;
     c.active_base_url = Some(base_url.to_string());
 }
 
+/// Fetch all uptime feeds, merge and deduplicate the results, filter out
+/// down instances, rank the survivors, and store everything in the cache.
 async fn refresh_instances(cache: &RwLock<InstanceCache>, http: &reqwest::Client) {
     debug!("Refreshing hifi instance feed cache");
     let mut merged_api = Vec::new();
@@ -157,6 +179,7 @@ async fn refresh_instances(cache: &RwLock<InstanceCache>, http: &reqwest::Client
     c.ranked = ranked;
 }
 
+/// Assemble an [`InstancesResponse`] snapshot for the debug endpoint.
 pub(crate) async fn list_instances_payload(
     manual_override: Option<&str>,
     cache: &RwLock<InstanceCache>,
@@ -184,6 +207,7 @@ pub(crate) async fn list_instances_payload(
 
 // ── Pure helpers ────────────────────────────────────────────────────
 
+/// Deduplicate instances by URL, keeping the entry with the highest version.
 fn dedup_instances(instances: Vec<FeedInstance>) -> Vec<FeedInstance> {
     let mut by_url: HashMap<String, FeedInstance> = HashMap::new();
     for instance in instances {
@@ -205,6 +229,7 @@ fn dedup_instances(instances: Vec<FeedInstance>) -> Vec<FeedInstance> {
     deduped
 }
 
+/// Deduplicate down-instance entries by URL.
 fn dedup_down(entries: Vec<DownInstance>) -> Vec<DownInstance> {
     let mut by_url: HashMap<String, DownInstance> = HashMap::new();
     for entry in entries {
@@ -215,6 +240,10 @@ fn dedup_down(entries: Vec<DownInstance>) -> Vec<DownInstance> {
     deduped
 }
 
+/// Merge streaming and API instance lists into a single ranked list.
+///
+/// Streaming-capable instances are preferred over API-only ones, and
+/// higher version numbers break ties within the same source category.
 fn rank_instances(streaming: &[FeedInstance], api: &[FeedInstance]) -> Vec<RankedInstance> {
     let mut by_url: HashMap<String, RankedInstance> = HashMap::new();
     for item in api {
@@ -252,6 +281,7 @@ fn rank_instances(streaming: &[FeedInstance], api: &[FeedInstance]) -> Vec<Ranke
     ranked
 }
 
+/// Map a source label to a sort key (lower is better).
 fn source_priority(source: &str) -> u8 {
     match source {
         "streaming" => 0,
@@ -259,6 +289,7 @@ fn source_priority(source: &str) -> u8 {
     }
 }
 
+/// Parse a semver-like `"major.minor.patch"` string into a comparable tuple.
 fn version_key(version: &str) -> (u16, u16, u16) {
     let mut parts = version
         .split('.')

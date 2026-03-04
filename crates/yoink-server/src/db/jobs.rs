@@ -114,3 +114,91 @@ pub(crate) async fn delete_completed_jobs(pool: &SqlitePool) -> Result<u64, sqlx
         .await?;
     Ok(result.rows_affected())
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::models::DownloadStatus;
+    use crate::test_helpers::*;
+
+    #[tokio::test]
+    async fn insert_and_load_job() {
+        let pool = test_db().await;
+        let artist = seed_artist(&pool, "Artist").await;
+        let album = seed_album(&pool, artist.id, "Album").await;
+        let job = seed_job(&pool, album.id, DownloadStatus::Queued).await;
+
+        let jobs = super::load_jobs(&pool).await.unwrap();
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].id, job.id);
+        assert_eq!(jobs[0].album_id, album.id);
+        assert!(matches!(jobs[0].status, DownloadStatus::Queued));
+    }
+
+    #[tokio::test]
+    async fn update_job() {
+        let pool = test_db().await;
+        let artist = seed_artist(&pool, "Artist").await;
+        let album = seed_album(&pool, artist.id, "Album").await;
+        let mut job = seed_job(&pool, album.id, DownloadStatus::Queued).await;
+
+        job.status = DownloadStatus::Downloading;
+        job.completed_tracks = 5;
+        super::update_job(&pool, &job).await.unwrap();
+
+        let jobs = super::load_jobs(&pool).await.unwrap();
+        assert!(matches!(jobs[0].status, DownloadStatus::Downloading));
+        assert_eq!(jobs[0].completed_tracks, 5);
+    }
+
+    #[tokio::test]
+    async fn delete_job() {
+        let pool = test_db().await;
+        let artist = seed_artist(&pool, "Artist").await;
+        let album = seed_album(&pool, artist.id, "Album").await;
+        let job = seed_job(&pool, album.id, DownloadStatus::Queued).await;
+
+        super::delete_job(&pool, job.id).await.unwrap();
+        assert!(super::load_jobs(&pool).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn delete_completed_jobs_only_removes_completed() {
+        let pool = test_db().await;
+        let artist = seed_artist(&pool, "Artist").await;
+        let album = seed_album(&pool, artist.id, "Album").await;
+
+        seed_job(&pool, album.id, DownloadStatus::Queued).await;
+        seed_job(&pool, album.id, DownloadStatus::Completed).await;
+        seed_job(&pool, album.id, DownloadStatus::Failed).await;
+        seed_job(&pool, album.id, DownloadStatus::Completed).await;
+
+        let deleted = super::delete_completed_jobs(&pool).await.unwrap();
+        assert_eq!(deleted, 2);
+
+        let remaining = super::load_jobs(&pool).await.unwrap();
+        assert_eq!(remaining.len(), 2);
+        assert!(remaining
+            .iter()
+            .all(|j| !matches!(j.status, DownloadStatus::Completed)));
+    }
+
+    #[tokio::test]
+    async fn job_quality_roundtrip() {
+        let pool = test_db().await;
+        let artist = seed_artist(&pool, "Artist").await;
+        let album = seed_album(&pool, artist.id, "Album").await;
+
+        let mut job = seed_job(&pool, album.id, DownloadStatus::Queued).await;
+        // seed_job uses Quality::High. Check it round-trips correctly.
+        let jobs = super::load_jobs(&pool).await.unwrap();
+        assert_eq!(jobs[0].quality, yoink_shared::Quality::High);
+
+        // Update to a different quality (just test the status field update)
+        job.status = DownloadStatus::Completed;
+        job.error = Some("test error".to_string());
+        super::update_job(&pool, &job).await.unwrap();
+
+        let jobs = super::load_jobs(&pool).await.unwrap();
+        assert_eq!(jobs[0].error.as_deref(), Some("test error"));
+    }
+}

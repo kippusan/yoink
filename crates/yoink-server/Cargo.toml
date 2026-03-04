@@ -38,3 +38,4 @@ tracing-subscriber = { workspace = true }
 
 [dev-dependencies]
 serial_test = { workspace = true }
+tempfile = "3"

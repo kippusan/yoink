@@ -788,3 +788,49 @@ fn map_album_suggestion(
         status: m.status,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exact_match_returns_one() {
+        assert_eq!(search_relevance_score("radiohead", "radiohead"), 1.0);
+    }
+
+    #[test]
+    fn prefix_match_gets_bonus() {
+        let prefix_score = search_relevance_score("radio", "radiohead");
+        let no_prefix_score = search_relevance_score("radio", "the radiohead");
+        assert!(prefix_score > no_prefix_score);
+    }
+
+    #[test]
+    fn contains_match_gets_smaller_bonus() {
+        let contains_score = search_relevance_score("head", "radiohead");
+        // "head" is contained but not a prefix, so gets a small bonus
+        // vs. something completely unrelated
+        let unrelated_score = search_relevance_score("head", "metallica");
+        assert!(contains_score > unrelated_score);
+    }
+
+    #[test]
+    fn completely_different_low_score() {
+        let score = search_relevance_score("radiohead", "metallica");
+        assert!(score < 0.6, "Expected low score, got {score}");
+    }
+
+    #[test]
+    fn score_capped_at_one() {
+        // Even with both bonuses, score should not exceed 1.0
+        let score = search_relevance_score("a", "a very long name");
+        assert!(score <= 1.0);
+    }
+
+    #[test]
+    fn empty_query_vs_name() {
+        // Edge case: should not panic
+        let _ = search_relevance_score("", "something");
+        let _ = search_relevance_score("something", "");
+    }
+}

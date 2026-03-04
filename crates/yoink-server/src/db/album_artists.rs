@@ -122,3 +122,108 @@ pub(crate) async fn delete_album_artists_by_artist(
         .await?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::test_helpers::*;
+
+    #[tokio::test]
+    async fn set_album_artists_replaces_all() {
+        let pool = test_db().await;
+        let a1 = seed_artist(&pool, "Artist 1").await;
+        let a2 = seed_artist(&pool, "Artist 2").await;
+        let a3 = seed_artist(&pool, "Artist 3").await;
+        let album = seed_album(&pool, a1.id, "Collab").await;
+
+        // seed_album already sets [a1] via upsert_album.
+        // Now replace with [a2, a3, a1]
+        super::set_album_artists(&pool, album.id, &[a2.id, a3.id, a1.id])
+            .await
+            .unwrap();
+
+        let ids = super::load_album_artist_ids(&pool, album.id).await.unwrap();
+        assert_eq!(ids, vec![a2.id, a3.id, a1.id]);
+    }
+
+    #[tokio::test]
+    async fn add_album_artist_appends() {
+        let pool = test_db().await;
+        let a1 = seed_artist(&pool, "Artist 1").await;
+        let a2 = seed_artist(&pool, "Artist 2").await;
+        let album = seed_album(&pool, a1.id, "Album").await;
+
+        super::add_album_artist(&pool, album.id, a2.id).await.unwrap();
+
+        let ids = super::load_album_artist_ids(&pool, album.id).await.unwrap();
+        assert_eq!(ids.len(), 2);
+        assert_eq!(ids[0], a1.id);
+        assert_eq!(ids[1], a2.id);
+    }
+
+    #[tokio::test]
+    async fn add_album_artist_ignores_duplicate() {
+        let pool = test_db().await;
+        let a1 = seed_artist(&pool, "Artist 1").await;
+        let album = seed_album(&pool, a1.id, "Album").await;
+
+        // a1 is already in the junction table from seed_album
+        super::add_album_artist(&pool, album.id, a1.id).await.unwrap();
+
+        let ids = super::load_album_artist_ids(&pool, album.id).await.unwrap();
+        assert_eq!(ids.len(), 1); // Not duplicated
+    }
+
+    #[tokio::test]
+    async fn remove_album_artist() {
+        let pool = test_db().await;
+        let a1 = seed_artist(&pool, "Artist 1").await;
+        let a2 = seed_artist(&pool, "Artist 2").await;
+        let album = seed_album(&pool, a1.id, "Album").await;
+        super::add_album_artist(&pool, album.id, a2.id).await.unwrap();
+
+        super::remove_album_artist(&pool, album.id, a1.id).await.unwrap();
+
+        let ids = super::load_album_artist_ids(&pool, album.id).await.unwrap();
+        assert_eq!(ids, vec![a2.id]);
+    }
+
+    #[tokio::test]
+    async fn load_all_album_artist_ids() {
+        let pool = test_db().await;
+        let a1 = seed_artist(&pool, "Artist 1").await;
+        let a2 = seed_artist(&pool, "Artist 2").await;
+        let album1 = seed_album(&pool, a1.id, "Album 1").await;
+        let album2 = seed_album(&pool, a2.id, "Album 2").await;
+        super::add_album_artist(&pool, album1.id, a2.id).await.unwrap();
+
+        let all = super::load_all_album_artist_ids(&pool).await.unwrap();
+        // album1 has [a1, a2], album2 has [a2]
+        let album1_artists: Vec<_> = all
+            .iter()
+            .filter(|(alb, _)| *alb == album1.id)
+            .map(|(_, art)| *art)
+            .collect();
+        assert_eq!(album1_artists, vec![a1.id, a2.id]);
+
+        let album2_artists: Vec<_> = all
+            .iter()
+            .filter(|(alb, _)| *alb == album2.id)
+            .map(|(_, art)| *art)
+            .collect();
+        assert_eq!(album2_artists, vec![a2.id]);
+    }
+
+    #[tokio::test]
+    async fn delete_album_artists_by_artist() {
+        let pool = test_db().await;
+        let a1 = seed_artist(&pool, "Artist 1").await;
+        let a2 = seed_artist(&pool, "Artist 2").await;
+        let album = seed_album(&pool, a1.id, "Album").await;
+        super::add_album_artist(&pool, album.id, a2.id).await.unwrap();
+
+        super::delete_album_artists_by_artist(&pool, a1.id).await.unwrap();
+
+        let ids = super::load_album_artist_ids(&pool, album.id).await.unwrap();
+        assert_eq!(ids, vec![a2.id]); // Only a2 remains
+    }
+}

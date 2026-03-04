@@ -101,3 +101,137 @@ pub(crate) async fn delete_artist(pool: &SqlitePool, artist_id: Uuid) -> Result<
         .await?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::test_helpers::*;
+
+    #[tokio::test]
+    async fn insert_and_load_artist() {
+        let pool = test_db().await;
+        let artist = seed_artist(&pool, "Radiohead").await;
+
+        let artists = super::load_artists(&pool).await.unwrap();
+        assert_eq!(artists.len(), 1);
+        assert_eq!(artists[0].id, artist.id);
+        assert_eq!(artists[0].name, "Radiohead");
+        assert!(artists[0].monitored);
+    }
+
+    #[tokio::test]
+    async fn upsert_artist_updates_on_conflict() {
+        let pool = test_db().await;
+        let mut artist = seed_artist(&pool, "Radiohead").await;
+
+        // Update name via upsert
+        artist.name = "Radiohead (Updated)".to_string();
+        super::upsert_artist(&pool, &artist).await.unwrap();
+
+        let artists = super::load_artists(&pool).await.unwrap();
+        assert_eq!(artists.len(), 1);
+        assert_eq!(artists[0].name, "Radiohead (Updated)");
+    }
+
+    #[tokio::test]
+    async fn upsert_artist_preserves_existing_bio_when_new_is_none() {
+        let pool = test_db().await;
+        let artist = seed_artist(&pool, "Artist").await;
+
+        // Set bio directly
+        super::update_artist_bio(&pool, artist.id, Some("Great band")).await.unwrap();
+
+        // Upsert with bio = None should keep the existing bio (COALESCE behavior)
+        let mut updated = artist.clone();
+        updated.bio = None;
+        updated.name = "Artist Renamed".to_string();
+        super::upsert_artist(&pool, &updated).await.unwrap();
+
+        let loaded = super::load_artists(&pool).await.unwrap();
+        assert_eq!(loaded[0].name, "Artist Renamed");
+        assert_eq!(loaded[0].bio.as_deref(), Some("Great band"));
+    }
+
+    #[tokio::test]
+    async fn update_artist_bio() {
+        let pool = test_db().await;
+        let artist = seed_artist(&pool, "Artist").await;
+
+        super::update_artist_bio(&pool, artist.id, Some("A biography")).await.unwrap();
+        let loaded = super::load_artists(&pool).await.unwrap();
+        assert_eq!(loaded[0].bio.as_deref(), Some("A biography"));
+
+        // Clear bio
+        super::update_artist_bio(&pool, artist.id, None).await.unwrap();
+        let loaded = super::load_artists(&pool).await.unwrap();
+        assert!(loaded[0].bio.is_none());
+    }
+
+    #[tokio::test]
+    async fn update_artist_details_name_only() {
+        let pool = test_db().await;
+        let artist = seed_artist(&pool, "Old Name").await;
+
+        super::update_artist_details(&pool, artist.id, Some("New Name"), None)
+            .await
+            .unwrap();
+
+        let loaded = super::load_artists(&pool).await.unwrap();
+        assert_eq!(loaded[0].name, "New Name");
+        assert!(loaded[0].image_url.is_none());
+    }
+
+    #[tokio::test]
+    async fn update_artist_details_image_only() {
+        let pool = test_db().await;
+        let artist = seed_artist(&pool, "Artist").await;
+
+        super::update_artist_details(
+            &pool,
+            artist.id,
+            None,
+            Some(Some("https://example.com/img.jpg")),
+        )
+        .await
+        .unwrap();
+
+        let loaded = super::load_artists(&pool).await.unwrap();
+        assert_eq!(loaded[0].name, "Artist");
+        assert_eq!(
+            loaded[0].image_url.as_deref(),
+            Some("https://example.com/img.jpg")
+        );
+    }
+
+    #[tokio::test]
+    async fn update_artist_monitored_flag() {
+        let pool = test_db().await;
+        let artist = seed_artist(&pool, "Artist").await;
+        assert!(artist.monitored);
+
+        super::update_artist_monitored(&pool, artist.id, false).await.unwrap();
+        let loaded = super::load_artists(&pool).await.unwrap();
+        assert!(!loaded[0].monitored);
+    }
+
+    #[tokio::test]
+    async fn delete_artist_removes_row() {
+        let pool = test_db().await;
+        let artist = seed_artist(&pool, "Deletable").await;
+        assert_eq!(super::load_artists(&pool).await.unwrap().len(), 1);
+
+        super::delete_artist(&pool, artist.id).await.unwrap();
+        assert!(super::load_artists(&pool).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn load_artists_sorted_case_insensitive() {
+        let pool = test_db().await;
+        seed_artist(&pool, "Zedd").await;
+        seed_artist(&pool, "avicii").await;
+        seed_artist(&pool, "Aphex Twin").await;
+
+        let artists = super::load_artists(&pool).await.unwrap();
+        let names: Vec<&str> = artists.iter().map(|a| a.name.as_str()).collect();
+        assert_eq!(names, vec!["Aphex Twin", "avicii", "Zedd"]);
+    }
+}

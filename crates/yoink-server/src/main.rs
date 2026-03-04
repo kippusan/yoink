@@ -13,6 +13,9 @@ mod services;
 mod state;
 mod ui;
 
+#[cfg(test)]
+mod test_helpers;
+
 use std::{sync::Arc, time::Duration};
 
 use axum::routing::get;

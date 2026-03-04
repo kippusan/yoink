@@ -261,7 +261,9 @@ pub struct SearchTrackResult {
 
 #[cfg(test)]
 mod tests {
-    use super::Quality;
+    use super::*;
+
+    // ── Quality ─────────────────────────────────────────────────
 
     #[test]
     fn quality_env_parser_handles_aliases_and_fallback() {
@@ -278,5 +280,141 @@ mod tests {
 
         let q: Result<Quality, String> = "definitely-not-a-quality".parse();
         assert!(q.is_err())
+    }
+
+    #[test]
+    fn quality_as_str_all_variants() {
+        assert_eq!(Quality::HiRes.as_str(), "HI_RES_LOSSLESS");
+        assert_eq!(Quality::Lossless.as_str(), "LOSSLESS");
+        assert_eq!(Quality::High.as_str(), "HIGH");
+        assert_eq!(Quality::Low.as_str(), "LOW");
+    }
+
+    #[test]
+    fn quality_display_matches_as_str() {
+        for q in [
+            Quality::HiRes,
+            Quality::Lossless,
+            Quality::High,
+            Quality::Low,
+        ] {
+            assert_eq!(format!("{q}"), q.as_str());
+        }
+    }
+
+    #[test]
+    fn quality_from_str_all_canonical() {
+        assert_eq!("HIGH".parse::<Quality>().unwrap(), Quality::High);
+        assert_eq!("LOW".parse::<Quality>().unwrap(), Quality::Low);
+        assert_eq!("LOSSLESS".parse::<Quality>().unwrap(), Quality::Lossless);
+        assert_eq!("HIRES_LOSSLESS".parse::<Quality>().unwrap(), Quality::HiRes);
+    }
+
+    #[test]
+    fn quality_serde_roundtrip() {
+        for q in [
+            Quality::HiRes,
+            Quality::Lossless,
+            Quality::High,
+            Quality::Low,
+        ] {
+            let json = serde_json::to_string(&q).unwrap();
+            let back: Quality = serde_json::from_str(&json).unwrap();
+            assert_eq!(q, back);
+        }
+    }
+
+    // ── DownloadStatus ──────────────────────────────────────────
+
+    #[test]
+    fn download_status_as_str() {
+        assert_eq!(DownloadStatus::Queued.as_str(), "queued");
+        assert_eq!(DownloadStatus::Resolving.as_str(), "resolving");
+        assert_eq!(DownloadStatus::Downloading.as_str(), "downloading");
+        assert_eq!(DownloadStatus::Completed.as_str(), "completed");
+        assert_eq!(DownloadStatus::Failed.as_str(), "failed");
+    }
+
+    #[test]
+    fn download_status_serde_roundtrip() {
+        for status in [
+            DownloadStatus::Queued,
+            DownloadStatus::Resolving,
+            DownloadStatus::Downloading,
+            DownloadStatus::Completed,
+            DownloadStatus::Failed,
+        ] {
+            let json = serde_json::to_string(&status).unwrap();
+            let back: DownloadStatus = serde_json::from_str(&json).unwrap();
+            assert_eq!(status, back);
+        }
+    }
+
+    #[test]
+    fn download_status_serde_snake_case() {
+        assert_eq!(
+            serde_json::to_string(&DownloadStatus::Queued).unwrap(),
+            "\"queued\""
+        );
+        assert_eq!(
+            serde_json::to_string(&DownloadStatus::Downloading).unwrap(),
+            "\"downloading\""
+        );
+    }
+
+    // ── ArtistCredit serde ──────────────────────────────────────
+
+    #[test]
+    fn artist_credit_skips_none_fields() {
+        let credit = ArtistCredit {
+            name: "Artist".to_string(),
+            provider: None,
+            external_id: None,
+        };
+        let json = serde_json::to_string(&credit).unwrap();
+        assert!(!json.contains("provider"));
+        assert!(!json.contains("external_id"));
+    }
+
+    #[test]
+    fn artist_credit_includes_some_fields() {
+        let credit = ArtistCredit {
+            name: "Artist".to_string(),
+            provider: Some("tidal".to_string()),
+            external_id: Some("123".to_string()),
+        };
+        let json = serde_json::to_string(&credit).unwrap();
+        assert!(json.contains("\"provider\":\"tidal\""));
+        assert!(json.contains("\"external_id\":\"123\""));
+    }
+
+    #[test]
+    fn artist_credit_deserializes_missing_optional_fields() {
+        let json = r#"{"name":"Artist"}"#;
+        let credit: ArtistCredit = serde_json::from_str(json).unwrap();
+        assert_eq!(credit.name, "Artist");
+        assert_eq!(credit.provider, None);
+        assert_eq!(credit.external_id, None);
+    }
+
+    // ── MonitoredAlbum serde ────────────────────────────────────
+
+    #[test]
+    fn monitored_album_partially_wanted_defaults_to_false() {
+        // Simulate JSON from an older version that doesn't have partially_wanted
+        let json = serde_json::json!({
+            "id": "01933e10-b4a4-7000-8000-000000000001",
+            "artist_id": "01933e10-b4a4-7000-8000-000000000002",
+            "title": "Test",
+            "explicit": false,
+            "monitored": false,
+            "acquired": false,
+            "wanted": false,
+            "added_at": "2024-01-01T00:00:00Z"
+        });
+        let album: MonitoredAlbum = serde_json::from_value(json).unwrap();
+        assert!(!album.partially_wanted);
+        assert!(album.artist_ids.is_empty());
+        assert!(album.artist_credits.is_empty());
     }
 }

@@ -325,3 +325,181 @@ fn provider_priority(provider_id: &str) -> u8 {
         _ => 5,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_provider_album(
+        title: &str,
+        release_date: Option<&str>,
+        cover_ref: Option<&str>,
+        explicit: bool,
+    ) -> ProviderAlbum {
+        ProviderAlbum {
+            external_id: format!("ext_{}", title.to_lowercase().replace(' ', "_")),
+            title: title.to_string(),
+            album_type: None,
+            release_date: release_date.map(|s| s.to_string()),
+            cover_ref: cover_ref.map(|s| s.to_string()),
+            url: None,
+            explicit,
+            artists: Vec::new(),
+        }
+    }
+
+    // ── normalize_title ─────────────────────────────────────────
+
+    #[test]
+    fn normalize_title_lowercases() {
+        assert_eq!(normalize_title("HELLO WORLD"), "hello world");
+    }
+
+    #[test]
+    fn normalize_title_normalizes_unicode_quotes() {
+        // Smart quotes -> ASCII
+        assert_eq!(
+            normalize_title("It\u{2019}s A Test"),
+            "it's a test"
+        );
+    }
+
+    #[test]
+    fn normalize_title_normalizes_unicode_dashes() {
+        // Em-dash -> hyphen
+        assert_eq!(
+            normalize_title("Part One \u{2014} Part Two"),
+            "part one - part two"
+        );
+    }
+
+    #[test]
+    fn normalize_title_strips_featuring() {
+        assert_eq!(
+            normalize_title("Song (feat. Artist)"),
+            "song"
+        );
+    }
+
+    #[test]
+    fn normalize_title_strips_featuring_bracket() {
+        assert_eq!(
+            normalize_title("Song [ft. Artist]"),
+            "song"
+        );
+    }
+
+    #[test]
+    fn normalize_title_preserves_non_feat_parens() {
+        assert_eq!(
+            normalize_title("Song (Deluxe Edition)"),
+            "song (deluxe edition)"
+        );
+    }
+
+    // ── strip_featuring ─────────────────────────────────────────
+
+    #[test]
+    fn strip_featuring_feat_dot() {
+        assert_eq!(strip_featuring("song (feat. artist)"), "song");
+    }
+
+    #[test]
+    fn strip_featuring_ft_dot() {
+        assert_eq!(strip_featuring("song (ft. artist)"), "song");
+    }
+
+    #[test]
+    fn strip_featuring_featuring() {
+        assert_eq!(strip_featuring("song (featuring artist)"), "song");
+    }
+
+    #[test]
+    fn strip_featuring_bracket() {
+        assert_eq!(strip_featuring("song [feat. artist]"), "song");
+    }
+
+    #[test]
+    fn strip_featuring_no_match() {
+        assert_eq!(strip_featuring("song (remix)"), "song (remix)");
+    }
+
+    #[test]
+    fn strip_featuring_no_parens() {
+        assert_eq!(strip_featuring("just a song"), "just a song");
+    }
+
+    // ── album_identity_key ──────────────────────────────────────
+
+    #[test]
+    fn album_identity_key_with_date() {
+        let key = album_identity_key("Album Title", Some("2024-03-15"));
+        assert!(key.starts_with("album title"));
+        assert!(key.contains("|2024"));
+    }
+
+    #[test]
+    fn album_identity_key_without_date() {
+        let key = album_identity_key("Album Title", None);
+        assert!(key.ends_with('|'));
+    }
+
+    #[test]
+    fn album_identity_key_strips_feat() {
+        let key1 = album_identity_key("Song (feat. Artist)", Some("2024"));
+        let key2 = album_identity_key("Song", Some("2024"));
+        assert_eq!(key1, key2);
+    }
+
+    #[test]
+    fn album_identity_key_normalizes_unicode() {
+        let key1 = album_identity_key("It\u{2019}s Time", Some("2024"));
+        let key2 = album_identity_key("It's Time", Some("2024"));
+        assert_eq!(key1, key2);
+    }
+
+    // ── should_prefer_album ─────────────────────────────────────
+
+    #[test]
+    fn prefer_album_with_cover() {
+        let with_cover = make_provider_album("A", Some("2024"), Some("cover_ref"), false);
+        let without_cover = make_provider_album("A", Some("2024"), None, false);
+        assert!(should_prefer_album("tidal", &without_cover, "tidal", &with_cover));
+        assert!(!should_prefer_album("tidal", &with_cover, "tidal", &without_cover));
+    }
+
+    #[test]
+    fn prefer_higher_priority_provider() {
+        let tidal = make_provider_album("A", Some("2024"), Some("ref"), false);
+        let mb = make_provider_album("A", Some("2024"), Some("ref"), false);
+        assert!(should_prefer_album("musicbrainz", &mb, "tidal", &tidal));
+        assert!(!should_prefer_album("tidal", &tidal, "musicbrainz", &mb));
+    }
+
+    #[test]
+    fn prefer_explicit_when_same_provider_and_cover() {
+        let explicit = make_provider_album("A", Some("2024"), Some("ref"), true);
+        let clean = make_provider_album("A", Some("2024"), Some("ref"), false);
+        assert!(should_prefer_album("tidal", &clean, "tidal", &explicit));
+    }
+
+    #[test]
+    fn tiebreaker_by_external_id() {
+        let mut a = make_provider_album("A", Some("2024"), Some("ref"), false);
+        a.external_id = "aaa".to_string();
+        let mut b = make_provider_album("A", Some("2024"), Some("ref"), false);
+        b.external_id = "zzz".to_string();
+        // b > a by external_id
+        assert!(should_prefer_album("tidal", &a, "tidal", &b));
+    }
+
+    // ── provider_priority (sync) ────────────────────────────────
+
+    #[test]
+    fn sync_provider_priority() {
+        assert_eq!(provider_priority("tidal"), 10);
+        assert_eq!(provider_priority("deezer"), 9);
+        assert_eq!(provider_priority("musicbrainz"), 1);
+        assert_eq!(provider_priority("anything"), 5);
+    }
+}

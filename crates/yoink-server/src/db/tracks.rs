@@ -291,3 +291,265 @@ pub(crate) async fn all_monitored_tracks_acquired(
     .await?;
     Ok(count == 0)
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::test_helpers::*;
+
+    #[tokio::test]
+    async fn upsert_and_load_tracks() {
+        let pool = test_db().await;
+        let artist = seed_artist(&pool, "Artist").await;
+        let album = seed_album(&pool, artist.id, "Album").await;
+        let tracks = seed_tracks(&pool, album.id, 3).await;
+
+        let loaded = super::load_tracks_for_album(&pool, album.id).await.unwrap();
+        assert_eq!(loaded.len(), 3);
+        assert_eq!(loaded[0].id, tracks[0].id);
+        assert_eq!(loaded[0].title, "Track 1");
+        assert_eq!(loaded[0].track_number, 1);
+        assert_eq!(loaded[2].track_number, 3);
+    }
+
+    #[tokio::test]
+    async fn tracks_ordered_by_disc_and_number() {
+        let pool = test_db().await;
+        let artist = seed_artist(&pool, "Artist").await;
+        let album = seed_album(&pool, artist.id, "Album").await;
+
+        // Insert tracks out of order, across 2 discs
+        for (disc, num) in [(2, 1), (1, 3), (1, 1), (1, 2), (2, 2)] {
+            let track = crate::models::TrackInfo {
+                id: uuid::Uuid::now_v7(),
+                title: format!("D{disc}T{num}"),
+                version: None,
+                disc_number: disc,
+                track_number: num,
+                duration_secs: 200,
+                duration_display: "3:20".to_string(),
+                isrc: None,
+                explicit: false,
+                track_artist: None,
+                file_path: None,
+                monitored: false,
+                acquired: false,
+            };
+            crate::db::upsert_track(&pool, &track, album.id).await.unwrap();
+        }
+
+        let loaded = super::load_tracks_for_album(&pool, album.id).await.unwrap();
+        let order: Vec<String> = loaded.iter().map(|t| t.title.clone()).collect();
+        assert_eq!(order, vec!["D1T1", "D1T2", "D1T3", "D2T1", "D2T2"]);
+    }
+
+    #[tokio::test]
+    async fn update_track_flags() {
+        let pool = test_db().await;
+        let artist = seed_artist(&pool, "Artist").await;
+        let album = seed_album(&pool, artist.id, "Album").await;
+        let tracks = seed_tracks(&pool, album.id, 1).await;
+
+        super::update_track_flags(&pool, tracks[0].id, true, true).await.unwrap();
+
+        let loaded = super::load_tracks_for_album(&pool, album.id).await.unwrap();
+        assert!(loaded[0].monitored);
+        assert!(loaded[0].acquired);
+    }
+
+    #[tokio::test]
+    async fn has_wanted_tracks_true_when_monitored_unacquired() {
+        let pool = test_db().await;
+        let artist = seed_artist(&pool, "Artist").await;
+        let album = seed_album(&pool, artist.id, "Album").await;
+        let tracks = seed_tracks(&pool, album.id, 2).await;
+
+        // Initially no tracks are monitored
+        assert!(!super::has_wanted_tracks(&pool, album.id).await.unwrap());
+
+        // Monitor one track (but don't acquire it)
+        super::update_track_flags(&pool, tracks[0].id, true, false).await.unwrap();
+        assert!(super::has_wanted_tracks(&pool, album.id).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn has_wanted_tracks_false_when_all_acquired() {
+        let pool = test_db().await;
+        let artist = seed_artist(&pool, "Artist").await;
+        let album = seed_album(&pool, artist.id, "Album").await;
+        let tracks = seed_tracks(&pool, album.id, 1).await;
+
+        super::update_track_flags(&pool, tracks[0].id, true, true).await.unwrap();
+        assert!(!super::has_wanted_tracks(&pool, album.id).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn all_monitored_tracks_acquired_empty() {
+        let pool = test_db().await;
+        let artist = seed_artist(&pool, "Artist").await;
+        let album = seed_album(&pool, artist.id, "Album").await;
+        seed_tracks(&pool, album.id, 2).await;
+
+        // No tracks monitored at all → degenerate true
+        assert!(super::all_monitored_tracks_acquired(&pool, album.id).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn all_monitored_tracks_acquired_partial() {
+        let pool = test_db().await;
+        let artist = seed_artist(&pool, "Artist").await;
+        let album = seed_album(&pool, artist.id, "Album").await;
+        let tracks = seed_tracks(&pool, album.id, 2).await;
+
+        // Monitor both, acquire only one
+        super::update_track_flags(&pool, tracks[0].id, true, true).await.unwrap();
+        super::update_track_flags(&pool, tracks[1].id, true, false).await.unwrap();
+        assert!(!super::all_monitored_tracks_acquired(&pool, album.id).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn all_monitored_tracks_acquired_all() {
+        let pool = test_db().await;
+        let artist = seed_artist(&pool, "Artist").await;
+        let album = seed_album(&pool, artist.id, "Album").await;
+        let tracks = seed_tracks(&pool, album.id, 2).await;
+
+        super::update_track_flags(&pool, tracks[0].id, true, true).await.unwrap();
+        super::update_track_flags(&pool, tracks[1].id, true, true).await.unwrap();
+        assert!(super::all_monitored_tracks_acquired(&pool, album.id).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn load_monitored_tracks_for_album() {
+        let pool = test_db().await;
+        let artist = seed_artist(&pool, "Artist").await;
+        let album = seed_album(&pool, artist.id, "Album").await;
+        let tracks = seed_tracks(&pool, album.id, 3).await;
+
+        super::update_track_flags(&pool, tracks[1].id, true, false).await.unwrap();
+
+        let monitored = super::load_monitored_tracks_for_album(&pool, album.id)
+            .await
+            .unwrap();
+        assert_eq!(monitored.len(), 1);
+        assert_eq!(monitored[0].id, tracks[1].id);
+    }
+
+    #[tokio::test]
+    async fn upsert_track_coalesce_preserves_existing_track_artist() {
+        let pool = test_db().await;
+        let artist = seed_artist(&pool, "Artist").await;
+        let album = seed_album(&pool, artist.id, "Album").await;
+
+        let mut track = crate::models::TrackInfo {
+            id: uuid::Uuid::now_v7(),
+            title: "Song".to_string(),
+            version: None,
+            disc_number: 1,
+            track_number: 1,
+            duration_secs: 200,
+            duration_display: "3:20".to_string(),
+            isrc: None,
+            explicit: false,
+            track_artist: Some("Featured Artist".to_string()),
+            file_path: Some("/music/song.flac".to_string()),
+            monitored: false,
+            acquired: false,
+        };
+        crate::db::upsert_track(&pool, &track, album.id).await.unwrap();
+
+        // Upsert again with None for track_artist and file_path
+        // The COALESCE should preserve the existing values
+        track.track_artist = None;
+        track.file_path = None;
+        track.title = "Song (Remastered)".to_string();
+        crate::db::upsert_track(&pool, &track, album.id).await.unwrap();
+
+        let loaded = super::load_tracks_for_album(&pool, album.id).await.unwrap();
+        assert_eq!(loaded[0].title, "Song (Remastered)");
+        assert_eq!(loaded[0].track_artist.as_deref(), Some("Featured Artist"));
+        assert_eq!(loaded[0].file_path.as_deref(), Some("/music/song.flac"));
+    }
+
+    #[tokio::test]
+    async fn find_track_by_album_isrc() {
+        let pool = test_db().await;
+        let artist = seed_artist(&pool, "Artist").await;
+        let album = seed_album(&pool, artist.id, "Album").await;
+        let tracks = seed_tracks(&pool, album.id, 2).await;
+
+        // seed_tracks generates ISRCs like "USRC12340001"
+        let found = super::find_track_by_album_isrc(&pool, album.id, "USRC12340001")
+            .await
+            .unwrap();
+        assert_eq!(found, Some(tracks[0].id));
+
+        // Case insensitive
+        let found = super::find_track_by_album_isrc(&pool, album.id, "usrc12340001")
+            .await
+            .unwrap();
+        assert_eq!(found, Some(tracks[0].id));
+
+        // Non-existent
+        let found = super::find_track_by_album_isrc(&pool, album.id, "NOTEXIST")
+            .await
+            .unwrap();
+        assert!(found.is_none());
+    }
+
+    #[tokio::test]
+    async fn find_track_by_album_position() {
+        let pool = test_db().await;
+        let artist = seed_artist(&pool, "Artist").await;
+        let album = seed_album(&pool, artist.id, "Album").await;
+        let tracks = seed_tracks(&pool, album.id, 3).await;
+
+        let found = super::find_track_by_album_position(&pool, album.id, 1, 2)
+            .await
+            .unwrap();
+        assert_eq!(found, Some(tracks[1].id));
+
+        // Non-existent position
+        let found = super::find_track_by_album_position(&pool, album.id, 1, 99)
+            .await
+            .unwrap();
+        assert!(found.is_none());
+    }
+
+    #[tokio::test]
+    async fn find_track_by_provider_link() {
+        let pool = test_db().await;
+        let artist = seed_artist(&pool, "Artist").await;
+        let album = seed_album(&pool, artist.id, "Album").await;
+        let tracks = seed_tracks(&pool, album.id, 1).await;
+
+        crate::db::upsert_track_provider_link(&pool, tracks[0].id, "tidal", "T123")
+            .await
+            .unwrap();
+
+        let found = super::find_track_by_provider_link(&pool, "tidal", "T123")
+            .await
+            .unwrap();
+        assert_eq!(found, Some(tracks[0].id));
+
+        let not_found = super::find_track_by_provider_link(&pool, "tidal", "NOPE")
+            .await
+            .unwrap();
+        assert!(not_found.is_none());
+    }
+
+    #[tokio::test]
+    async fn load_all_tracks_joins_album_and_artist() {
+        let pool = test_db().await;
+        let artist = seed_artist(&pool, "TestArtist").await;
+        let album = seed_album(&pool, artist.id, "TestAlbum").await;
+        seed_tracks(&pool, album.id, 2).await;
+
+        let all = super::load_all_tracks(&pool).await.unwrap();
+        assert_eq!(all.len(), 2);
+        let (_, alb_id, alb_title, art_id, art_name) = &all[0];
+        assert_eq!(*alb_id, album.id);
+        assert_eq!(alb_title, "TestAlbum");
+        assert_eq!(*art_id, artist.id);
+        assert_eq!(art_name, "TestArtist");
+    }
+}

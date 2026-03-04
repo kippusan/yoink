@@ -209,3 +209,52 @@ fn split_album_folder_name(name: &str) -> (String, Option<String>) {
     }
     (name.trim().to_string(), None)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn split_folder_name_with_year() {
+        let (title, year) = split_album_folder_name("Album Title (2024)");
+        assert_eq!(title, "Album Title");
+        assert_eq!(year, Some("2024".to_string()));
+    }
+
+    #[test]
+    fn split_folder_name_with_full_date() {
+        let (title, year) = split_album_folder_name("Album Title (2024-03-15)");
+        assert_eq!(title, "Album Title");
+        assert_eq!(year, Some("2024".to_string()));
+    }
+
+    #[test]
+    fn split_folder_name_no_year() {
+        let (title, year) = split_album_folder_name("Album Title");
+        assert_eq!(title, "Album Title");
+        assert_eq!(year, None);
+    }
+
+    #[test]
+    fn split_folder_name_non_year_parens() {
+        // "(Deluxe)" is not a year, so should not be split
+        let (title, year) = split_album_folder_name("Title (Deluxe)");
+        assert_eq!(title, "Title (Deluxe)");
+        assert_eq!(year, None);
+    }
+
+    #[test]
+    fn split_folder_name_multiple_parens_uses_last() {
+        // rsplit_once finds the LAST " ("
+        let (title, year) = split_album_folder_name("Title (Deluxe) (2024)");
+        assert_eq!(title, "Title (Deluxe)");
+        assert_eq!(year, Some("2024".to_string()));
+    }
+
+    #[test]
+    fn split_folder_name_trims_whitespace() {
+        let (title, year) = split_album_folder_name("  Album  ");
+        assert_eq!(title, "Album");
+        assert_eq!(year, None);
+    }
+}

@@ -301,3 +301,307 @@ fn sanitize_vorbis_key(prefix: &str, key: &str) -> String {
 }
 
 // fetch_cover_art_bytes and fetch_track_info_extra moved to providers
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use serde_json::{json, Value};
+
+    use super::*;
+
+    // ── parse_featured_artists ──────────────────────────────────
+
+    #[test]
+    fn parse_featured_single_artist() {
+        assert_eq!(
+            parse_featured_artists("Song (feat. Artist)"),
+            vec!["Artist"]
+        );
+    }
+
+    #[test]
+    fn parse_featured_ft_dot() {
+        assert_eq!(
+            parse_featured_artists("Song (ft. Someone)"),
+            vec!["Someone"]
+        );
+    }
+
+    #[test]
+    fn parse_featured_multiple_comma_and_ampersand() {
+        assert_eq!(
+            parse_featured_artists("Song (feat. A, B & C)"),
+            vec!["A", "B", "C"]
+        );
+    }
+
+    #[test]
+    fn parse_featured_no_parens() {
+        let result = parse_featured_artists("Just A Regular Title");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn parse_featured_non_feat_parens() {
+        // "(Deluxe Edition)" should not be parsed as featuring
+        let result = parse_featured_artists("Album (Deluxe Edition)");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn parse_featured_with_marker() {
+        assert_eq!(
+            parse_featured_artists("Song (with Someone)"),
+            vec!["Someone"]
+        );
+    }
+
+    #[test]
+    fn parse_featured_feat_no_dot() {
+        assert_eq!(
+            parse_featured_artists("Song (feat Artist)"),
+            vec!["Artist"]
+        );
+    }
+
+    #[test]
+    fn parse_featured_multiple_parens() {
+        let result =
+            parse_featured_artists("Song (Remix) (feat. A) (Live)");
+        assert_eq!(result, vec!["A"]);
+    }
+
+    #[test]
+    fn parse_featured_unclosed_paren() {
+        let result = parse_featured_artists("Song (feat. Artist");
+        assert!(result.is_empty());
+    }
+
+    // ── build_full_artist_string ────────────────────────────────
+
+    #[test]
+    fn build_artist_from_track_extra_array_of_objects() {
+        let mut track_extra = HashMap::new();
+        track_extra.insert(
+            "artists".to_string(),
+            json!([{"name": "Artist A"}, {"name": "Artist B"}]),
+        );
+        let result =
+            build_full_artist_string("Song", &track_extra, None, "Fallback");
+        assert_eq!(result, "Artist A; Artist B");
+    }
+
+    #[test]
+    fn build_artist_from_track_extra_string() {
+        let mut track_extra = HashMap::new();
+        track_extra.insert("artist".to_string(), json!("Solo Artist"));
+        let result =
+            build_full_artist_string("Song", &track_extra, None, "Fallback");
+        assert_eq!(result, "Solo Artist");
+    }
+
+    #[test]
+    fn build_artist_deduplicates_case_insensitive() {
+        let mut track_extra = HashMap::new();
+        track_extra.insert(
+            "artists".to_string(),
+            json!([{"name": "Artist"}, {"name": "artist"}]),
+        );
+        let result =
+            build_full_artist_string("Song", &track_extra, None, "Fallback");
+        assert_eq!(result, "Artist");
+    }
+
+    #[test]
+    fn build_artist_falls_back_when_no_extra() {
+        let track_extra = HashMap::new();
+        let result = build_full_artist_string(
+            "Song Without Featured",
+            &track_extra,
+            None,
+            "Fallback Artist",
+        );
+        assert_eq!(result, "Fallback Artist");
+    }
+
+    #[test]
+    fn build_artist_merges_featured_from_title() {
+        let mut track_extra = HashMap::new();
+        track_extra.insert(
+            "artists".to_string(),
+            json!([{"name": "Main Artist"}]),
+        );
+        let result = build_full_artist_string(
+            "Song (feat. Featured One)",
+            &track_extra,
+            None,
+            "Fallback",
+        );
+        assert_eq!(result, "Main Artist; Featured One");
+    }
+
+    #[test]
+    fn build_artist_deduplicates_featured_with_extra() {
+        let mut track_extra = HashMap::new();
+        track_extra.insert(
+            "artists".to_string(),
+            json!([{"name": "Main"}, {"name": "Featured"}]),
+        );
+        // Featured is already in extra, so title feat should not add duplicate
+        let result = build_full_artist_string(
+            "Song (feat. Featured)",
+            &track_extra,
+            None,
+            "Fallback",
+        );
+        assert_eq!(result, "Main; Featured");
+    }
+
+    #[test]
+    fn build_artist_merges_track_info_extra() {
+        let track_extra = HashMap::new();
+        let mut info_extra = HashMap::new();
+        info_extra.insert(
+            "artists".to_string(),
+            json!([{"name": "Info Artist"}]),
+        );
+        let result = build_full_artist_string(
+            "Song",
+            &track_extra,
+            Some(&info_extra),
+            "Fallback",
+        );
+        assert_eq!(result, "Info Artist");
+    }
+
+    #[test]
+    fn build_artist_title_key_fallback() {
+        let mut track_extra = HashMap::new();
+        track_extra.insert(
+            "artists".to_string(),
+            json!([{"title": "Artist Via Title Key"}]),
+        );
+        let result =
+            build_full_artist_string("Song", &track_extra, None, "Fallback");
+        assert_eq!(result, "Artist Via Title Key");
+    }
+
+    // ── extract_disc_number ─────────────────────────────────────
+
+    #[test]
+    fn extract_disc_from_info_extra_number() {
+        let track_extra = HashMap::new();
+        let mut info_extra = HashMap::new();
+        info_extra.insert("volumeNumber".to_string(), json!(2));
+        assert_eq!(extract_disc_number(&track_extra, Some(&info_extra)), Some(2));
+    }
+
+    #[test]
+    fn extract_disc_from_track_extra_string() {
+        let mut track_extra = HashMap::new();
+        track_extra.insert("discNumber".to_string(), json!("3"));
+        assert_eq!(extract_disc_number(&track_extra, None), Some(3));
+    }
+
+    #[test]
+    fn extract_disc_from_info_extra_takes_precedence() {
+        let mut track_extra = HashMap::new();
+        track_extra.insert("volumeNumber".to_string(), json!(5));
+        let mut info_extra = HashMap::new();
+        info_extra.insert("volumeNumber".to_string(), json!(1));
+        // info_extra is checked first for each key
+        assert_eq!(
+            extract_disc_number(&track_extra, Some(&info_extra)),
+            Some(1)
+        );
+    }
+
+    #[test]
+    fn extract_disc_none_when_missing() {
+        let track_extra = HashMap::new();
+        assert_eq!(extract_disc_number(&track_extra, None), None);
+    }
+
+    #[test]
+    fn extract_disc_snake_case_key() {
+        let mut track_extra = HashMap::new();
+        track_extra.insert("disc_number".to_string(), json!(4));
+        assert_eq!(extract_disc_number(&track_extra, None), Some(4));
+    }
+
+    // ── value_to_text ───────────────────────────────────────────
+
+    #[test]
+    fn value_to_text_string() {
+        assert_eq!(value_to_text(&json!("hello")), Some("hello".to_string()));
+    }
+
+    #[test]
+    fn value_to_text_number() {
+        assert_eq!(value_to_text(&json!(42)), Some("42".to_string()));
+    }
+
+    #[test]
+    fn value_to_text_bool() {
+        assert_eq!(value_to_text(&json!(true)), Some("true".to_string()));
+    }
+
+    #[test]
+    fn value_to_text_null() {
+        assert_eq!(value_to_text(&Value::Null), None);
+    }
+
+    #[test]
+    fn value_to_text_array() {
+        let result = value_to_text(&json!([1, 2, 3]));
+        assert!(result.is_some());
+        assert!(result.unwrap().contains("[1,2,3]"));
+    }
+
+    // ── value_as_string ─────────────────────────────────────────
+
+    #[test]
+    fn value_as_string_from_string() {
+        assert_eq!(
+            value_as_string(Some(&json!("hello"))),
+            Some("hello".to_string())
+        );
+    }
+
+    #[test]
+    fn value_as_string_from_number() {
+        assert_eq!(
+            value_as_string(Some(&json!(42))),
+            Some("42".to_string())
+        );
+    }
+
+    #[test]
+    fn value_as_string_from_null() {
+        assert_eq!(value_as_string(Some(&Value::Null)), None);
+    }
+
+    #[test]
+    fn value_as_string_from_none() {
+        assert_eq!(value_as_string(None), None);
+    }
+
+    // ── sanitize_vorbis_key ─────────────────────────────────────
+
+    #[test]
+    fn sanitize_vorbis_key_uppercase_and_prefix() {
+        assert_eq!(
+            sanitize_vorbis_key("TIDAL_TRACK_", "artistName"),
+            "TIDAL_TRACK_ARTISTNAME"
+        );
+    }
+
+    #[test]
+    fn sanitize_vorbis_key_non_alphanumeric_replaced() {
+        assert_eq!(
+            sanitize_vorbis_key("PREFIX_", "some-key.here"),
+            "PREFIX_SOME_KEY_HERE"
+        );
+    }
+}

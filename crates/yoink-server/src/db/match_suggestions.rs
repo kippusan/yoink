@@ -246,3 +246,149 @@ pub(crate) async fn set_match_suggestion_status(
     .await?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use chrono::Utc;
+    use uuid::Uuid;
+
+    use crate::test_helpers::*;
+
+    fn make_suggestion(scope_id: Uuid) -> super::MatchSuggestion {
+        super::MatchSuggestion {
+            id: Uuid::now_v7(),
+            scope_type: "artist".to_string(),
+            scope_id,
+            left_provider: "tidal".to_string(),
+            left_external_id: "T1".to_string(),
+            right_provider: "deezer".to_string(),
+            right_external_id: "D1".to_string(),
+            match_kind: "name_match".to_string(),
+            confidence: 85,
+            explanation: Some("Names match closely".to_string()),
+            external_name: Some("Test Artist".to_string()),
+            external_url: None,
+            image_ref: None,
+            disambiguation: None,
+            artist_type: None,
+            country: None,
+            tags: vec!["rock".to_string()],
+            popularity: Some(75),
+            status: "pending".to_string(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    #[tokio::test]
+    async fn upsert_and_load_match_suggestion() {
+        let pool = test_db().await;
+        let artist = seed_artist(&pool, "Artist").await;
+        let suggestion = make_suggestion(artist.id);
+
+        super::upsert_match_suggestion(&pool, &suggestion).await.unwrap();
+
+        let loaded = super::load_match_suggestions_for_scope(&pool, "artist", artist.id)
+            .await
+            .unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].id, suggestion.id);
+        assert_eq!(loaded[0].confidence, 85);
+        assert_eq!(loaded[0].tags, vec!["rock"]);
+        assert_eq!(loaded[0].status, "pending");
+    }
+
+    #[tokio::test]
+    async fn load_match_suggestion_by_id() {
+        let pool = test_db().await;
+        let artist = seed_artist(&pool, "Artist").await;
+        let suggestion = make_suggestion(artist.id);
+        super::upsert_match_suggestion(&pool, &suggestion).await.unwrap();
+
+        let loaded = super::load_match_suggestion_by_id(&pool, suggestion.id)
+            .await
+            .unwrap();
+        assert!(loaded.is_some());
+        assert_eq!(loaded.unwrap().id, suggestion.id);
+
+        let not_found = super::load_match_suggestion_by_id(&pool, Uuid::now_v7())
+            .await
+            .unwrap();
+        assert!(not_found.is_none());
+    }
+
+    #[tokio::test]
+    async fn set_match_suggestion_status() {
+        let pool = test_db().await;
+        let artist = seed_artist(&pool, "Artist").await;
+        let suggestion = make_suggestion(artist.id);
+        super::upsert_match_suggestion(&pool, &suggestion).await.unwrap();
+
+        super::set_match_suggestion_status(&pool, suggestion.id, "accepted")
+            .await
+            .unwrap();
+
+        let loaded = super::load_match_suggestion_by_id(&pool, suggestion.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded.status, "accepted");
+    }
+
+    #[tokio::test]
+    async fn clear_pending_only_removes_pending() {
+        let pool = test_db().await;
+        let artist = seed_artist(&pool, "Artist").await;
+
+        let s1 = make_suggestion(artist.id);
+        super::upsert_match_suggestion(&pool, &s1).await.unwrap();
+
+        let mut s2 = make_suggestion(artist.id);
+        s2.right_external_id = "D2".to_string(); // different to avoid unique conflict
+        super::upsert_match_suggestion(&pool, &s2).await.unwrap();
+
+        // Accept one
+        super::set_match_suggestion_status(&pool, s1.id, "accepted")
+            .await
+            .unwrap();
+
+        let cleared = super::clear_pending_match_suggestions(&pool, "artist", artist.id)
+            .await
+            .unwrap();
+        assert_eq!(cleared, 1);
+
+        let remaining = super::load_match_suggestions_for_scope(&pool, "artist", artist.id)
+            .await
+            .unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].status, "accepted");
+    }
+
+    #[tokio::test]
+    async fn upsert_does_not_overwrite_accepted_or_dismissed() {
+        let pool = test_db().await;
+        let artist = seed_artist(&pool, "Artist").await;
+
+        let mut suggestion = make_suggestion(artist.id);
+        suggestion.confidence = 70;
+        super::upsert_match_suggestion(&pool, &suggestion).await.unwrap();
+
+        // Accept the suggestion
+        super::set_match_suggestion_status(&pool, suggestion.id, "accepted")
+            .await
+            .unwrap();
+
+        // Try to upsert again with updated confidence — should NOT update
+        // because the WHERE clause excludes accepted/dismissed
+        suggestion.confidence = 95;
+        suggestion.id = Uuid::now_v7(); // new id but same unique key
+        super::upsert_match_suggestion(&pool, &suggestion).await.unwrap();
+
+        let loaded = super::load_match_suggestions_for_scope(&pool, "artist", artist.id)
+            .await
+            .unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].confidence, 70); // not updated
+        assert_eq!(loaded[0].status, "accepted");
+    }
+}

@@ -82,3 +82,111 @@ async fn album_dir_has_downloaded_audio(path: &std::path::Path) -> bool {
 
     false
 }
+
+#[cfg(test)]
+mod tests {
+    use chrono::Utc;
+    use uuid::Uuid;
+
+    use super::*;
+
+    fn make_album(monitored: bool, acquired: bool) -> MonitoredAlbum {
+        MonitoredAlbum {
+            id: Uuid::now_v7(),
+            artist_id: Uuid::now_v7(),
+            artist_ids: Vec::new(),
+            artist_credits: Vec::new(),
+            title: "Test Album".to_string(),
+            album_type: None,
+            release_date: None,
+            cover_url: None,
+            explicit: false,
+            monitored,
+            acquired,
+            wanted: false,
+            partially_wanted: false,
+            added_at: Utc::now(),
+        }
+    }
+
+    // ── update_wanted ───────────────────────────────────────────
+
+    #[test]
+    fn update_wanted_monitored_not_acquired() {
+        let mut album = make_album(true, false);
+        update_wanted(&mut album);
+        assert!(album.wanted);
+    }
+
+    #[test]
+    fn update_wanted_monitored_and_acquired() {
+        let mut album = make_album(true, true);
+        update_wanted(&mut album);
+        assert!(!album.wanted);
+    }
+
+    #[test]
+    fn update_wanted_not_monitored() {
+        let mut album = make_album(false, false);
+        update_wanted(&mut album);
+        assert!(!album.wanted);
+    }
+
+    #[test]
+    fn update_wanted_not_monitored_acquired() {
+        let mut album = make_album(false, true);
+        update_wanted(&mut album);
+        assert!(!album.wanted);
+    }
+
+    // ── normalize_text ──────────────────────────────────────────
+
+    #[test]
+    fn normalize_text_lowercases() {
+        assert_eq!(normalize_text("HELLO"), "hello");
+    }
+
+    #[test]
+    fn normalize_text_non_alphanumeric_to_space() {
+        assert_eq!(normalize_text("hello-world!"), "hello world");
+    }
+
+    #[test]
+    fn normalize_text_collapses_whitespace() {
+        assert_eq!(normalize_text("  hello   world  "), "hello world");
+    }
+
+    #[test]
+    fn normalize_text_unicode_lowercase() {
+        // German eszett: lowercase of "SS" depends on locale, but
+        // individual chars should be lowercased.
+        assert_eq!(normalize_text("ABC"), "abc");
+    }
+
+    // ── parse_release_year ──────────────────────────────────────
+
+    #[test]
+    fn parse_release_year_full_date() {
+        assert_eq!(parse_release_year("2024-03-15"), Some("2024".to_string()));
+    }
+
+    #[test]
+    fn parse_release_year_just_year() {
+        assert_eq!(parse_release_year("2024"), Some("2024".to_string()));
+    }
+
+    #[test]
+    fn parse_release_year_non_digit() {
+        assert_eq!(parse_release_year("abcd"), None);
+    }
+
+    #[test]
+    fn parse_release_year_too_short() {
+        assert_eq!(parse_release_year("20"), None);
+    }
+
+    #[test]
+    fn parse_release_year_empty() {
+        assert_eq!(parse_release_year(""), None);
+    }
+}

@@ -390,3 +390,235 @@ fn best_artist_candidate(
         .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
         .and_then(|best| if best.1 >= 0.70 { Some(best) } else { None })
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use super::*;
+
+    fn make_provider_artist(name: &str) -> ProviderArtist {
+        ProviderArtist {
+            external_id: format!("ext_{}", name.to_lowercase().replace(' ', "_")),
+            name: name.to_string(),
+            image_ref: None,
+            url: None,
+            disambiguation: None,
+            artist_type: None,
+            country: None,
+            tags: Vec::new(),
+            popularity: None,
+        }
+    }
+
+    fn make_provider_track(title: &str, isrc: Option<&str>) -> ProviderTrack {
+        ProviderTrack {
+            external_id: format!("track_{}", title.to_lowercase().replace(' ', "_")),
+            title: title.to_string(),
+            version: None,
+            track_number: 1,
+            disc_number: None,
+            duration_secs: 200,
+            isrc: isrc.map(|s| s.to_string()),
+            artists: None,
+            explicit: false,
+            extra: HashMap::new(),
+        }
+    }
+
+    // ── normalize ───────────────────────────────────────────────
+
+    #[test]
+    fn normalize_lowercases() {
+        assert_eq!(normalize("HELLO WORLD"), "hello world");
+    }
+
+    #[test]
+    fn normalize_non_alphanumeric_to_space() {
+        assert_eq!(normalize("hello-world"), "hello world");
+        assert_eq!(normalize("hello.world!"), "hello world");
+    }
+
+    #[test]
+    fn normalize_collapses_whitespace() {
+        assert_eq!(normalize("hello   world"), "hello world");
+        assert_eq!(normalize("  spaced  out  "), "spaced out");
+    }
+
+    #[test]
+    fn normalize_mixed() {
+        assert_eq!(
+            normalize("The Black Keys (Live)"),
+            "the black keys live"
+        );
+    }
+
+    // ── provider_priority ───────────────────────────────────────
+
+    #[test]
+    fn provider_priority_known() {
+        assert_eq!(provider_priority("tidal"), 10);
+        assert_eq!(provider_priority("deezer"), 9);
+        assert_eq!(provider_priority("musicbrainz"), 1);
+    }
+
+    #[test]
+    fn provider_priority_unknown() {
+        assert_eq!(provider_priority("spotify"), 5);
+        assert_eq!(provider_priority("bandcamp"), 5);
+    }
+
+    // ── count_isrc_overlap ──────────────────────────────────────
+
+    #[test]
+    fn isrc_overlap_full_match() {
+        let left = vec![
+            make_provider_track("Track 1", Some("ISRC001")),
+            make_provider_track("Track 2", Some("ISRC002")),
+        ];
+        let right = vec![
+            make_provider_track("Track A", Some("ISRC001")),
+            make_provider_track("Track B", Some("ISRC002")),
+        ];
+        assert_eq!(count_isrc_overlap(&left, &right), 2);
+    }
+
+    #[test]
+    fn isrc_overlap_partial() {
+        let left = vec![
+            make_provider_track("Track 1", Some("ISRC001")),
+            make_provider_track("Track 2", Some("ISRC002")),
+        ];
+        let right = vec![
+            make_provider_track("Track A", Some("ISRC001")),
+            make_provider_track("Track B", Some("ISRC999")),
+        ];
+        assert_eq!(count_isrc_overlap(&left, &right), 1);
+    }
+
+    #[test]
+    fn isrc_overlap_none() {
+        let left = vec![make_provider_track("Track 1", Some("ISRC001"))];
+        let right = vec![make_provider_track("Track A", Some("ISRC999"))];
+        assert_eq!(count_isrc_overlap(&left, &right), 0);
+    }
+
+    #[test]
+    fn isrc_overlap_empty_left() {
+        let right = vec![make_provider_track("Track A", Some("ISRC001"))];
+        assert_eq!(count_isrc_overlap(&[], &right), 0);
+    }
+
+    #[test]
+    fn isrc_overlap_no_isrc_on_left() {
+        let left = vec![make_provider_track("Track 1", None)];
+        let right = vec![make_provider_track("Track A", Some("ISRC001"))];
+        assert_eq!(count_isrc_overlap(&left, &right), 0);
+    }
+
+    #[test]
+    fn isrc_overlap_case_insensitive() {
+        let left = vec![make_provider_track("Track 1", Some("isrc001"))];
+        let right = vec![make_provider_track("Track A", Some("ISRC001"))];
+        assert_eq!(count_isrc_overlap(&left, &right), 1);
+    }
+
+    #[test]
+    fn isrc_overlap_ignores_whitespace() {
+        let left = vec![make_provider_track("Track 1", Some(" ISRC001 "))];
+        let right = vec![make_provider_track("Track A", Some("ISRC001"))];
+        assert_eq!(count_isrc_overlap(&left, &right), 1);
+    }
+
+    // ── track_title_overlap ─────────────────────────────────────
+
+    #[test]
+    fn title_overlap_identical() {
+        let left = vec![
+            make_provider_track("Hello", None),
+            make_provider_track("World", None),
+        ];
+        let right = vec![
+            make_provider_track("Hello", None),
+            make_provider_track("World", None),
+        ];
+        let score = track_title_overlap(&left, &right);
+        assert!(score > 0.95, "Expected near-1.0, got {score}");
+    }
+
+    #[test]
+    fn title_overlap_completely_different() {
+        let left = vec![make_provider_track("AAAAAA", None)];
+        let right = vec![make_provider_track("ZZZZZZ", None)];
+        let score = track_title_overlap(&left, &right);
+        assert!(score < 0.5, "Expected low score, got {score}");
+    }
+
+    #[test]
+    fn title_overlap_empty_lists() {
+        assert_eq!(track_title_overlap(&[], &[]), 0.0);
+    }
+
+    #[test]
+    fn title_overlap_one_empty() {
+        let left = vec![make_provider_track("Hello", None)];
+        assert_eq!(track_title_overlap(&left, &[]), 0.0);
+        assert_eq!(track_title_overlap(&[], &left), 0.0);
+    }
+
+    // ── best_artist_candidate ───────────────────────────────────
+
+    #[test]
+    fn best_artist_exact_match() {
+        let candidates = vec![
+            make_provider_artist("Radiohead"),
+            make_provider_artist("Radio Company"),
+        ];
+        let result = best_artist_candidate("Radiohead", candidates, |_| true);
+        assert!(result.is_some());
+        let (artist, score) = result.unwrap();
+        assert_eq!(artist.name, "Radiohead");
+        assert!(score > 0.99);
+    }
+
+    #[test]
+    fn best_artist_fuzzy_match() {
+        let candidates = vec![
+            make_provider_artist("The Black Keys"),
+            make_provider_artist("Completely Unrelated Band"),
+        ];
+        let result = best_artist_candidate("The Black Keys", candidates, |_| true);
+        assert!(result.is_some());
+        let (artist, score) = result.unwrap();
+        assert_eq!(artist.name, "The Black Keys");
+        assert!(score > 0.95);
+    }
+
+    #[test]
+    fn best_artist_below_threshold_returns_none() {
+        let candidates = vec![make_provider_artist("Completely Different")];
+        let result = best_artist_candidate("Radiohead", candidates, |_| true);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn best_artist_predicate_filters() {
+        let candidates = vec![
+            make_provider_artist("Radiohead"),
+            make_provider_artist("Radio Company"),
+        ];
+        // Predicate excludes exact match
+        let result = best_artist_candidate("Radiohead", candidates, |c| c.name != "Radiohead");
+        // "Radio Company" is too different from "Radiohead" for the 0.70 threshold
+        // so this may or may not match depending on jaro-winkler score
+        if let Some((artist, _)) = &result {
+            assert_ne!(artist.name, "Radiohead");
+        }
+    }
+
+    #[test]
+    fn best_artist_empty_candidates() {
+        let result = best_artist_candidate("Radiohead", vec![], |_| true);
+        assert!(result.is_none());
+    }
+}

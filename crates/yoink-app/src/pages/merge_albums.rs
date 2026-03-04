@@ -412,20 +412,16 @@ fn MergeCandidateCard(candidate: MergeCandidate) -> impl IntoView {
                         }}
 
                         // Cover selector (only when both have covers and they differ)
-                        {if cover_a.is_some() && cover_b.is_some() && cover_a != cover_b {
-                            let ca = cover_a.clone().unwrap();
-                            let cb = cover_b.clone().unwrap();
-                            let ca2 = ca.clone();
-                            let cb2 = cb.clone();
+                        {if let Some(cover_a) = cover_a && let Some(cover_b) = cover_b && cover_a != cover_b {
                             view! {
                                 <label class="flex items-center gap-2 text-xs text-zinc-600 dark:text-zinc-300">
                                     <span class="font-medium">"Cover:"</span>
                                     <select
                                         class=SELECT
-                                        on:change=move |ev| {
+                                        on:change= move |ev| {
                                             use leptos::prelude::event_target_value;
                                             let val = event_target_value(&ev);
-                                            set_selected_cover.set(if val == "b" { Some(cb2.clone()) } else { Some(ca2.clone()) });
+                                            set_selected_cover.set(if val == "b" { Some(cover_b.clone()) } else { Some(cover_a.clone()) });
                                         }
                                     >
                                         <option value="a" selected=true>"Album 1 cover"</option>

@@ -276,3 +276,118 @@ pub(crate) trait DownloadSource: Send + Sync {
         context: Option<&DownloadTrackContext>,
     ) -> Result<PlaybackInfo, ProviderError>;
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use serde_json::json;
+
+    use super::*;
+
+    // ── extract_artist_display ──────────────────────────────────
+
+    #[test]
+    fn extract_artist_display_array_of_objects_with_name() {
+        let mut extra = HashMap::new();
+        extra.insert(
+            "artists".to_string(),
+            json!([{"name": "Artist A"}, {"name": "Artist B"}]),
+        );
+        assert_eq!(
+            extract_artist_display(&extra),
+            Some("Artist A; Artist B".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_artist_display_array_of_objects_with_title() {
+        let mut extra = HashMap::new();
+        extra.insert(
+            "artists".to_string(),
+            json!([{"title": "Artist Via Title"}]),
+        );
+        assert_eq!(
+            extract_artist_display(&extra),
+            Some("Artist Via Title".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_artist_display_array_of_strings() {
+        let mut extra = HashMap::new();
+        extra.insert(
+            "artists".to_string(),
+            json!(["Artist X", "Artist Y"]),
+        );
+        assert_eq!(
+            extract_artist_display(&extra),
+            Some("Artist X; Artist Y".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_artist_display_single_string() {
+        let mut extra = HashMap::new();
+        extra.insert("artist".to_string(), json!("Solo Artist"));
+        assert_eq!(
+            extract_artist_display(&extra),
+            Some("Solo Artist".to_string())
+        );
+    }
+
+    #[test]
+    fn extract_artist_display_empty_map() {
+        let extra = HashMap::new();
+        assert_eq!(extract_artist_display(&extra), None);
+    }
+
+    #[test]
+    fn extract_artist_display_empty_array() {
+        let mut extra = HashMap::new();
+        extra.insert("artists".to_string(), json!([]));
+        assert_eq!(extract_artist_display(&extra), None);
+    }
+
+    #[test]
+    fn extract_artist_display_empty_string() {
+        let mut extra = HashMap::new();
+        extra.insert("artist".to_string(), json!(""));
+        assert_eq!(extract_artist_display(&extra), None);
+    }
+
+    #[test]
+    fn extract_artist_display_prefers_artists_over_artist() {
+        let mut extra = HashMap::new();
+        extra.insert(
+            "artists".to_string(),
+            json!([{"name": "From Artists Key"}]),
+        );
+        extra.insert("artist".to_string(), json!("From Artist Key"));
+        // "artists" is checked first
+        assert_eq!(
+            extract_artist_display(&extra),
+            Some("From Artists Key".to_string())
+        );
+    }
+
+    // ── ProviderError ───────────────────────────────────────────
+
+    #[test]
+    fn provider_error_display() {
+        let err = ProviderError("something went wrong".to_string());
+        assert_eq!(format!("{err}"), "something went wrong");
+    }
+
+    #[test]
+    fn provider_error_from_string() {
+        let err: ProviderError = "test error".into();
+        assert_eq!(err.0, "test error");
+    }
+
+    #[test]
+    fn provider_error_from_owned_string() {
+        let err: ProviderError = String::from("owned error").into();
+        assert_eq!(err.0, "owned error");
+    }
+}

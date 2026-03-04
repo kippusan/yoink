@@ -169,3 +169,170 @@ pub(crate) async fn upsert_track_provider_link(
     .await?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::test_helpers::*;
+
+    #[tokio::test]
+    async fn artist_provider_link_crud() {
+        let pool = test_db().await;
+        let artist = seed_artist(&pool, "Artist").await;
+
+        let link_id = seed_artist_provider_link(&pool, artist.id, "tidal", "EXT123").await;
+
+        let links = super::load_artist_provider_links(&pool, artist.id)
+            .await
+            .unwrap();
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].id, link_id);
+        assert_eq!(links[0].provider, "tidal");
+        assert_eq!(links[0].external_id, "EXT123");
+    }
+
+    #[tokio::test]
+    async fn artist_provider_link_upsert_updates_on_conflict() {
+        let pool = test_db().await;
+        let artist = seed_artist(&pool, "Artist").await;
+
+        let link = super::ArtistProviderLink {
+            id: uuid::Uuid::now_v7(),
+            artist_id: artist.id,
+            provider: "tidal".to_string(),
+            external_id: "EXT1".to_string(),
+            external_url: None,
+            external_name: Some("Old Name".to_string()),
+            image_ref: None,
+        };
+        super::upsert_artist_provider_link(&pool, &link).await.unwrap();
+
+        // Upsert again with same (provider, external_id) but updated name
+        let updated = super::ArtistProviderLink {
+            id: uuid::Uuid::now_v7(), // different id
+            external_name: Some("New Name".to_string()),
+            ..link.clone()
+        };
+        super::upsert_artist_provider_link(&pool, &updated).await.unwrap();
+
+        let links = super::load_artist_provider_links(&pool, artist.id)
+            .await
+            .unwrap();
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].external_name.as_deref(), Some("New Name"));
+    }
+
+    #[tokio::test]
+    async fn find_artist_by_provider_link() {
+        let pool = test_db().await;
+        let artist = seed_artist(&pool, "Artist").await;
+        seed_artist_provider_link(&pool, artist.id, "deezer", "D456").await;
+
+        let found = super::find_artist_by_provider_link(&pool, "deezer", "D456")
+            .await
+            .unwrap();
+        assert_eq!(found, Some(artist.id));
+
+        let not_found = super::find_artist_by_provider_link(&pool, "deezer", "NOPE")
+            .await
+            .unwrap();
+        assert!(not_found.is_none());
+    }
+
+    #[tokio::test]
+    async fn delete_artist_provider_link() {
+        let pool = test_db().await;
+        let artist = seed_artist(&pool, "Artist").await;
+        seed_artist_provider_link(&pool, artist.id, "tidal", "T1").await;
+        seed_artist_provider_link(&pool, artist.id, "deezer", "D1").await;
+
+        super::delete_artist_provider_link(&pool, artist.id, "tidal", "T1")
+            .await
+            .unwrap();
+
+        let links = super::load_artist_provider_links(&pool, artist.id)
+            .await
+            .unwrap();
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].provider, "deezer");
+    }
+
+    #[tokio::test]
+    async fn album_provider_link_crud() {
+        let pool = test_db().await;
+        let artist = seed_artist(&pool, "Artist").await;
+        let album = seed_album(&pool, artist.id, "Album").await;
+
+        let link_id = seed_album_provider_link(&pool, album.id, "tidal", "ALB123").await;
+
+        let links = super::load_album_provider_links(&pool, album.id)
+            .await
+            .unwrap();
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].id, link_id);
+        assert_eq!(links[0].provider, "tidal");
+        assert_eq!(links[0].external_id, "ALB123");
+    }
+
+    #[tokio::test]
+    async fn find_album_by_provider_link() {
+        let pool = test_db().await;
+        let artist = seed_artist(&pool, "Artist").await;
+        let album = seed_album(&pool, artist.id, "Album").await;
+        seed_album_provider_link(&pool, album.id, "deezer", "DALB1").await;
+
+        let found = super::find_album_by_provider_link(&pool, "deezer", "DALB1")
+            .await
+            .unwrap();
+        assert_eq!(found, Some(album.id));
+
+        let not_found = super::find_album_by_provider_link(&pool, "deezer", "NOPE")
+            .await
+            .unwrap();
+        assert!(not_found.is_none());
+    }
+
+    #[tokio::test]
+    async fn track_provider_link_upsert_and_find() {
+        let pool = test_db().await;
+        let artist = seed_artist(&pool, "Artist").await;
+        let album = seed_album(&pool, artist.id, "Album").await;
+        let tracks = seed_tracks(&pool, album.id, 1).await;
+
+        super::upsert_track_provider_link(&pool, tracks[0].id, "tidal", "TRK1")
+            .await
+            .unwrap();
+
+        let found = crate::db::find_track_by_provider_link(&pool, "tidal", "TRK1")
+            .await
+            .unwrap();
+        assert_eq!(found, Some(tracks[0].id));
+    }
+
+    #[tokio::test]
+    async fn album_provider_link_unique_constraint() {
+        let pool = test_db().await;
+        let artist = seed_artist(&pool, "Artist").await;
+        let album1 = seed_album(&pool, artist.id, "Album 1").await;
+        let album2 = seed_album(&pool, artist.id, "Album 2").await;
+
+        seed_album_provider_link(&pool, album1.id, "tidal", "SAME_EXT").await;
+
+        // Upserting with same (provider, external_id) should update album_id
+        let link = super::AlbumProviderLink {
+            id: uuid::Uuid::now_v7(),
+            album_id: album2.id,
+            provider: "tidal".to_string(),
+            external_id: "SAME_EXT".to_string(),
+            external_url: None,
+            external_title: None,
+            cover_ref: None,
+        };
+        super::upsert_album_provider_link(&pool, &link).await.unwrap();
+
+        // Should now point to album2
+        let found = super::find_album_by_provider_link(&pool, "tidal", "SAME_EXT")
+            .await
+            .unwrap();
+        assert_eq!(found, Some(album2.id));
+    }
+}

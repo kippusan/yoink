@@ -169,3 +169,142 @@ pub(crate) fn extract_year(release_date: &str) -> String {
         String::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use super::*;
+
+    // ── sanitize_path_component ─────────────────────────────────
+
+    #[test]
+    fn sanitize_normal_text_unchanged() {
+        assert_eq!(sanitize_path_component("Hello World"), "Hello World");
+    }
+
+    #[test]
+    fn sanitize_replaces_path_separators() {
+        assert_eq!(sanitize_path_component("AC/DC"), "AC_DC");
+        assert_eq!(sanitize_path_component("back\\slash"), "back_slash");
+    }
+
+    #[test]
+    fn sanitize_replaces_special_chars() {
+        assert_eq!(sanitize_path_component("file:name"), "file_name");
+        assert_eq!(sanitize_path_component("what*ever"), "what_ever");
+        assert_eq!(sanitize_path_component("who?"), "who_");
+        assert_eq!(sanitize_path_component("say\"what"), "say_what");
+        assert_eq!(sanitize_path_component("<tag>"), "_tag_");
+        assert_eq!(sanitize_path_component("pipe|char"), "pipe_char");
+    }
+
+    #[test]
+    fn sanitize_replaces_control_chars() {
+        assert_eq!(sanitize_path_component("hello\x00world"), "hello_world");
+        assert_eq!(sanitize_path_component("tab\there"), "tab_here");
+    }
+
+    #[test]
+    fn sanitize_trims_whitespace() {
+        assert_eq!(sanitize_path_component("  spaced  "), "spaced");
+    }
+
+    #[test]
+    fn sanitize_empty_becomes_unknown() {
+        assert_eq!(sanitize_path_component(""), "Unknown");
+    }
+
+    #[test]
+    fn sanitize_only_whitespace_becomes_unknown() {
+        assert_eq!(sanitize_path_component("   "), "Unknown");
+    }
+
+    #[test]
+    fn sanitize_mixed_input() {
+        assert_eq!(
+            sanitize_path_component("Artist: The Best Of (2024)"),
+            "Artist_ The Best Of (2024)"
+        );
+    }
+
+    #[test]
+    fn sanitize_unicode_preserved() {
+        assert_eq!(sanitize_path_component("Bjork"), "Bjork");
+        assert_eq!(
+            sanitize_path_component("Sigur Ros"),
+            "Sigur Ros"
+        );
+    }
+
+    // ── parse_track_number_from_path ────────────────────────────
+
+    #[test]
+    fn parse_track_number_leading_digits() {
+        assert_eq!(
+            parse_track_number_from_path(Path::new("01 Song Title.flac")),
+            Some(1)
+        );
+        assert_eq!(
+            parse_track_number_from_path(Path::new("12 Another Song.m4a")),
+            Some(12)
+        );
+    }
+
+    #[test]
+    fn parse_track_number_three_digits() {
+        assert_eq!(
+            parse_track_number_from_path(Path::new("101 Long Album.flac")),
+            Some(101)
+        );
+    }
+
+    #[test]
+    fn parse_track_number_no_digits() {
+        assert_eq!(
+            parse_track_number_from_path(Path::new("Song Title.flac")),
+            None
+        );
+    }
+
+    #[test]
+    fn parse_track_number_in_subdirectory() {
+        assert_eq!(
+            parse_track_number_from_path(Path::new("/music/artist/album/03 Track.flac")),
+            Some(3)
+        );
+    }
+
+    // ── extract_year ────────────────────────────────────────────
+
+    #[test]
+    fn extract_year_full_date() {
+        assert_eq!(extract_year("2024-01-15"), "2024");
+    }
+
+    #[test]
+    fn extract_year_just_year() {
+        assert_eq!(extract_year("2024"), "2024");
+    }
+
+    #[test]
+    fn extract_year_non_digit() {
+        assert_eq!(extract_year("abcd-01-01"), "");
+    }
+
+    #[test]
+    fn extract_year_too_short() {
+        assert_eq!(extract_year("20"), "");
+    }
+
+    #[test]
+    fn extract_year_empty() {
+        assert_eq!(extract_year(""), "");
+    }
+
+    #[test]
+    fn extract_year_mixed_prefix() {
+        // "v202" has a non-digit 'v' at position 0
+        assert_eq!(extract_year("v202"), "");
+    }
+}

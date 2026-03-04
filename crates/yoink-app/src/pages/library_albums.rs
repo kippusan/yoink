@@ -78,7 +78,7 @@ pub async fn search_albums(query: String) -> Result<SearchAlbumsResult, ServerFn
         }),
         Err(err) => Ok(SearchAlbumsResult {
             results: vec![],
-            error: Some(err),
+            error: Some(err.to_string()),
         }),
     }
 }

@@ -5,11 +5,11 @@ use uuid::Uuid;
 use crate::{
     ArtistImageOption, DownloadJob, ImportConfirmation, ImportPreviewItem, ImportResultSummary,
     LibraryTrack, MatchSuggestion, MonitoredAlbum, MonitoredArtist, ProviderLink,
-    SearchAlbumResult, SearchArtistResult, SearchTrackResult, ServerAction, TrackInfo,
+    SearchAlbumResult, SearchArtistResult, SearchTrackResult, ServerAction, TrackInfo, YoinkError,
 };
 
 type AsyncFnResult<T> =
-    std::pin::Pin<Box<dyn std::future::Future<Output = Result<T, String>> + Send>>;
+    std::pin::Pin<Box<dyn std::future::Future<Output = Result<T, YoinkError>> + Send>>;
 
 pub type SearchArtistsFn =
     std::sync::Arc<dyn Fn(String) -> AsyncFnResult<Vec<SearchArtistResult>> + Send + Sync>;

@@ -74,7 +74,7 @@ pub async fn search_artists(query: String) -> Result<SearchResult, ServerFnError
         }),
         Err(err) => Ok(SearchResult {
             results: vec![],
-            error: Some(err),
+            error: Some(err.to_string()),
         }),
     }
 }

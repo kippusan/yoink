@@ -2,6 +2,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+use crate::ParseQualityError;
+
 /// Normalized quality level, provider-agnostic.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Quality {
@@ -33,7 +35,7 @@ impl std::fmt::Display for Quality {
 }
 
 impl std::str::FromStr for Quality {
-    type Err = String;
+    type Err = ParseQualityError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.trim().to_ascii_uppercase().as_str() {
@@ -41,7 +43,9 @@ impl std::str::FromStr for Quality {
             "LOSSLESS" => Ok(Quality::Lossless),
             "HIGH" => Ok(Quality::High),
             "LOW" => Ok(Quality::Low),
-            _ => Err(format!("Invalid quality string: {}", s)),
+            _ => Err(ParseQualityError {
+                value: s.to_string(),
+            }),
         }
     }
 }
@@ -278,7 +282,7 @@ mod tests {
             .expect("should parse with whitespace");
         assert_eq!(q, Quality::Lossless);
 
-        let q: Result<Quality, String> = "definitely-not-a-quality".parse();
+        let q: Result<Quality, ParseQualityError> = "definitely-not-a-quality".parse();
         assert!(q.is_err())
     }
 

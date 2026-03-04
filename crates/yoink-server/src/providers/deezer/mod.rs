@@ -205,28 +205,46 @@ impl DeezerProvider {
             .get(url)
             .send()
             .await
-            .map_err(|e| ProviderError(format!("Deezer HTTP error: {e}")))?;
+            .map_err(|e| ProviderError::http("deezer", "request", e.to_string()))?;
 
         let status = resp.status();
         let body = resp
             .text()
             .await
-            .map_err(|e| ProviderError(format!("Deezer body read error: {e}")))?;
+            .map_err(|e| ProviderError::parse("deezer", "response body", e.to_string()))?;
 
         // Deezer returns HTTP 200 even for errors — check the JSON body.
         if let Ok(err) = serde_json::from_str::<DeezerErrorBody>(&body) {
-            return Err(ProviderError(format!(
-                "Deezer API error ({}): {} [code {}]",
-                err.error.error_type, err.error.message, err.error.code
-            )));
+            if err.error.code == 4
+                || err.error.error_type.eq_ignore_ascii_case("QuotaException")
+            {
+                return Err(ProviderError::rate_limited(
+                    "deezer",
+                    format!(
+                        "API error ({}): {} [code {}]",
+                        err.error.error_type, err.error.message, err.error.code
+                    ),
+                ));
+            }
+            return Err(ProviderError::invalid_response(
+                "deezer",
+                format!(
+                    "API error ({}): {} [code {}]",
+                    err.error.error_type, err.error.message, err.error.code
+                ),
+            ));
         }
 
         if !status.is_success() {
-            return Err(ProviderError(format!("Deezer HTTP {status}: {body}")));
+            return Err(ProviderError::http(
+                "deezer",
+                "non-success status",
+                format!("{status}: {body}"),
+            ));
         }
 
         serde_json::from_str::<T>(&body)
-            .map_err(|e| ProviderError(format!("Deezer JSON parse error: {e}")))
+            .map_err(|e| ProviderError::parse("deezer", "json decode", e.to_string()))
     }
 
     /// Build a Deezer API URL with query parameters (handles encoding).

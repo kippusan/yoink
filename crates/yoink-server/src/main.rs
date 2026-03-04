@@ -4,6 +4,7 @@ mod actions;
 mod app_config;
 mod config;
 mod db;
+mod error;
 mod logging;
 mod models;
 mod providers;

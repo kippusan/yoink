@@ -6,13 +6,13 @@ mod library;
 mod matching;
 mod track;
 
-use crate::state::AppState;
+use crate::{error::AppResult, state::AppState};
 
 /// Execute a `ServerAction` against the real `AppState`.
 pub(crate) async fn dispatch_action_impl(
     state: AppState,
     action: yoink_shared::ServerAction,
-) -> Result<(), String> {
+) -> AppResult<()> {
     use yoink_shared::ServerAction;
 
     match action {

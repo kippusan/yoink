@@ -1,6 +1,10 @@
 use uuid::Uuid;
 
-use crate::{db, state::AppState};
+use crate::{
+    db,
+    error::{AppError, AppResult},
+    state::AppState,
+};
 
 use super::update_wanted;
 
@@ -10,18 +14,27 @@ pub(crate) async fn merge_albums(
     source_album_id: Uuid,
     result_title: Option<&str>,
     result_cover_url: Option<&str>,
-) -> Result<(), String> {
+) -> AppResult<()> {
     if target_album_id == source_album_id {
-        return Err("target and source albums must be different".to_string());
+        return Err(AppError::validation(
+            Some("source_album_id"),
+            "target and source albums must be different",
+        ));
     }
 
     let (target_artist_ids, source_artist_ids, source_flags) = {
         let albums = state.monitored_albums.read().await;
         let Some(target) = albums.iter().find(|a| a.id == target_album_id) else {
-            return Err("target album not found".to_string());
+            return Err(AppError::not_found(
+                "target album",
+                Some(target_album_id.to_string()),
+            ));
         };
         let Some(source) = albums.iter().find(|a| a.id == source_album_id) else {
-            return Err("source album not found".to_string());
+            return Err(AppError::not_found(
+                "source album",
+                Some(source_album_id.to_string()),
+            ));
         };
         (
             target.artist_ids.clone(),
@@ -35,12 +48,13 @@ pub(crate) async fn merge_albums(
         .iter()
         .any(|id| source_artist_ids.contains(id));
     if !share_artist {
-        return Err("can only merge albums that share at least one artist".to_string());
+        return Err(AppError::conflict(
+            "can only merge albums that share at least one artist",
+        ));
     }
 
     let source_links = db::load_album_provider_links(&state.db, source_album_id)
-        .await
-        .map_err(|e| format!("failed loading source provider links: {e}"))?;
+        .await?;
 
     for link in source_links {
         let moved = db::AlbumProviderLink {
@@ -52,17 +66,13 @@ pub(crate) async fn merge_albums(
             external_title: link.external_title,
             cover_ref: link.cover_ref,
         };
-        db::upsert_album_provider_link(&state.db, &moved)
-            .await
-            .map_err(|e| format!("failed to move album provider link: {e}"))?;
+        db::upsert_album_provider_link(&state.db, &moved).await?;
     }
 
     db::reassign_tracks_to_album(&state.db, source_album_id, target_album_id)
-        .await
-        .map_err(|e| format!("failed reassigning tracks: {e}"))?;
+        .await?;
     db::reassign_jobs_to_album(&state.db, source_album_id, target_album_id)
-        .await
-        .map_err(|e| format!("failed reassigning jobs: {e}"))?;
+        .await?;
 
     {
         let mut albums = state.monitored_albums.write().await;
@@ -78,16 +88,13 @@ pub(crate) async fn merge_albums(
                 target.cover_url = Some(cover.to_string());
             }
 
-            db::upsert_album(&state.db, target)
-                .await
-                .map_err(|e| format!("failed to persist merged album: {e}"))?;
+            db::upsert_album(&state.db, target).await?;
         }
         albums.retain(|a| a.id != source_album_id);
     }
 
     db::delete_album(&state.db, source_album_id)
-        .await
-        .map_err(|e| format!("failed deleting source album: {e}"))?;
+        .await?;
 
     Ok(())
 }

@@ -5,6 +5,7 @@ use uuid::Uuid;
 
 use crate::{
     db,
+    error::{AppError, AppResult},
     models::MonitoredAlbum,
     providers::{ProviderAlbum, ProviderArtist, ProviderTrack},
     state::AppState,
@@ -13,14 +14,14 @@ use crate::{
 pub(crate) async fn recompute_artist_match_suggestions(
     state: &AppState,
     artist_id: Uuid,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let artist_name = {
         let artists = state.monitored_artists.read().await;
         artists
             .iter()
             .find(|a| a.id == artist_id)
             .map(|a| a.name.clone())
-            .ok_or_else(|| format!("artist {artist_id} not found"))?
+            .ok_or_else(|| AppError::not_found("artist", Some(artist_id.to_string())))?
     };
 
     let albums: Vec<MonitoredAlbum> = {
@@ -33,12 +34,10 @@ pub(crate) async fn recompute_artist_match_suggestions(
     };
 
     let artist_links = db::load_artist_provider_links(&state.db, artist_id)
-        .await
-        .map_err(|e| format!("failed to load artist provider links: {e}"))?;
+        .await?;
 
     db::clear_pending_match_suggestions(&state.db, "artist", artist_id)
-        .await
-        .map_err(|e| format!("failed to clear pending artist match suggestions: {e}"))?;
+        .await?;
 
     recompute_artist_level_suggestions(state, artist_id, &artist_name, &artist_links).await?;
 
@@ -54,7 +53,7 @@ async fn recompute_artist_level_suggestions(
     artist_id: Uuid,
     artist_name: &str,
     artist_links: &[db::ArtistProviderLink],
-) -> Result<(), String> {
+) -> AppResult<()> {
     if artist_links.is_empty() {
         return Ok(());
     }
@@ -115,8 +114,7 @@ async fn recompute_artist_level_suggestions(
         };
 
         db::upsert_match_suggestion(&state.db, &suggestion)
-            .await
-            .map_err(|e| format!("failed to persist artist match suggestion: {e}"))?;
+            .await?;
     }
 
     Ok(())
@@ -126,14 +124,12 @@ async fn recompute_album_match_suggestions(
     state: &AppState,
     album: &MonitoredAlbum,
     artist_name: &str,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let existing_links = db::load_album_provider_links(&state.db, album.id)
-        .await
-        .map_err(|e| format!("failed to load album provider links: {e}"))?;
+        .await?;
 
     db::clear_pending_match_suggestions(&state.db, "album", album.id)
-        .await
-        .map_err(|e| format!("failed to clear pending album match suggestions: {e}"))?;
+        .await?;
 
     if existing_links.is_empty() {
         return Ok(());
@@ -253,8 +249,7 @@ async fn recompute_album_match_suggestions(
         };
 
         db::upsert_match_suggestion(&state.db, &suggestion)
-            .await
-            .map_err(|e| format!("failed to persist album match suggestion: {e}"))?;
+            .await?;
     }
 
     Ok(())

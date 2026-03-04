@@ -2,7 +2,7 @@ use chrono::Utc;
 use tracing::info;
 use uuid::Uuid;
 
-use crate::{db, services, state::AppState};
+use crate::{db, error::AppResult, services, state::AppState};
 
 use super::helpers;
 
@@ -13,7 +13,7 @@ pub(super) async fn add_artist(
     external_id: String,
     image_url: Option<String>,
     external_url: Option<String>,
-) -> Result<(), String> {
+) -> AppResult<()> {
     // Generate a default external URL if none was provided
     let external_url =
         external_url.or_else(|| helpers::default_provider_artist_url(&provider, &external_id));
@@ -36,9 +36,7 @@ pub(super) async fn add_artist(
             monitored: true, // Artists added via search are fully monitored
             added_at: Utc::now(),
         };
-        db::upsert_artist(&state.db, &artist)
-            .await
-            .map_err(|e| format!("failed to persist artist: {e}"))?;
+        db::upsert_artist(&state.db, &artist).await?;
         {
             let mut artists = state.monitored_artists.write().await;
             artists.push(artist);
@@ -53,16 +51,12 @@ pub(super) async fn add_artist(
             external_name: Some(name),
             image_ref: None,
         };
-        db::upsert_artist_provider_link(&state.db, &link)
-            .await
-            .map_err(|e| format!("failed to persist artist provider link: {e}"))?;
+        db::upsert_artist_provider_link(&state.db, &link).await?;
 
         new_id
     };
 
-    services::sync_artist_albums(state, artist_id)
-        .await
-        .map_err(|e| format!("failed to sync artist albums: {e}"))?;
+    services::sync_artist_albums(state, artist_id).await?;
     helpers::spawn_fetch_artist_bio(state, artist_id);
     helpers::spawn_recompute_artist_match_suggestions(state, artist_id);
     state.notify_sse();
@@ -73,7 +67,7 @@ pub(super) async fn remove_artist(
     state: &AppState,
     artist_id: Uuid,
     remove_files: bool,
-) -> Result<(), String> {
+) -> AppResult<()> {
     use tracing::warn;
 
     if remove_files {
@@ -117,30 +111,18 @@ pub(super) async fn remove_artist(
                 if album.artist_id == artist_id {
                     album.artist_id = album.artist_ids[0];
                 }
-                db::upsert_album(&state.db, album)
-                    .await
-                    .map_err(|e| format!("failed to update multi-artist album: {e}"))?;
-                db::remove_album_artist(&state.db, album.id, artist_id)
-                    .await
-                    .map_err(|e| format!("failed to remove album artist link: {e}"))?;
+                db::upsert_album(&state.db, album).await?;
+                db::remove_album_artist(&state.db, album.id, artist_id).await?;
             }
         }
         for id in &sole_album_ids {
-            db::delete_album(&state.db, *id)
-                .await
-                .map_err(|e| format!("failed to delete sole-artist album: {e}"))?;
+            db::delete_album(&state.db, *id).await?;
         }
         albums.retain(|a| !sole_album_ids.contains(&a.id));
     }
-    db::delete_albums_by_artist(&state.db, artist_id)
-        .await
-        .map_err(|e| format!("failed to delete albums by artist: {e}"))?;
-    db::delete_album_artists_by_artist(&state.db, artist_id)
-        .await
-        .map_err(|e| format!("failed to delete album-artist links: {e}"))?;
-    db::delete_artist(&state.db, artist_id)
-        .await
-        .map_err(|e| format!("failed to delete artist: {e}"))?;
+    db::delete_albums_by_artist(&state.db, artist_id).await?;
+    db::delete_album_artists_by_artist(&state.db, artist_id).await?;
+    db::delete_artist(&state.db, artist_id).await?;
     {
         let mut artists = state.monitored_artists.write().await;
         artists.retain(|a| a.id != artist_id);
@@ -155,15 +137,13 @@ pub(super) async fn update_artist(
     artist_id: Uuid,
     name: Option<String>,
     image_url: Option<String>,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let db_name: Option<&str> = name.as_deref();
     // Empty string means "clear image"
     let db_image: Option<Option<&str>> = image_url
         .as_ref()
         .map(|u| if u.is_empty() { None } else { Some(u.as_str()) });
-    db::update_artist_details(&state.db, artist_id, db_name, db_image)
-        .await
-        .map_err(|e| format!("failed to update artist: {e}"))?;
+    db::update_artist_details(&state.db, artist_id, db_name, db_image).await?;
     {
         let mut artists = state.monitored_artists.write().await;
         if let Some(a) = artists.iter_mut().find(|a| a.id == artist_id) {
@@ -188,10 +168,8 @@ pub(super) async fn toggle_artist_monitor(
     state: &AppState,
     artist_id: Uuid,
     monitored: bool,
-) -> Result<(), String> {
-    db::update_artist_monitored(&state.db, artist_id, monitored)
-        .await
-        .map_err(|e| format!("failed to update artist monitored flag: {e}"))?;
+) -> AppResult<()> {
+    db::update_artist_monitored(&state.db, artist_id, monitored).await?;
     {
         let mut artists = state.monitored_artists.write().await;
         if let Some(artist) = artists.iter_mut().find(|a| a.id == artist_id) {
@@ -200,9 +178,7 @@ pub(super) async fn toggle_artist_monitor(
     }
     if monitored {
         // Promoting to fully monitored — sync discography from providers
-        services::sync_artist_albums(state, artist_id)
-            .await
-            .map_err(|e| format!("failed to sync artist albums: {e}"))?;
+        services::sync_artist_albums(state, artist_id).await?;
         helpers::spawn_fetch_artist_bio(state, artist_id);
         helpers::spawn_recompute_artist_match_suggestions(state, artist_id);
     }
@@ -211,12 +187,10 @@ pub(super) async fn toggle_artist_monitor(
     Ok(())
 }
 
-pub(super) async fn fetch_artist_bio(state: &AppState, artist_id: Uuid) -> Result<(), String> {
+pub(super) async fn fetch_artist_bio(state: &AppState, artist_id: Uuid) -> AppResult<()> {
     info!(%artist_id, "Manual bio fetch requested, clearing existing bio");
     // Clear old bio first so the fetch replaces it
-    db::update_artist_bio(&state.db, artist_id, None)
-        .await
-        .map_err(|e| format!("failed to clear artist bio: {e}"))?;
+    db::update_artist_bio(&state.db, artist_id, None).await?;
     {
         let mut artists = state.monitored_artists.write().await;
         if let Some(a) = artists.iter_mut().find(|a| a.id == artist_id) {
@@ -231,10 +205,8 @@ pub(super) async fn fetch_artist_bio(state: &AppState, artist_id: Uuid) -> Resul
 pub(super) async fn sync_artist_albums(
     state: &AppState,
     artist_id: Uuid,
-) -> Result<(), String> {
-    services::sync_artist_albums(state, artist_id)
-        .await
-        .map_err(|e| format!("failed to sync artist albums: {e}"))?;
+) -> AppResult<()> {
+    services::sync_artist_albums(state, artist_id).await?;
     {
         let artists = state.monitored_artists.read().await;
         let has_bio = artists
@@ -259,7 +231,7 @@ pub(super) async fn link_artist_provider(
     external_url: Option<String>,
     external_name: Option<String>,
     image_ref: Option<String>,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let external_url =
         external_url.or_else(|| helpers::default_provider_artist_url(&provider, &external_id));
     let link = db::ArtistProviderLink {
@@ -271,9 +243,7 @@ pub(super) async fn link_artist_provider(
         external_name,
         image_ref,
     };
-    db::upsert_artist_provider_link(&state.db, &link)
-        .await
-        .map_err(|e| format!("failed to persist artist provider link: {e}"))?;
+    db::upsert_artist_provider_link(&state.db, &link).await?;
     {
         let artists = state.monitored_artists.read().await;
         let has_bio = artists
@@ -295,10 +265,8 @@ pub(super) async fn unlink_artist_provider(
     artist_id: Uuid,
     provider: String,
     external_id: String,
-) -> Result<(), String> {
-    db::delete_artist_provider_link(&state.db, artist_id, &provider, &external_id)
-        .await
-        .map_err(|e| format!("failed to delete artist provider link: {e}"))?;
+) -> AppResult<()> {
+    db::delete_artist_provider_link(&state.db, artist_id, &provider, &external_id).await?;
     helpers::spawn_recompute_artist_match_suggestions(state, artist_id);
     state.notify_sse();
     Ok(())

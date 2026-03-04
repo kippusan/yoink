@@ -4,11 +4,13 @@
 //! available to both the SSR binary and the hydrated WASM client.
 
 mod actions;
+mod error;
 mod helpers;
 mod import;
 mod models;
 
 pub use actions::*;
+pub use error::*;
 pub use helpers::*;
 pub use import::*;
 pub use models::*;

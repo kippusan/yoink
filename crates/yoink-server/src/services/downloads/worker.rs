@@ -8,6 +8,7 @@ use yoink_shared::Quality;
 
 use crate::{
     db,
+    error::{AppError, AppResult},
     models::{DownloadJob, DownloadStatus},
     providers::{
         DownloadSource, DownloadTrackContext, MetadataProvider, PlaybackInfo, ProviderTrack,
@@ -21,18 +22,18 @@ use super::metadata::{
     TrackMetadata, build_full_artist_string, extract_disc_number, write_audio_metadata,
 };
 
-pub(crate) async fn download_album_job(state: &AppState, job: DownloadJob) -> Result<(), String> {
+pub(crate) async fn download_album_job(state: &AppState, job: DownloadJob) -> AppResult<()> {
     let requested_quality = job.quality;
 
     // Resolve the provider link for this album to find the external ID and provider
-    let album_links = db::load_album_provider_links(&state.db, job.album_id)
-        .await
-        .map_err(|e| format!("failed to load album provider links: {e}"))?;
+    let album_links = db::load_album_provider_links(&state.db, job.album_id).await?;
 
     let download_source = state
         .registry
         .download_source(&job.source)
-        .ok_or_else(|| format!("Download source '{}' not available", job.source))?;
+        .ok_or_else(|| {
+            AppError::unavailable("download source", format!("'{}' not available", job.source))
+        })?;
 
     // Pick a metadata provider link independently from the download source.
     // If the source itself has metadata, prefer it; otherwise use highest-priority linked metadata.
@@ -47,15 +48,17 @@ pub(crate) async fn download_album_job(state: &AppState, job: DownloadJob) -> Re
                 .filter(|l| state.registry.metadata_provider(&l.provider).is_some())
                 .max_by_key(|l| metadata_provider_priority(&l.provider))
         })
-        .ok_or_else(|| "No metadata provider link found for this album".to_string())?;
+        .ok_or_else(|| {
+            AppError::not_found("metadata provider link", Some(job.album_id.to_string()))
+        })?;
 
     let metadata_provider = state
         .registry
         .metadata_provider(&metadata_link.provider)
         .ok_or_else(|| {
-            format!(
-                "Metadata provider '{}' not available",
-                metadata_link.provider
+            AppError::unavailable(
+                "metadata provider",
+                format!("'{}' not available", metadata_link.provider),
             )
         })?;
 
@@ -76,11 +79,13 @@ pub(crate) async fn download_album_job(state: &AppState, job: DownloadJob) -> Re
     // Fetch tracks from the metadata provider
     let (provider_tracks, album_extra) = metadata_provider
         .fetch_tracks(external_album_id)
-        .await
-        .map_err(|e| format!("Failed to fetch tracks: {}", e.0))?;
+        .await?;
 
     if provider_tracks.is_empty() {
-        return Err("Album has no downloadable tracks".to_string());
+        return Err(AppError::not_found(
+            "downloadable tracks",
+            Some(job.album_id.to_string()),
+        ));
     }
 
     // Save the full album track count for metadata tagging (track N of M).
@@ -107,7 +112,10 @@ pub(crate) async fn download_album_job(state: &AppState, job: DownloadJob) -> Re
             .unwrap_or_default();
 
         if monitored_tracks.is_empty() {
-            return Err("No monitored tracks to download".to_string());
+            return Err(AppError::not_found(
+                "monitored tracks",
+                Some(job.album_id.to_string()),
+            ));
         }
 
         provider_tracks
@@ -130,7 +138,10 @@ pub(crate) async fn download_album_job(state: &AppState, job: DownloadJob) -> Re
     };
 
     if provider_tracks.is_empty() {
-        return Err("No matching provider tracks for monitored tracks".to_string());
+        return Err(AppError::not_found(
+            "matching provider tracks",
+            Some(job.album_id.to_string()),
+        ));
     }
 
     let total_tracks = provider_tracks.len();
@@ -170,7 +181,9 @@ pub(crate) async fn download_album_job(state: &AppState, job: DownloadJob) -> Re
     )));
     fs::create_dir_all(&album_dir)
         .await
-        .map_err(|err| format!("failed to create output directory: {err}"))?;
+        .map_err(|err| {
+            AppError::filesystem("create output directory", album_dir.display().to_string(), err)
+        })?;
 
     let max_parallel = state.download_max_parallel_tracks.max(1);
     info!(
@@ -282,7 +295,9 @@ pub(crate) async fn download_album_job(state: &AppState, job: DownloadJob) -> Re
                 }
             }
             Ok(Err(err)) => return Err(err),
-            Err(err) => return Err(format!("track task join failed: {err}")),
+            Err(err) => {
+                return Err(AppError::task_join(err.to_string()));
+            }
         }
     }
 
@@ -307,7 +322,7 @@ async fn process_track_download(
     // Full album track count for metadata tagging (track N of M).
     // May differ from the download count when only a subset is being downloaded.
     full_album_track_count: usize,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let base_name = format!(
         "{:02} - {}",
         track.track_number,
@@ -398,13 +413,15 @@ async fn process_track_download(
 
     download_playback_to_file(&state.http, &track_payload, &temp_path)
         .await
-        .map_err(|err| format!("failed track {}: {err}", track.title))?;
+        .map_err(|err| AppError::download("download track", format!("{}: {err}", track.title)))?;
 
     let mut final_ext = "flac";
     if requested_quality == Quality::HiRes {
         let is_flac = has_flac_stream_marker(&temp_path)
             .await
-            .map_err(|err| format!("failed validating downloaded track {}: {err}", track.title))?;
+            .map_err(|err| {
+                AppError::download("validate track format", format!("{}: {err}", track.title))
+            })?;
         if !is_flac {
             let container = sniff_media_container(&temp_path)
                 .await
@@ -437,28 +454,34 @@ async fn process_track_download(
                 )
                 .await
                 .map_err(|e| {
-                    format!(
+                    AppError::download("resolve lossless fallback", format!(
                         "Failed to resolve LOSSLESS playback for {}: {e}",
                         track.title
-                    )
+                    ))
                 })?;
 
                 download_playback_to_file(&state.http, &lossless_payload, &temp_path)
                     .await
                     .map_err(|err| {
-                        format!("failed track {} in LOSSLESS fallback: {err}", track.title)
+                        AppError::download("download lossless fallback", format!(
+                            "failed track {} in LOSSLESS fallback: {err}",
+                            track.title
+                        ))
                     })?;
 
                 let fallback_is_flac = has_flac_stream_marker(&temp_path).await.map_err(|err| {
-                    format!(
+                    AppError::download("validate lossless fallback", format!(
                         "failed validating LOSSLESS fallback track {}: {err}",
                         track.title
-                    )
+                    ))
                 })?;
                 if !fallback_is_flac {
-                    return Err(format!(
+                    return Err(AppError::validation(
+                        Some("audio_format"),
+                        format!(
                         "track {} is not FLAC even after LOSSLESS fallback",
                         track.title
+                        ),
                     ));
                 }
             }
@@ -468,7 +491,9 @@ async fn process_track_download(
     let final_path = album_dir.join(format!("{base_name}.{final_ext}"));
     fs::rename(&temp_path, &final_path)
         .await
-        .map_err(|err| format!("failed to finalize track file: {err}"))?;
+        .map_err(|err| {
+            AppError::filesystem("finalize track file", final_path.display().to_string(), err)
+        })?;
 
     if let Err(err) = write_audio_metadata(&TrackMetadata {
         path: &final_path,
@@ -630,11 +655,13 @@ async fn download_playback_to_file(
     http: &reqwest::Client,
     payload: &PlaybackInfo,
     path: &std::path::Path,
-) -> Result<(), String> {
+) -> AppResult<()> {
     if let Some(parent) = path.parent() {
         tokio::fs::create_dir_all(parent)
             .await
-            .map_err(|e| format!("failed to create parent directory: {e}"))?;
+            .map_err(|e| {
+                AppError::filesystem("create parent directory", parent.display().to_string(), e)
+            })?;
     }
 
     use super::io::DownloadPayload;
@@ -644,7 +671,9 @@ async fn download_playback_to_file(
         PlaybackInfo::LocalFile(local_path) => {
             tokio::fs::copy(local_path, path)
                 .await
-                .map_err(|e| format!("failed copying local file {}: {e}", local_path.display()))?;
+                .map_err(|e| {
+                    AppError::filesystem("copy local file", local_path.display().to_string(), e)
+                })?;
             return Ok(());
         }
     };
@@ -668,7 +697,7 @@ async fn resolve_playback_with_fallback(
     track_title: &str,
     quality: &Quality,
     context: &DownloadTrackContext,
-) -> Result<(PlaybackInfo, String), String> {
+) -> AppResult<(PlaybackInfo, String)> {
     match primary_source
         .resolve_playback(external_track_id, quality, Some(context))
         .await
@@ -679,7 +708,7 @@ async fn resolve_playback_with_fallback(
                 source = %primary_source.id(),
                 track_id = %external_track_id,
                 track_title,
-                error = %primary_err.0,
+                error = %primary_err,
                 "Primary download source failed to resolve playback; attempting fallback"
             );
         }
@@ -706,14 +735,17 @@ async fn resolve_playback_with_fallback(
                     source = %source.id(),
                     track_id = %external_track_id,
                     track_title,
-                    error = %err.0,
+                    error = %err,
                     "Fallback download source failed to resolve playback"
                 );
             }
         }
     }
 
-    Err(format!(
-        "Failed to resolve playback for {track_title}: no source could resolve track"
+    Err(AppError::unavailable(
+        "playback",
+        format!(
+            "failed to resolve playback for {track_title}: no source could resolve track"
+        ),
     ))
 }

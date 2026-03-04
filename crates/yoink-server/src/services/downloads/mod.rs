@@ -17,6 +17,7 @@ use uuid::Uuid;
 
 use crate::{
     db,
+    error::{AppError, AppResult},
     models::{DownloadJob, DownloadStatus, MonitoredAlbum},
     state::AppState,
 };
@@ -220,7 +221,7 @@ pub(crate) async fn download_worker_loop(state: AppState) {
                     let mut jobs = state.download_jobs.write().await;
                     if let Some(existing) = jobs.iter_mut().find(|item| item.id == job.id) {
                         existing.status = DownloadStatus::Failed;
-                        existing.error = Some(err.clone());
+                        existing.error = Some(err.to_string());
                         existing.updated_at = Utc::now();
                         if let Err(e) = db::update_job(&state.db, existing).await {
                             warn!(job_id = %job.id, error = %e, "Failed to persist job failed status");
@@ -252,7 +253,7 @@ pub(crate) async fn download_worker_loop(state: AppState) {
 
 pub(crate) async fn retag_existing_files(
     state: &AppState,
-) -> Result<(usize, usize, usize), String> {
+) -> AppResult<(usize, usize, usize)> {
     let artists = state.monitored_artists.read().await.clone();
     let albums = state.monitored_albums.read().await.clone();
 
@@ -311,7 +312,7 @@ pub(crate) async fn retag_existing_files(
                 info!(
                     album_id = %album.id,
                     provider = %link.provider,
-                    error = %err.0,
+                    error = %err,
                     "Failed to fetch tracks for retagging"
                 );
                 continue;
@@ -324,16 +325,10 @@ pub(crate) async fn retag_existing_files(
         let mut ordered_files: Vec<PathBuf> = Vec::new();
 
         let mut entries = fs::read_dir(&album_dir).await.map_err(|err| {
-            format!(
-                "failed to read album directory {}: {err}",
-                album_dir.display()
-            )
+            AppError::filesystem("read album directory", album_dir.display().to_string(), err)
         })?;
         while let Some(entry) = entries.next_entry().await.map_err(|err| {
-            format!(
-                "failed to read directory entry {}: {err}",
-                album_dir.display()
-            )
+            AppError::filesystem("read directory entry", album_dir.display().to_string(), err)
         })? {
             let path = entry.path();
             let Some(ext) = path.extension().and_then(|e| e.to_str()) else {
@@ -400,7 +395,7 @@ pub(crate) async fn retag_existing_files(
 pub(crate) async fn remove_downloaded_album_files(
     state: &AppState,
     album: &MonitoredAlbum,
-) -> Result<bool, String> {
+) -> AppResult<bool> {
     let artist_name = {
         let artists = state.monitored_artists.read().await;
         artists
@@ -419,20 +414,14 @@ pub(crate) async fn remove_downloaded_album_files(
     let album_dir = artist_dir.join(sanitize(&format!("{} ({})", album.title, release_suffix)));
 
     let exists = fs::try_exists(&album_dir).await.map_err(|err| {
-        format!(
-            "failed to check album directory {}: {err}",
-            album_dir.display()
-        )
+        AppError::filesystem("check album directory", album_dir.display().to_string(), err)
     })?;
     if !exists {
         return Ok(false);
     }
 
     fs::remove_dir_all(&album_dir).await.map_err(|err| {
-        format!(
-            "failed to remove album directory {}: {err}",
-            album_dir.display()
-        )
+        AppError::filesystem("remove album directory", album_dir.display().to_string(), err)
     })?;
 
     if let Ok(mut entries) = fs::read_dir(&artist_dir).await {

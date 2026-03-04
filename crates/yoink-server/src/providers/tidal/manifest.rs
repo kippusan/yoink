@@ -10,54 +10,84 @@
 
 use base64::Engine;
 use roxmltree::{Document, Node};
+use thiserror::Error;
 use tracing::warn;
 
 use super::models::{BtsManifest, HifiPlaybackData};
-use crate::providers::PlaybackInfo;
+use crate::providers::{PlaybackInfo, ProviderError};
+
+#[derive(Debug, Error)]
+enum ManifestError {
+    #[error("failed to decode manifest: {0}")]
+    Decode(#[from] base64::DecodeError),
+    #[error("failed to parse BTS manifest: {0}")]
+    ParseBts(#[from] serde_json::Error),
+    #[error("DASH manifest is not valid UTF-8: {0}")]
+    Utf8(#[from] std::string::FromUtf8Error),
+    #[error("unsupported manifest type '{mime_type}'")]
+    UnsupportedType { mime_type: String },
+    #[error("{0}")]
+    DashStructure(&'static str),
+    #[error("failed to parse DASH XML: {0}")]
+    DashXml(#[from] roxmltree::Error),
+}
+
+impl From<ManifestError> for ProviderError {
+    fn from(value: ManifestError) -> Self {
+        ProviderError::parse("tidal", "manifest", value.to_string())
+    }
+}
 
 /// Decode the base64 manifest from a playback response and extract a
 /// [`PlaybackInfo`] containing the download URL(s).
 ///
-/// Returns an error string when the manifest cannot be decoded, parsed,
+/// Returns an error when the manifest cannot be decoded, parsed,
 /// or contains no usable URLs.
 pub(crate) fn extract_download_payload(
     playback: &HifiPlaybackData,
-) -> Result<PlaybackInfo, String> {
+) -> Result<PlaybackInfo, ProviderError> {
     let decoded = base64::engine::general_purpose::STANDARD
         .decode(playback.manifest.as_bytes())
-        .map_err(|err| format!("failed to decode manifest: {err}"))?;
+        .map_err(ManifestError::from)?;
 
     match playback.manifest_mime_type.as_str() {
         "application/vnd.tidal.bts" => {
-            let manifest = serde_json::from_slice::<BtsManifest>(&decoded)
-                .map_err(|err| format!("failed to parse BTS manifest: {err}"))?;
+            let manifest =
+                serde_json::from_slice::<BtsManifest>(&decoded).map_err(ManifestError::ParseBts)?;
             manifest
                 .urls
                 .first()
                 .cloned()
                 .map(PlaybackInfo::DirectUrl)
-                .ok_or_else(|| "no track URL in BTS manifest".to_string())
+                .ok_or(ManifestError::DashStructure("no track URL in BTS manifest"))
+                .map_err(ProviderError::from)
         }
         "application/dash+xml" => {
-            let xml = String::from_utf8(decoded)
-                .map_err(|err| format!("DASH manifest is not valid UTF-8: {err}"))?;
+            let xml = String::from_utf8(decoded).map_err(ManifestError::Utf8)?;
             if let Ok(urls) = extract_dash_segment_urls(&xml)
                 && !urls.is_empty()
             {
                 return Ok(PlaybackInfo::SegmentUrls(urls));
             }
-            extract_dash_base_url(&xml).map(PlaybackInfo::DirectUrl)
+            extract_dash_base_url(&xml)
+                .map(PlaybackInfo::DirectUrl)
+                .map_err(ProviderError::from)
         }
         other => {
             warn!(manifest_mime_type = %other, "Unknown manifest type, attempting BTS parse as fallback");
             let manifest = serde_json::from_slice::<BtsManifest>(&decoded)
-                .map_err(|err| format!("unsupported manifest type '{}': {err}", other))?;
+                .map_err(|_| ManifestError::UnsupportedType {
+                    mime_type: other.to_string(),
+                })?;
             manifest
                 .urls
                 .first()
                 .cloned()
                 .map(PlaybackInfo::DirectUrl)
-                .ok_or_else(|| format!("no track URL in manifest (type: {})", other))
+                .ok_or(ManifestError::DashStructure(
+                    "no track URL in fallback BTS manifest",
+                ))
+                .map_err(ProviderError::from)
         }
     }
 }
@@ -67,24 +97,26 @@ pub(crate) fn extract_download_payload(
 ///
 /// Returns the initialization URL (if present) followed by all media
 /// segment URLs derived from the `SegmentTimeline`.
-fn extract_dash_segment_urls(xml: &str) -> Result<Vec<String>, String> {
-    let doc = Document::parse(xml).map_err(|err| format!("failed to parse DASH XML: {err}"))?;
+fn extract_dash_segment_urls(xml: &str) -> Result<Vec<String>, ManifestError> {
+    let doc = Document::parse(xml).map_err(ManifestError::DashXml)?;
 
     let mpd = doc
         .descendants()
         .find(|n| n.has_tag_name("MPD"))
-        .ok_or_else(|| "DASH manifest has no MPD element".to_string())?;
+        .ok_or(ManifestError::DashStructure("DASH manifest has no MPD element"))?;
     let period = mpd
         .children()
         .find(|n| n.has_tag_name("Period"))
-        .ok_or_else(|| "DASH manifest has no Period element".to_string())?;
+        .ok_or(ManifestError::DashStructure("DASH manifest has no Period element"))?;
 
     let adaptation_sets: Vec<Node<'_, '_>> = period
         .children()
         .filter(|n| n.has_tag_name("AdaptationSet"))
         .collect();
     if adaptation_sets.is_empty() {
-        return Err("DASH manifest has no AdaptationSet".to_string());
+        return Err(ManifestError::DashStructure(
+            "DASH manifest has no AdaptationSet",
+        ));
     }
 
     let audio_set = adaptation_sets
@@ -106,7 +138,9 @@ fn extract_dash_segment_urls(xml: &str) -> Result<Vec<String>, String> {
         .filter(|n| n.has_tag_name("Representation"))
         .collect();
     if reps.is_empty() {
-        return Err("DASH manifest has no Representation".to_string());
+        return Err(ManifestError::DashStructure(
+            "DASH manifest has no Representation",
+        ));
     }
     reps.sort_by_key(|rep| {
         rep.attribute("bandwidth")
@@ -125,12 +159,16 @@ fn extract_dash_segment_urls(xml: &str) -> Result<Vec<String>, String> {
                 .children()
                 .find(|n| n.has_tag_name("SegmentTemplate"))
         })
-        .ok_or_else(|| "DASH manifest has no SegmentTemplate".to_string())?;
+        .ok_or(ManifestError::DashStructure(
+            "DASH manifest has no SegmentTemplate",
+        ))?;
 
     let initialization = segment_template.attribute("initialization");
     let media = segment_template
         .attribute("media")
-        .ok_or_else(|| "DASH SegmentTemplate has no media template".to_string())?;
+        .ok_or(ManifestError::DashStructure(
+            "DASH SegmentTemplate has no media template",
+        ))?;
     let start_number = segment_template
         .attribute("startNumber")
         .and_then(|v| v.parse::<u64>().ok())
@@ -164,7 +202,9 @@ fn extract_dash_segment_urls(xml: &str) -> Result<Vec<String>, String> {
     let timeline = segment_template
         .children()
         .find(|n| n.has_tag_name("SegmentTimeline"))
-        .ok_or_else(|| "DASH SegmentTemplate has no SegmentTimeline".to_string())?;
+        .ok_or(ManifestError::DashStructure(
+            "DASH SegmentTemplate has no SegmentTimeline",
+        ))?;
 
     let mut entries = Vec::new();
     let mut current_time = 0u64;
@@ -176,7 +216,9 @@ fn extract_dash_segment_urls(xml: &str) -> Result<Vec<String>, String> {
         let duration = s
             .attribute("d")
             .and_then(|v| v.parse::<u64>().ok())
-            .ok_or_else(|| "DASH timeline entry missing duration".to_string())?;
+            .ok_or(ManifestError::DashStructure(
+                "DASH timeline entry missing duration",
+            ))?;
         let repeats = s
             .attribute("r")
             .and_then(|v| v.parse::<i64>().ok())
@@ -204,7 +246,9 @@ fn extract_dash_segment_urls(xml: &str) -> Result<Vec<String>, String> {
     }
 
     if urls.is_empty() {
-        return Err("DASH generated no segment URLs".to_string());
+        return Err(ManifestError::DashStructure(
+            "DASH generated no segment URLs",
+        ));
     }
 
     Ok(urls)
@@ -283,7 +327,7 @@ fn join_dash_url(base: &str, part: &str) -> String {
 
 /// Fallback extractor: scan the DASH XML for the first absolute `<BaseURL>`
 /// element, or failing that, the first bare `https://` URL in the document.
-fn extract_dash_base_url(xml: &str) -> Result<String, String> {
+fn extract_dash_base_url(xml: &str) -> Result<String, ManifestError> {
     let mut scan_from = 0usize;
     while let Some(tag_start_rel) = xml[scan_from..].find("<BaseURL") {
         let tag_start = scan_from + tag_start_rel;
@@ -322,7 +366,9 @@ fn extract_dash_base_url(xml: &str) -> Result<String, String> {
         }
     }
 
-    Err("no absolute URL found in DASH manifest".to_string())
+    Err(ManifestError::DashStructure(
+        "no absolute URL found in DASH manifest",
+    ))
 }
 
 /// Produce a compact, single-line summary of a playback manifest for

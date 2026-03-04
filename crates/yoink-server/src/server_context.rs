@@ -365,7 +365,7 @@ fn build_dispatch_action_fn(state: &AppState) -> yoink_shared::DispatchActionFn 
     let s = state.clone();
     std::sync::Arc::new(move |action: yoink_shared::ServerAction| {
         let s = s.clone();
-        Box::pin(async move { dispatch_action_impl(s, action).await })
+        Box::pin(async move { dispatch_action_impl(s, action).await.map_err(Into::into) })
     })
 }
 
@@ -373,7 +373,7 @@ fn build_preview_import_fn(state: &AppState) -> yoink_shared::PreviewImportFn {
     let s = state.clone();
     std::sync::Arc::new(move || {
         let s = s.clone();
-        Box::pin(async move { services::preview_import_library(&s).await })
+        Box::pin(async move { services::preview_import_library(&s).await.map_err(Into::into) })
     })
 }
 
@@ -381,7 +381,7 @@ fn build_confirm_import_fn(state: &AppState) -> yoink_shared::ConfirmImportFn {
     let s = state.clone();
     std::sync::Arc::new(move |items: Vec<yoink_shared::ImportConfirmation>| {
         let s = s.clone();
-        Box::pin(async move { services::confirm_import_library(&s, items).await })
+        Box::pin(async move { services::confirm_import_library(&s, items).await.map_err(Into::into) })
     })
 }
 

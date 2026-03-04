@@ -55,7 +55,9 @@ impl MusicBrainzProvider {
                 .limit(LIMIT)
                 .execute_with_client(&self.client)
                 .await
-                .map_err(|e| ProviderError(format!("MusicBrainz browse release groups: {e}")))?;
+                .map_err(|e| {
+                    ProviderError::http("musicbrainz", "browse release groups", e.to_string())
+                })?;
 
             let count = page.entities.len();
             all.extend(page.entities);
@@ -80,7 +82,9 @@ impl MusicBrainzProvider {
             .with_releases()
             .execute_with_client(&self.client)
             .await
-            .map_err(|e| ProviderError(format!("MusicBrainz fetch release group: {e}")))?;
+            .map_err(|e| {
+                ProviderError::http("musicbrainz", "fetch release group", e.to_string())
+            })?;
 
         let Some(releases) = rg.releases else {
             return Ok(None);
@@ -371,7 +375,7 @@ impl MetadataProvider for MusicBrainzProvider {
         let result = MbArtist::search(lucene_query)
             .execute_with_client(&self.client)
             .await
-            .map_err(|e| ProviderError(format!("MusicBrainz artist search: {e}")))?;
+            .map_err(|e| ProviderError::http("musicbrainz", "artist search", e.to_string()))?;
 
         Ok(result
             .entities
@@ -453,7 +457,9 @@ impl MetadataProvider for MusicBrainzProvider {
         let release = self
             .best_release_for_group(external_album_id)
             .await?
-            .ok_or_else(|| ProviderError("No releases found in this release group".to_string()))?;
+            .ok_or_else(|| {
+                ProviderError::not_found("musicbrainz", "release in release group")
+            })?;
 
         // Now fetch the full release with recordings (which contain ISRCs)
         let full_release = MbRelease::fetch()
@@ -462,7 +468,7 @@ impl MetadataProvider for MusicBrainzProvider {
             .with_artist_credits()
             .execute_with_client(&self.client)
             .await
-            .map_err(|e| ProviderError(format!("MusicBrainz fetch release: {e}")))?;
+            .map_err(|e| ProviderError::http("musicbrainz", "fetch release", e.to_string()))?;
 
         let mut tracks = Vec::new();
         let album_extra = HashMap::new();
@@ -596,7 +602,9 @@ impl MetadataProvider for MusicBrainzProvider {
         let result = ReleaseGroup::search(lucene_query)
             .execute_with_client(&self.client)
             .await
-            .map_err(|e| ProviderError(format!("MusicBrainz release group search: {e}")))?;
+            .map_err(|e| {
+                ProviderError::http("musicbrainz", "release group search", e.to_string())
+            })?;
 
         Ok(result
             .entities

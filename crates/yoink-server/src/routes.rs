@@ -124,7 +124,7 @@ async fn album_tracks(
                 debug!(
                     album_id = %album_id,
                     provider = %link.provider,
-                    error = %err.0,
+                    error = %err,
                     "Failed to fetch tracks from provider"
                 );
             }

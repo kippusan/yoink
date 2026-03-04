@@ -9,6 +9,7 @@ use std::path::PathBuf;
 
 use async_trait::async_trait;
 use serde_json::Value;
+use thiserror::Error;
 use yoink_shared::Quality;
 
 // ── Shared helpers ──────────────────────────────────────────────────
@@ -43,24 +44,94 @@ pub(crate) fn extract_artist_display(extra: &HashMap<String, Value>) -> Option<S
 
 // ── Provider error ──────────────────────────────────────────────────
 
-#[derive(Debug, Clone)]
-pub(crate) struct ProviderError(pub String);
-
-impl std::fmt::Display for ProviderError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.0)
-    }
+#[derive(Debug, Clone, Error)]
+pub(crate) enum ProviderError {
+    #[error("{provider} HTTP error during {operation}: {reason}")]
+    Http {
+        provider: String,
+        operation: String,
+        reason: String,
+    },
+    #[error("{provider} authentication error: {reason}")]
+    Auth { provider: String, reason: String },
+    #[error("{provider} rate limited: {reason}")]
+    RateLimited { provider: String, reason: String },
+    #[error("{provider} parse error during {operation}: {reason}")]
+    Parse {
+        provider: String,
+        operation: String,
+        reason: String,
+    },
+    #[error("{provider} not found: {resource}")]
+    NotFound { provider: String, resource: String },
+    #[error("{provider} unavailable: {reason}")]
+    Unavailable { provider: String, reason: String },
+    #[error("{provider} invalid response: {reason}")]
+    InvalidResponse { provider: String, reason: String },
 }
 
-impl From<String> for ProviderError {
-    fn from(s: String) -> Self {
-        Self(s)
+impl ProviderError {
+    pub(crate) fn http(
+        provider: impl Into<String>,
+        operation: impl Into<String>,
+        reason: impl Into<String>,
+    ) -> Self {
+        Self::Http {
+            provider: provider.into(),
+            operation: operation.into(),
+            reason: reason.into(),
+        }
     }
-}
 
-impl From<&str> for ProviderError {
-    fn from(s: &str) -> Self {
-        Self(s.to_string())
+    pub(crate) fn auth(provider: impl Into<String>, reason: impl Into<String>) -> Self {
+        Self::Auth {
+            provider: provider.into(),
+            reason: reason.into(),
+        }
+    }
+
+    pub(crate) fn rate_limited(provider: impl Into<String>, reason: impl Into<String>) -> Self {
+        Self::RateLimited {
+            provider: provider.into(),
+            reason: reason.into(),
+        }
+    }
+
+    pub(crate) fn parse(
+        provider: impl Into<String>,
+        operation: impl Into<String>,
+        reason: impl Into<String>,
+    ) -> Self {
+        Self::Parse {
+            provider: provider.into(),
+            operation: operation.into(),
+            reason: reason.into(),
+        }
+    }
+
+    pub(crate) fn not_found(provider: impl Into<String>, resource: impl Into<String>) -> Self {
+        Self::NotFound {
+            provider: provider.into(),
+            resource: resource.into(),
+        }
+    }
+
+    pub(crate) fn unavailable(provider: impl Into<String>, reason: impl Into<String>) -> Self {
+        Self::Unavailable {
+            provider: provider.into(),
+            reason: reason.into(),
+        }
+    }
+
+    pub(crate) fn invalid_response(provider: impl Into<String>, reason: impl Into<String>) -> Self {
+        Self::InvalidResponse {
+            provider: provider.into(),
+            reason: reason.into(),
+        }
+    }
+
+    pub(crate) fn is_rate_limited(&self) -> bool {
+        matches!(self, Self::RateLimited { .. })
     }
 }
 
@@ -375,19 +446,19 @@ mod tests {
 
     #[test]
     fn provider_error_display() {
-        let err = ProviderError("something went wrong".to_string());
-        assert_eq!(format!("{err}"), "something went wrong");
+        let err = ProviderError::invalid_response("test", "something went wrong");
+        assert_eq!(format!("{err}"), "test invalid response: something went wrong");
     }
 
     #[test]
     fn provider_error_from_string() {
-        let err: ProviderError = "test error".into();
-        assert_eq!(err.0, "test error");
+        let err = ProviderError::parse("x", "json", "bad payload");
+        assert_eq!(format!("{err}"), "x parse error during json: bad payload");
     }
 
     #[test]
     fn provider_error_from_owned_string() {
-        let err: ProviderError = String::from("owned error").into();
-        assert_eq!(err.0, "owned error");
+        let err = ProviderError::rate_limited("x", "429");
+        assert!(err.is_rate_limited());
     }
 }

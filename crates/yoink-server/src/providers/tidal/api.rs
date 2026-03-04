@@ -10,6 +10,7 @@ use tokio::sync::RwLock;
 use tracing::{debug, warn};
 
 use super::instances::{self, InstanceCache};
+use crate::providers::ProviderError;
 
 /// Perform a JSON `GET` against the hifi-api, with automatic instance failover.
 ///
@@ -17,14 +18,14 @@ use super::instances::{self, InstanceCache};
 /// in order. The first instance that returns a valid, deserializable response is
 /// promoted to the active instance in the cache.
 ///
-/// Returns `Err(String)` with a human-readable message when all candidates fail.
+/// Returns a provider error when all candidates fail.
 pub(crate) async fn hifi_get_json<T: DeserializeOwned>(
     http: &reqwest::Client,
     manual_base_url: Option<&str>,
     cache: &Arc<RwLock<InstanceCache>>,
     path: &str,
     query: Vec<(String, String)>,
-) -> Result<T, String> {
+) -> Result<T, ProviderError> {
     let candidates = instances::candidate_base_urls(manual_base_url, cache, http).await;
     let mut last_error = None;
 
@@ -63,5 +64,5 @@ pub(crate) async fn hifi_get_json<T: DeserializeOwned>(
     let error_msg =
         last_error.unwrap_or_else(|| "No healthy hifi-api instances available".to_string());
     warn!(error = %error_msg, "All hifi-api candidates failed");
-    Err(error_msg)
+    Err(ProviderError::unavailable("tidal", error_msg))
 }

@@ -7,6 +7,7 @@ use tokio::{
 };
 
 use crate::config::DOWNLOAD_CHUNK_SIZE;
+use crate::error::{AppError, AppResult};
 
 pub(crate) enum DownloadPayload {
     DirectUrl(String),
@@ -17,7 +18,7 @@ pub(crate) async fn download_payload_to_file(
     http: &reqwest::Client,
     payload: &DownloadPayload,
     path: &Path,
-) -> Result<(), String> {
+) -> AppResult<()> {
     match payload {
         DownloadPayload::DirectUrl(url) => download_to_file(http, url, path).await,
         DownloadPayload::DashSegmentUrls(urls) => {
@@ -26,24 +27,24 @@ pub(crate) async fn download_payload_to_file(
     }
 }
 
-async fn download_to_file(http: &reqwest::Client, url: &str, path: &Path) -> Result<(), String> {
+async fn download_to_file(http: &reqwest::Client, url: &str, path: &Path) -> AppResult<()> {
     let mut response = http
         .get(url)
         .timeout(Duration::from_secs(60))
         .send()
         .await
-        .map_err(|err| format!("download request failed: {err}"))?
+        .map_err(|err| AppError::http("direct download request", err))?
         .error_for_status()
-        .map_err(|err| format!("download status failed: {err}"))?;
+        .map_err(|err| AppError::http("direct download status", err))?;
 
     let mut file = fs::File::create(path)
         .await
-        .map_err(|err| format!("failed creating file: {err}"))?;
+        .map_err(|err| AppError::filesystem("create file", path.display().to_string(), err))?;
 
     while let Some(chunk) = response
         .chunk()
         .await
-        .map_err(|err| format!("failed reading stream chunk: {err}"))?
+        .map_err(|err| AppError::http("read response chunk", err))?
     {
         if chunk.is_empty() {
             continue;
@@ -51,13 +52,15 @@ async fn download_to_file(http: &reqwest::Client, url: &str, path: &Path) -> Res
         for slice in chunk.chunks(DOWNLOAD_CHUNK_SIZE) {
             file.write_all(slice)
                 .await
-                .map_err(|err| format!("failed writing file: {err}"))?;
+                .map_err(|err| {
+                    AppError::filesystem("write file", path.display().to_string(), err)
+                })?;
         }
     }
 
     file.flush()
         .await
-        .map_err(|err| format!("failed flushing file: {err}"))?;
+        .map_err(|err| AppError::filesystem("flush file", path.display().to_string(), err))?;
     Ok(())
 }
 
@@ -65,10 +68,10 @@ async fn download_dash_segments_to_file(
     http: &reqwest::Client,
     urls: &[String],
     path: &Path,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let mut file = fs::File::create(path)
         .await
-        .map_err(|err| format!("failed creating file: {err}"))?;
+        .map_err(|err| AppError::filesystem("create file", path.display().to_string(), err))?;
 
     for (idx, url) in urls.iter().enumerate() {
         let bytes = http
@@ -76,12 +79,12 @@ async fn download_dash_segments_to_file(
             .timeout(Duration::from_secs(60))
             .send()
             .await
-            .map_err(|err| format!("dash segment request failed at {idx}: {err}"))?
+            .map_err(|err| AppError::http(format!("dash segment request #{idx}"), err))?
             .error_for_status()
-            .map_err(|err| format!("dash segment status failed at {idx}: {err}"))?
+            .map_err(|err| AppError::http(format!("dash segment status #{idx}"), err))?
             .bytes()
             .await
-            .map_err(|err| format!("dash segment body failed at {idx}: {err}"))?;
+            .map_err(|err| AppError::http(format!("dash segment body #{idx}"), err))?;
 
         if bytes.is_empty() {
             continue;
@@ -89,37 +92,43 @@ async fn download_dash_segments_to_file(
         for slice in bytes.chunks(DOWNLOAD_CHUNK_SIZE) {
             file.write_all(slice)
                 .await
-                .map_err(|err| format!("failed writing dash segment {idx}: {err}"))?;
+                .map_err(|err| {
+                    AppError::filesystem(
+                        format!("write dash segment #{idx}"),
+                        path.display().to_string(),
+                        err,
+                    )
+                })?;
         }
     }
 
     file.flush()
         .await
-        .map_err(|err| format!("failed flushing file: {err}"))?;
+        .map_err(|err| AppError::filesystem("flush file", path.display().to_string(), err))?;
     Ok(())
 }
 
-pub(crate) async fn has_flac_stream_marker(path: &Path) -> Result<bool, String> {
+pub(crate) async fn has_flac_stream_marker(path: &Path) -> AppResult<bool> {
     let mut file = fs::File::open(path)
         .await
-        .map_err(|err| format!("failed opening file {}: {err}", path.display()))?;
+        .map_err(|err| AppError::filesystem("open file", path.display().to_string(), err))?;
     let mut header = [0u8; 4];
     let read = file
         .read(&mut header)
         .await
-        .map_err(|err| format!("failed reading header {}: {err}", path.display()))?;
+        .map_err(|err| AppError::filesystem("read header", path.display().to_string(), err))?;
     Ok(read == 4 && header == *b"fLaC")
 }
 
-pub(crate) async fn sniff_media_container(path: &Path) -> Result<String, String> {
+pub(crate) async fn sniff_media_container(path: &Path) -> AppResult<String> {
     let mut file = fs::File::open(path)
         .await
-        .map_err(|err| format!("failed opening file {}: {err}", path.display()))?;
+        .map_err(|err| AppError::filesystem("open file", path.display().to_string(), err))?;
     let mut header = [0u8; 12];
     let read = file
         .read(&mut header)
         .await
-        .map_err(|err| format!("failed reading header {}: {err}", path.display()))?;
+        .map_err(|err| AppError::filesystem("read header", path.display().to_string(), err))?;
     if read >= 4 && header[..4] == *b"fLaC" {
         return Ok("flac".to_string());
     }

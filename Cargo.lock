@@ -4737,6 +4737,7 @@ dependencies = [
  "sqlx",
  "strsim",
  "tempfile",
+ "thiserror 2.0.18",
  "tokio",
  "tokio-stream",
  "tower",
@@ -4755,6 +4756,7 @@ dependencies = [
  "chrono",
  "serde",
  "serde_json",
+ "thiserror 2.0.18",
  "tokio",
  "uuid",
 ]

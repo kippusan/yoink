@@ -80,7 +80,10 @@ impl DownloadSource for SoulSeekSource {
         context: Option<&DownloadTrackContext>,
     ) -> Result<PlaybackInfo, ProviderError> {
         let ctx = context.ok_or_else(|| {
-            ProviderError("SoulSeek requires track context for search/matching".to_string())
+            ProviderError::invalid_response(
+                "soulseek",
+                "requires track context for search/matching",
+            )
         })?;
 
         // Try album-bundle search first, then fall back to per-track search.
@@ -132,16 +135,16 @@ impl SoulSeekSource {
     ) -> Result<matching::Candidate, ProviderError> {
         let responses = self.search_track_queries(ctx).await?;
         if responses.is_empty() {
-            return Err(ProviderError(format!(
-                "No SoulSeek search responses for track '{}'",
-                ctx.track_title
-            )));
+            return Err(ProviderError::not_found(
+                "soulseek",
+                format!("search responses for track '{}'", ctx.track_title),
+            ));
         }
         pick_best_candidate(&responses, ctx, quality).ok_or_else(|| {
-            ProviderError(format!(
-                "No suitable SoulSeek candidate for '{}'",
-                ctx.track_title
-            ))
+            ProviderError::not_found(
+                "soulseek",
+                format!("suitable candidate for '{}'", ctx.track_title),
+            )
         })
     }
 
@@ -251,19 +254,21 @@ impl SoulSeekSource {
             .json(&payload)
             .send()
             .await
-            .map_err(|e| ProviderError(format!("slskd login request failed: {e}")))?;
+            .map_err(|e| ProviderError::http("soulseek", "slskd login request", e.to_string()))?;
 
         if !resp.status().is_success() {
-            return Err(ProviderError(format!(
-                "slskd login failed with status {}",
-                resp.status()
-            )));
+            return Err(ProviderError::auth(
+                "soulseek",
+                format!("slskd login failed with status {}", resp.status()),
+            ));
         }
 
         let token_resp: TokenResponse = resp
             .json()
             .await
-            .map_err(|e| ProviderError(format!("failed parsing slskd login response: {e}")))?;
+            .map_err(|e| {
+                ProviderError::parse("soulseek", "slskd login response", e.to_string())
+            })?;
 
         let token = token_resp.token;
         *self.token.write().await = Some(token.clone());
@@ -290,18 +295,30 @@ impl SoulSeekSource {
         let resp = req
             .send()
             .await
-            .map_err(|e| ProviderError(format!("slskd POST {path} failed: {e}")))?;
+            .map_err(|e| {
+                ProviderError::http("soulseek", format!("slskd POST {path}"), e.to_string())
+            })?;
 
         if !resp.status().is_success() {
-            return Err(ProviderError(format!(
-                "slskd POST {path} returned {}",
-                resp.status()
-            )));
+            let status = resp.status();
+            if status.as_u16() == 429 {
+                return Err(ProviderError::rate_limited(
+                    "soulseek",
+                    format!("slskd POST {path} returned {status}"),
+                ));
+            }
+            return Err(ProviderError::http(
+                "soulseek",
+                format!("slskd POST {path}"),
+                format!("returned {status}"),
+            ));
         }
 
         resp.json()
             .await
-            .map_err(|e| ProviderError(format!("slskd POST {path} decode failed: {e}")))
+            .map_err(|e| {
+                ProviderError::parse("soulseek", format!("slskd POST {path} decode"), e.to_string())
+            })
     }
 
     /// Authenticated GET that deserializes a JSON response.
@@ -316,18 +333,30 @@ impl SoulSeekSource {
         let resp = req
             .send()
             .await
-            .map_err(|e| ProviderError(format!("slskd GET {path} failed: {e}")))?;
+            .map_err(|e| {
+                ProviderError::http("soulseek", format!("slskd GET {path}"), e.to_string())
+            })?;
 
         if !resp.status().is_success() {
-            return Err(ProviderError(format!(
-                "slskd GET {path} returned {}",
-                resp.status()
-            )));
+            let status = resp.status();
+            if status.as_u16() == 429 {
+                return Err(ProviderError::rate_limited(
+                    "soulseek",
+                    format!("slskd GET {path} returned {status}"),
+                ));
+            }
+            return Err(ProviderError::http(
+                "soulseek",
+                format!("slskd GET {path}"),
+                format!("returned {status}"),
+            ));
         }
 
         resp.json()
             .await
-            .map_err(|e| ProviderError(format!("slskd GET {path} decode failed: {e}")))
+            .map_err(|e| {
+                ProviderError::parse("soulseek", format!("slskd GET {path} decode"), e.to_string())
+            })
     }
 
     /// Kick off a search, retrying on 429 rate-limit responses.
@@ -336,7 +365,7 @@ impl SoulSeekSource {
             .search_request_gate
             .acquire()
             .await
-            .map_err(|_| ProviderError("soulseek search gate closed".to_string()))?;
+            .map_err(|_| ProviderError::unavailable("soulseek", "search gate closed"))?;
 
         let req = SearchRequest {
             id: None,
@@ -362,8 +391,9 @@ impl SoulSeekSource {
             }
         }
 
-        Err(ProviderError(
-            "SoulSeek search creation failed after retries".to_string(),
+        Err(ProviderError::rate_limited(
+            "soulseek",
+            "search creation failed after retries",
         ))
     }
 
@@ -441,13 +471,16 @@ impl SoulSeekSource {
         let resp = req
             .send()
             .await
-            .map_err(|e| ProviderError(format!("slskd enqueue download failed: {e}")))?;
+            .map_err(|e| {
+                ProviderError::http("soulseek", "enqueue download", e.to_string())
+            })?;
 
         if !resp.status().is_success() {
-            return Err(ProviderError(format!(
-                "slskd enqueue download returned {}",
-                resp.status()
-            )));
+            return Err(ProviderError::http(
+                "soulseek",
+                "enqueue download",
+                format!("returned {}", resp.status()),
+            ));
         }
 
         Ok(())
@@ -482,9 +515,10 @@ impl SoulSeekSource {
                             .clone()
                             .or_else(|| file.state_description.clone())
                             .unwrap_or_else(|| "unknown transfer failure".to_string());
-                        return Err(ProviderError(format!(
-                            "SoulSeek transfer failed for {filename}: {detail}"
-                        )));
+                        return Err(ProviderError::unavailable(
+                            "soulseek",
+                            format!("transfer failed for {filename}: {detail}"),
+                        ));
                     }
 
                     if is_complete_success(file)
@@ -505,9 +539,10 @@ impl SoulSeekSource {
             elapsed += 2;
         }
 
-        Err(ProviderError(format!(
-            "Timed out waiting for soulseek download: {filename}"
-        )))
+        Err(ProviderError::unavailable(
+            "soulseek",
+            format!("timed out waiting for download: {filename}"),
+        ))
     }
 
     /// Check candidate local paths for a completed download.
@@ -556,7 +591,11 @@ impl SoulSeekSource {
 // ── Helpers ─────────────────────────────────────────────────────────
 
 fn is_rate_limited(err: &ProviderError) -> bool {
-    err.0.contains("429") || err.0.to_ascii_lowercase().contains("too many requests")
+    if err.is_rate_limited() {
+        return true;
+    }
+    let msg = err.to_string().to_ascii_lowercase();
+    msg.contains("429") || msg.contains("too many requests")
 }
 
 // ── Tests ───────────────────────────────────────────────────────────

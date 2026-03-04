@@ -1,23 +1,26 @@
 use uuid::Uuid;
 
-use crate::{db, services, state::AppState};
+use crate::{
+    db,
+    error::{AppError, AppResult},
+    services,
+    state::AppState,
+};
 
 use super::helpers;
 
 pub(super) async fn accept_match_suggestion(
     state: &AppState,
     suggestion_id: Uuid,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let suggestion = db::load_match_suggestion_by_id(&state.db, suggestion_id)
-        .await
-        .map_err(|e| format!("failed to load match suggestion: {e}"))?
-        .ok_or_else(|| "match suggestion not found".to_string())?;
+        .await?
+        .ok_or_else(|| AppError::not_found("match suggestion", Some(suggestion_id.to_string())))?;
 
     match suggestion.scope_type.as_str() {
         "album" => {
             let album_links = db::load_album_provider_links(&state.db, suggestion.scope_id)
-                .await
-                .map_err(|e| format!("failed loading album links: {e}"))?;
+                .await?;
             let linked: std::collections::HashSet<(String, String)> = album_links
                 .iter()
                 .map(|l| (l.provider.clone(), l.external_id.clone()))
@@ -56,16 +59,14 @@ pub(super) async fn accept_match_suggestion(
                 &target_provider,
                 &target_external_id,
             )
-            .await
-            .map_err(|e| format!("failed checking existing album link: {e}"))?;
+            .await?;
 
             if let Some(existing_album_id) = existing
                 && existing_album_id != suggestion.scope_id
             {
-                return Err(
-                    "Cannot accept: provider album is already linked to another local album"
-                        .to_string(),
-                );
+                return Err(AppError::conflict(
+                    "provider album is already linked to another local album",
+                ));
             }
 
             let link = db::AlbumProviderLink {
@@ -78,14 +79,12 @@ pub(super) async fn accept_match_suggestion(
                 cover_ref: None,
             };
             db::upsert_album_provider_link(&state.db, &link)
-                .await
-                .map_err(|e| format!("failed to persist album provider link: {e}"))?;
+                .await?;
         }
         "artist" => {
             let artist_links =
                 db::load_artist_provider_links(&state.db, suggestion.scope_id)
-                    .await
-                    .map_err(|e| format!("failed loading artist links: {e}"))?;
+                    .await?;
             let linked: std::collections::HashSet<(String, String)> = artist_links
                 .iter()
                 .map(|l| (l.provider.clone(), l.external_id.clone()))
@@ -124,16 +123,14 @@ pub(super) async fn accept_match_suggestion(
                 &target_provider,
                 &target_external_id,
             )
-            .await
-            .map_err(|e| format!("failed checking existing artist link: {e}"))?;
+            .await?;
 
             if let Some(existing_artist_id) = existing
                 && existing_artist_id != suggestion.scope_id
             {
-                return Err(
-                    "Cannot accept: provider artist is already linked to another local artist"
-                        .to_string(),
-                );
+                return Err(AppError::conflict(
+                    "provider artist is already linked to another local artist",
+                ));
             }
 
             let link = db::ArtistProviderLink {
@@ -146,20 +143,20 @@ pub(super) async fn accept_match_suggestion(
                 image_ref: None,
             };
             db::upsert_artist_provider_link(&state.db, &link)
-                .await
-                .map_err(|e| format!("failed to persist artist provider link: {e}"))?;
+                .await?;
 
-            services::sync_artist_albums(state, suggestion.scope_id)
-                .await
-                .map_err(|e| format!("failed to sync artist albums: {e}"))?;
+            services::sync_artist_albums(state, suggestion.scope_id).await?;
             helpers::spawn_recompute_artist_match_suggestions(state, suggestion.scope_id);
         }
-        _ => return Err("unknown suggestion scope type".to_string()),
+        _ => {
+            return Err(AppError::validation(
+                Some("scope_type"),
+                "unknown match suggestion scope type",
+            ));
+        }
     }
 
-    db::set_match_suggestion_status(&state.db, suggestion_id, "accepted")
-        .await
-        .map_err(|e| format!("failed to update match suggestion status: {e}"))?;
+    db::set_match_suggestion_status(&state.db, suggestion_id, "accepted").await?;
 
     if suggestion.scope_type == "album" {
         let artist_id = {
@@ -181,14 +178,12 @@ pub(super) async fn accept_match_suggestion(
 pub(super) async fn dismiss_match_suggestion(
     state: &AppState,
     suggestion_id: Uuid,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let scope = db::load_match_suggestion_by_id(&state.db, suggestion_id)
         .await
         .ok()
         .flatten();
-    db::set_match_suggestion_status(&state.db, suggestion_id, "dismissed")
-        .await
-        .map_err(|e| format!("failed to update match suggestion status: {e}"))?;
+    db::set_match_suggestion_status(&state.db, suggestion_id, "dismissed").await?;
 
     if let Some(suggestion) = scope
         && suggestion.scope_type == "album"
@@ -211,10 +206,8 @@ pub(super) async fn dismiss_match_suggestion(
 pub(super) async fn refresh_match_suggestions(
     state: &AppState,
     artist_id: Uuid,
-) -> Result<(), String> {
-    services::recompute_artist_match_suggestions(state, artist_id)
-        .await
-        .map_err(|e| format!("failed to recompute match suggestions: {e}"))?;
+) -> AppResult<()> {
+    services::recompute_artist_match_suggestions(state, artist_id).await?;
     state.notify_sse();
     Ok(())
 }

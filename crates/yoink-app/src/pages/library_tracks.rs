@@ -56,7 +56,7 @@ pub async fn search_tracks_library(query: String) -> Result<SearchTracksResult, 
         }),
         Err(err) => Ok(SearchTracksResult {
             results: vec![],
-            error: Some(err),
+            error: Some(err.to_string()),
         }),
     }
 }

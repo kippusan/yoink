@@ -11,6 +11,8 @@ use lofty::{
 };
 use serde_json::Value;
 
+use crate::error::{AppError, AppResult};
+
 use super::io::extract_year;
 
 /// All the metadata needed to tag a single audio file.
@@ -31,7 +33,7 @@ pub(crate) struct TrackMetadata<'a> {
     pub cover_art_jpeg: Option<&'a [u8]>,
 }
 
-pub(crate) fn write_audio_metadata(meta: &TrackMetadata<'_>) -> Result<(), String> {
+pub(crate) fn write_audio_metadata(meta: &TrackMetadata<'_>) -> AppResult<()> {
     let default_tag_type = match meta
         .path
         .extension()
@@ -44,9 +46,9 @@ pub(crate) fn write_audio_metadata(meta: &TrackMetadata<'_>) -> Result<(), Strin
     };
 
     let mut tagged_file = Probe::open(meta.path)
-        .map_err(|err| err.to_string())?
+        .map_err(|err| AppError::metadata("open tagged file", err.to_string()))?
         .read()
-        .map_err(|err| err.to_string())?;
+        .map_err(|err| AppError::metadata("read tagged file", err.to_string()))?;
 
     let tag = if let Some(existing) = tagged_file.primary_tag_mut() {
         existing
@@ -54,7 +56,7 @@ pub(crate) fn write_audio_metadata(meta: &TrackMetadata<'_>) -> Result<(), Strin
         tagged_file.insert_tag(Tag::new(default_tag_type));
         tagged_file
             .primary_tag_mut()
-            .ok_or_else(|| "failed to create metadata tag".to_string())?
+            .ok_or_else(|| AppError::metadata("create metadata tag", "no primary tag"))?
     };
 
     tag.set_title(meta.title.to_string());
@@ -130,7 +132,8 @@ pub(crate) fn write_audio_metadata(meta: &TrackMetadata<'_>) -> Result<(), Strin
 
     tagged_file
         .save_to_path(meta.path, WriteOptions::default())
-        .map_err(|err| err.to_string())
+        .map_err(|err| AppError::metadata("save metadata tags", err.to_string()))?;
+    Ok(())
 }
 
 fn write_extra_vorbis(tag: &mut Tag, prefix: &str, extra: &HashMap<String, Value>) {

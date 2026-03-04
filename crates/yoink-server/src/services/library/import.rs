@@ -10,7 +10,12 @@ use yoink_shared::{
     ImportResultSummary,
 };
 
-use crate::{db, models::MonitoredArtist, state::AppState};
+use crate::{
+    db,
+    error::{AppError, AppResult},
+    models::MonitoredArtist,
+    state::AppState,
+};
 
 use super::{
     album_dir_has_downloaded_audio, normalize_text, parse_release_year, sync::sync_artist_albums,
@@ -25,7 +30,7 @@ pub(crate) struct ScanImportSummary {
     pub(crate) unmatched_albums: usize,
 }
 
-pub(crate) async fn scan_and_import_library(state: &AppState) -> Result<ScanImportSummary, String> {
+pub(crate) async fn scan_and_import_library(state: &AppState) -> AppResult<ScanImportSummary> {
     let discovered = discover_local_albums(state).await?;
     if discovered.is_empty() {
         return Ok(ScanImportSummary {
@@ -90,7 +95,7 @@ pub(crate) async fn scan_and_import_library(state: &AppState) -> Result<ScanImpo
 /// each discovered local album folder.
 pub(crate) async fn preview_import_library(
     state: &AppState,
-) -> Result<Vec<ImportPreviewItem>, String> {
+) -> AppResult<Vec<ImportPreviewItem>> {
     let discovered = discover_local_albums(state).await?;
     if discovered.is_empty() {
         return Ok(Vec::new());
@@ -275,7 +280,7 @@ pub(crate) async fn preview_import_library(
 pub(crate) async fn confirm_import_library(
     state: &AppState,
     items: Vec<ImportConfirmation>,
-) -> Result<ImportResultSummary, String> {
+) -> AppResult<ImportResultSummary> {
     let mut imported = 0usize;
     let mut artists_added = 0usize;
     let mut failed = 0usize;
@@ -334,8 +339,7 @@ pub(crate) async fn confirm_import_library(
                     album.acquired,
                     album.wanted,
                 )
-                .await
-                .map_err(|e| format!("failed to update album flags: {e}"))?;
+                .await?;
                 imported += 1;
             } else {
                 errors.push(format!(
@@ -379,23 +383,19 @@ struct LocalAlbumDir {
     year: Option<String>,
 }
 
-async fn discover_local_albums(state: &AppState) -> Result<Vec<LocalAlbumDir>, String> {
+async fn discover_local_albums(state: &AppState) -> AppResult<Vec<LocalAlbumDir>> {
     if !fs::try_exists(&state.music_root).await.unwrap_or(false) {
         return Ok(Vec::new());
     }
 
     let mut out = Vec::new();
     let mut artist_dirs = fs::read_dir(&state.music_root).await.map_err(|err| {
-        format!(
-            "failed to read music root {}: {err}",
-            state.music_root.display()
-        )
+        AppError::filesystem("read music root", state.music_root.display().to_string(), err)
     })?;
 
     while let Some(artist_entry) = artist_dirs
         .next_entry()
-        .await
-        .map_err(|err| format!("failed to read music root entry: {err}"))?
+        .await?
     {
         let artist_path = artist_entry.path();
         if !artist_path.is_dir() {
@@ -434,7 +434,7 @@ async fn discover_local_albums(state: &AppState) -> Result<Vec<LocalAlbumDir>, S
 async fn ensure_monitored_artist(
     state: &AppState,
     artist_name: &str,
-) -> Result<Option<(Uuid, bool)>, String> {
+) -> AppResult<Option<(Uuid, bool)>> {
     let needle = normalize_text(artist_name);
     {
         let artists = state.monitored_artists.read().await;
@@ -484,9 +484,7 @@ async fn ensure_monitored_artist(
         monitored: true, // Imported artists are fully monitored
         added_at: Utc::now(),
     };
-    db::upsert_artist(&state.db, &monitored)
-        .await
-        .map_err(|e| format!("failed to persist artist: {e}"))?;
+    db::upsert_artist(&state.db, &monitored).await?;
 
     let link = db::ArtistProviderLink {
         id: Uuid::now_v7(),
@@ -497,9 +495,7 @@ async fn ensure_monitored_artist(
         external_name: Some(artist.name),
         image_ref: artist.image_ref,
     };
-    db::upsert_artist_provider_link(&state.db, &link)
-        .await
-        .map_err(|e| format!("failed to persist artist provider link: {e}"))?;
+    db::upsert_artist_provider_link(&state.db, &link).await?;
 
     {
         let mut artists = state.monitored_artists.write().await;
@@ -516,7 +512,7 @@ async fn import_local_album(
     artist_id: Uuid,
     album_title: &str,
     year_hint: Option<&str>,
-) -> Result<bool, String> {
+) -> AppResult<bool> {
     let target_title = normalize_text(album_title);
     let mut albums = state.monitored_albums.write().await;
 
@@ -563,8 +559,7 @@ async fn import_local_album(
             album.acquired,
             album.wanted,
         )
-        .await
-        .map_err(|e| format!("failed to update album flags: {e}"))?;
+        .await?;
     }
     Ok(changed)
 }

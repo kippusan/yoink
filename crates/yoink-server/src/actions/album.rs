@@ -2,7 +2,12 @@ use chrono::Utc;
 use tracing::info;
 use uuid::Uuid;
 
-use crate::{db, services, state::AppState};
+use crate::{
+    db,
+    error::{AppError, AppResult},
+    services,
+    state::AppState,
+};
 
 use super::helpers;
 
@@ -10,7 +15,7 @@ pub(super) async fn toggle_album_monitor(
     state: &AppState,
     album_id: Uuid,
     monitored: bool,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let mut album_to_queue = None;
     {
         let mut albums = state.monitored_albums.write().await;
@@ -24,8 +29,7 @@ pub(super) async fn toggle_album_monitor(
                 album.acquired,
                 album.wanted,
             )
-            .await
-            .map_err(|e| format!("failed to update album flags: {e}"))?;
+            .await?;
             if album.monitored && !album.acquired {
                 album_to_queue = Some(album.clone());
             }
@@ -42,7 +46,7 @@ pub(super) async fn bulk_monitor(
     state: &AppState,
     artist_id: Uuid,
     monitored: bool,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let mut to_queue = Vec::new();
     {
         let mut albums = state.monitored_albums.write().await;
@@ -59,8 +63,7 @@ pub(super) async fn bulk_monitor(
                 album.acquired,
                 album.wanted,
             )
-            .await
-            .map_err(|e| format!("failed to update album flags: {e}"))?;
+            .await?;
             if album.monitored && !album.acquired {
                 to_queue.push(album.clone());
             }
@@ -79,7 +82,7 @@ pub(super) async fn merge_albums(
     source_album_id: Uuid,
     result_title: Option<String>,
     result_cover_url: Option<String>,
-) -> Result<(), String> {
+) -> AppResult<()> {
     services::merge_albums(
         state,
         target_album_id,
@@ -107,12 +110,12 @@ pub(super) async fn remove_album_files(
     state: &AppState,
     album_id: Uuid,
     unmonitor: bool,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let album = {
         let albums = state.monitored_albums.read().await;
         albums.iter().find(|a| a.id == album_id).cloned()
     }
-    .ok_or_else(|| format!("album {} not found", album_id))?;
+    .ok_or_else(|| AppError::not_found("album", Some(album_id.to_string())))?;
 
     let removed = services::remove_downloaded_album_files(state, &album).await?;
 
@@ -132,8 +135,7 @@ pub(super) async fn remove_album_files(
                 existing.acquired,
                 existing.wanted,
             )
-            .await
-            .map_err(|e| format!("failed to update album flags: {e}"))?;
+            .await?;
             if existing.monitored {
                 to_queue = Some(existing.clone());
             }
@@ -153,9 +155,7 @@ pub(super) async fn remove_album_files(
         });
     }
     for job_id in removed_completed_ids {
-        db::delete_job(&state.db, job_id)
-            .await
-            .map_err(|e| format!("failed to delete completed job: {e}"))?;
+        db::delete_job(&state.db, job_id).await?;
     }
 
     if let Some(album) = to_queue {
@@ -174,10 +174,8 @@ pub(super) async fn add_album_artist(
     state: &AppState,
     album_id: Uuid,
     artist_id: Uuid,
-) -> Result<(), String> {
-    db::add_album_artist(&state.db, album_id, artist_id)
-        .await
-        .map_err(|e| format!("failed to add album artist: {e}"))?;
+) -> AppResult<()> {
+    db::add_album_artist(&state.db, album_id, artist_id).await?;
     {
         let mut albums = state.monitored_albums.write().await;
         if let Some(album) = albums.iter_mut().find(|a| a.id == album_id)
@@ -194,19 +192,17 @@ pub(super) async fn remove_album_artist(
     state: &AppState,
     album_id: Uuid,
     artist_id: Uuid,
-) -> Result<(), String> {
+) -> AppResult<()> {
     // Must keep at least one artist
     {
         let albums = state.monitored_albums.read().await;
         if let Some(album) = albums.iter().find(|a| a.id == album_id)
             && album.artist_ids.len() <= 1
         {
-            return Err("Cannot remove the only artist from an album".to_string());
+            return Err(AppError::conflict("cannot remove the only artist from an album"));
         }
     }
-    db::remove_album_artist(&state.db, album_id, artist_id)
-        .await
-        .map_err(|e| format!("failed to remove album artist: {e}"))?;
+    db::remove_album_artist(&state.db, album_id, artist_id).await?;
     {
         let mut albums = state.monitored_albums.write().await;
         if let Some(album) = albums.iter_mut().find(|a| a.id == album_id) {
@@ -214,9 +210,7 @@ pub(super) async fn remove_album_artist(
             if album.artist_id == artist_id && !album.artist_ids.is_empty() {
                 album.artist_id = album.artist_ids[0];
                 // Update the legacy column
-                db::upsert_album(&state.db, album)
-                    .await
-                    .map_err(|e| format!("failed to update album primary artist: {e}"))?;
+                db::upsert_album(&state.db, album).await?;
             }
         }
     }
@@ -231,7 +225,7 @@ pub(super) async fn add_album(
     artist_external_id: String,
     artist_name: String,
     monitor_all: bool,
-) -> Result<(), String> {
+) -> AppResult<()> {
     // 1. Find or create lightweight (unmonitored) artist.
     let artist_id = helpers::find_or_create_lightweight_artist(
         state,
@@ -245,17 +239,21 @@ pub(super) async fn add_album(
     let prov = state
         .registry
         .metadata_provider(&provider)
-        .ok_or_else(|| format!("Unknown metadata provider: {provider}"))?;
+        .ok_or_else(|| {
+            AppError::unavailable("metadata provider", format!("unknown provider '{provider}'"))
+        })?;
 
-    let albums = prov
-        .fetch_albums(&artist_external_id)
-        .await
-        .map_err(|e| format!("Failed to fetch albums: {}", e.0))?;
+    let albums = prov.fetch_albums(&artist_external_id).await?;
 
     let prov_album = albums
         .into_iter()
         .find(|a| a.external_id == external_album_id)
-        .ok_or_else(|| "Album not found in provider's album listing".to_string())?;
+        .ok_or_else(|| {
+            AppError::not_found(
+                "provider album",
+                Some(format!("{provider}:{external_album_id}")),
+            )
+        })?;
 
     // 3. Check if album already exists via provider link.
     let existing_album_id =
@@ -295,9 +293,7 @@ pub(super) async fn add_album(
             partially_wanted: false,
             added_at: Utc::now(),
         };
-        db::upsert_album(&state.db, &album)
-            .await
-            .map_err(|e| format!("failed to persist album: {e}"))?;
+        db::upsert_album(&state.db, &album).await?;
 
         let link = db::AlbumProviderLink {
             id: Uuid::now_v7(),
@@ -308,12 +304,8 @@ pub(super) async fn add_album(
             external_title: Some(prov_album.title.clone()),
             cover_ref: prov_album.cover_ref.clone(),
         };
-        db::upsert_album_provider_link(&state.db, &link)
-            .await
-            .map_err(|e| format!("failed to persist album provider link: {e}"))?;
-        db::add_album_artist(&state.db, new_id, artist_id)
-            .await
-            .map_err(|e| format!("failed to persist album artist link: {e}"))?;
+        db::upsert_album_provider_link(&state.db, &link).await?;
+        db::add_album_artist(&state.db, new_id, artist_id).await?;
 
         {
             let mut albums = state.monitored_albums.write().await;
@@ -473,7 +465,8 @@ mod tests {
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
-            .contains("Cannot remove the only artist"));
+            .to_string()
+            .contains("cannot remove the only artist"));
     }
 
     // ── MergeAlbums ─────────────────────────────────────────────
@@ -532,7 +525,7 @@ mod tests {
         let result = super::merge_albums(&state, album.id, album.id, None, None).await;
 
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("must be different"));
+        assert!(result.unwrap_err().to_string().contains("must be different"));
     }
 
     // ── AddAlbum with mock provider ─────────────────────────────

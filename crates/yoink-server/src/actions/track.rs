@@ -2,7 +2,12 @@ use chrono::Utc;
 use tracing::info;
 use uuid::Uuid;
 
-use crate::{db, services, state::AppState};
+use crate::{
+    db,
+    error::{AppError, AppResult},
+    services,
+    state::AppState,
+};
 
 use super::helpers;
 
@@ -13,7 +18,7 @@ pub(super) async fn add_track(
     external_album_id: String,
     artist_external_id: String,
     artist_name: String,
-) -> Result<(), String> {
+) -> AppResult<()> {
     // 1. Find or create lightweight (unmonitored) artist.
     let artist_id = helpers::find_or_create_lightweight_artist(
         state,
@@ -27,17 +32,21 @@ pub(super) async fn add_track(
     let prov = state
         .registry
         .metadata_provider(&provider)
-        .ok_or_else(|| format!("Unknown metadata provider: {provider}"))?;
+        .ok_or_else(|| {
+            AppError::unavailable("metadata provider", format!("unknown provider '{provider}'"))
+        })?;
 
-    let albums = prov
-        .fetch_albums(&artist_external_id)
-        .await
-        .map_err(|e| format!("Failed to fetch albums: {}", e.0))?;
+    let albums = prov.fetch_albums(&artist_external_id).await?;
 
     let prov_album = albums
         .into_iter()
         .find(|a| a.external_id == external_album_id)
-        .ok_or_else(|| "Album not found in provider's album listing".to_string())?;
+        .ok_or_else(|| {
+            AppError::not_found(
+                "provider album",
+                Some(format!("{provider}:{external_album_id}")),
+            )
+        })?;
 
     // 3. Find or create the album.
     let existing_album_id =
@@ -77,9 +86,7 @@ pub(super) async fn add_track(
             partially_wanted: true, // will have a monitored track
             added_at: Utc::now(),
         };
-        db::upsert_album(&state.db, &album)
-            .await
-            .map_err(|e| format!("failed to persist album: {e}"))?;
+        db::upsert_album(&state.db, &album).await?;
 
         let link = db::AlbumProviderLink {
             id: Uuid::now_v7(),
@@ -90,12 +97,8 @@ pub(super) async fn add_track(
             external_title: Some(prov_album.title.clone()),
             cover_ref: prov_album.cover_ref.clone(),
         };
-        db::upsert_album_provider_link(&state.db, &link)
-            .await
-            .map_err(|e| format!("failed to persist album provider link: {e}"))?;
-        db::add_album_artist(&state.db, new_id, artist_id)
-            .await
-            .map_err(|e| format!("failed to persist album artist link: {e}"))?;
+        db::upsert_album_provider_link(&state.db, &link).await?;
+        db::add_album_artist(&state.db, new_id, artist_id).await?;
 
         {
             let mut albums = state.monitored_albums.write().await;
@@ -111,9 +114,7 @@ pub(super) async fn add_track(
     if let Ok(Some(track_id)) =
         db::find_track_by_provider_link(&state.db, &provider, &external_track_id).await
     {
-        db::update_track_flags(&state.db, track_id, true, false)
-            .await
-            .map_err(|e| format!("failed to update track flags: {e}"))?;
+        db::update_track_flags(&state.db, track_id, true, false).await?;
 
         // Recompute partially_wanted
         {
@@ -139,7 +140,7 @@ pub(super) async fn toggle_track_monitor(
     track_id: Uuid,
     album_id: Uuid,
     monitored: bool,
-) -> Result<(), String> {
+) -> AppResult<()> {
     // Update the track's monitored flag in DB
     let current_acquired = {
         let tracks = db::load_tracks_for_album(&state.db, album_id)
@@ -151,9 +152,7 @@ pub(super) async fn toggle_track_monitor(
             .map(|t| t.acquired)
             .unwrap_or(false)
     };
-    db::update_track_flags(&state.db, track_id, monitored, current_acquired)
-        .await
-        .map_err(|e| format!("failed to update track flags: {e}"))?;
+    db::update_track_flags(&state.db, track_id, monitored, current_acquired).await?;
 
     // Recompute the album's partially_wanted flag
     {
@@ -178,16 +177,14 @@ pub(super) async fn bulk_toggle_track_monitor(
     state: &AppState,
     album_id: Uuid,
     monitored: bool,
-) -> Result<(), String> {
+) -> AppResult<()> {
     // Update all tracks for the album
     let tracks = db::load_tracks_for_album(&state.db, album_id)
         .await
         .unwrap_or_default();
 
     for track in &tracks {
-        db::update_track_flags(&state.db, track.id, monitored, track.acquired)
-            .await
-            .map_err(|e| format!("failed to update track flags: {e}"))?;
+        db::update_track_flags(&state.db, track.id, monitored, track.acquired).await?;
     }
 
     // Recompute the album's partially_wanted flag and potentially enqueue

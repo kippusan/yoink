@@ -2,7 +2,12 @@ use chrono::Utc;
 use tracing::{info, warn};
 use uuid::Uuid;
 
-use crate::{db, services, state::AppState};
+use crate::{
+    db,
+    error::{AppError, AppResult},
+    services,
+    state::AppState,
+};
 
 /// Generate a default external URL for an artist on a given provider.
 pub(super) fn default_provider_artist_url(provider: &str, external_id: &str) -> Option<String> {
@@ -116,7 +121,7 @@ pub(super) async fn find_or_create_lightweight_artist(
     provider: &str,
     artist_external_id: &str,
     artist_name: &str,
-) -> Result<Uuid, String> {
+) -> AppResult<Uuid> {
     // Check if artist already exists via provider link.
     if let Ok(Some(id)) =
         db::find_artist_by_provider_link(&state.db, provider, artist_external_id).await
@@ -134,9 +139,7 @@ pub(super) async fn find_or_create_lightweight_artist(
         monitored: false, // lightweight — no auto-sync
         added_at: Utc::now(),
     };
-    db::upsert_artist(&state.db, &artist)
-        .await
-        .map_err(|e| format!("failed to persist lightweight artist: {e}"))?;
+    db::upsert_artist(&state.db, &artist).await?;
     {
         let mut artists = state.monitored_artists.write().await;
         artists.push(artist);
@@ -151,9 +154,7 @@ pub(super) async fn find_or_create_lightweight_artist(
         external_name: Some(artist_name.to_string()),
         image_ref: None,
     };
-    db::upsert_artist_provider_link(&state.db, &link)
-        .await
-        .map_err(|e| format!("failed to persist artist provider link: {e}"))?;
+    db::upsert_artist_provider_link(&state.db, &link).await?;
 
     Ok(new_id)
 }
@@ -166,16 +167,15 @@ pub(super) async fn store_album_tracks(
     external_album_id: &str,
     album_id: Uuid,
     monitor_all: bool,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let prov = state
         .registry
         .metadata_provider(provider)
-        .ok_or_else(|| format!("Unknown metadata provider: {provider}"))?;
+        .ok_or_else(|| {
+            AppError::unavailable("metadata provider", format!("unknown provider '{provider}'"))
+        })?;
 
-    let (tracks, _album_extra) = prov
-        .fetch_tracks(external_album_id)
-        .await
-        .map_err(|e| format!("Failed to fetch tracks: {}", e.0))?;
+    let (tracks, _album_extra) = prov.fetch_tracks(external_album_id).await?;
 
     for track in tracks {
         let ext_id = track.external_id.clone();
@@ -209,12 +209,8 @@ pub(super) async fn store_album_tracks(
             acquired: false,
         };
 
-        db::upsert_track(&state.db, &track_info, album_id)
-            .await
-            .map_err(|e| format!("failed to persist track '{}': {e}", track_info.title))?;
-        db::upsert_track_provider_link(&state.db, track_info.id, provider, &ext_id)
-            .await
-            .map_err(|e| format!("failed to persist track provider link: {e}"))?;
+        db::upsert_track(&state.db, &track_info, album_id).await?;
+        db::upsert_track_provider_link(&state.db, track_info.id, provider, &ext_id).await?;
     }
 
     Ok(())

@@ -2,9 +2,9 @@ use chrono::Utc;
 use tracing::info;
 use uuid::Uuid;
 
-use crate::{db, services, state::AppState};
+use crate::{db, error::AppResult, services, state::AppState};
 
-pub(super) async fn cancel_download(state: &AppState, job_id: Uuid) -> Result<(), String> {
+pub(super) async fn cancel_download(state: &AppState, job_id: Uuid) -> AppResult<()> {
     let mut jobs = state.download_jobs.write().await;
     if let Some(job) = jobs.iter_mut().find(|j| j.id == job_id)
         && matches!(job.status, yoink_shared::DownloadStatus::Queued)
@@ -13,8 +13,7 @@ pub(super) async fn cancel_download(state: &AppState, job_id: Uuid) -> Result<()
         job.error = Some("Cancelled by user".to_string());
         job.updated_at = Utc::now();
         db::update_job(&state.db, job)
-            .await
-            .map_err(|e| format!("failed to persist job cancellation: {e}"))?;
+            .await?;
         info!(%job_id, "Cancelled download job");
     }
     drop(jobs);
@@ -22,10 +21,8 @@ pub(super) async fn cancel_download(state: &AppState, job_id: Uuid) -> Result<()
     Ok(())
 }
 
-pub(super) async fn clear_completed(state: &AppState) -> Result<(), String> {
-    db::delete_completed_jobs(&state.db)
-        .await
-        .map_err(|e| format!("failed to delete completed jobs: {e}"))?;
+pub(super) async fn clear_completed(state: &AppState) -> AppResult<()> {
+    db::delete_completed_jobs(&state.db).await?;
     {
         let mut jobs = state.download_jobs.write().await;
         jobs.retain(|j| j.status != yoink_shared::DownloadStatus::Completed);
@@ -35,7 +32,7 @@ pub(super) async fn clear_completed(state: &AppState) -> Result<(), String> {
     Ok(())
 }
 
-pub(super) async fn retry_download(state: &AppState, album_id: Uuid) -> Result<(), String> {
+pub(super) async fn retry_download(state: &AppState, album_id: Uuid) -> AppResult<()> {
     {
         let mut jobs = state.download_jobs.write().await;
         if let Some(job) = jobs.iter_mut().find(|j| {
@@ -47,8 +44,7 @@ pub(super) async fn retry_download(state: &AppState, album_id: Uuid) -> Result<(
             job.error = None;
             job.updated_at = Utc::now();
             db::update_job(&state.db, job)
-                .await
-                .map_err(|e| format!("failed to persist job retry: {e}"))?;
+                .await?;
             info!(
                 %album_id,
                 job_id = %job.id,

@@ -4,14 +4,16 @@ use tokio::fs;
 use tracing::{info, warn};
 use uuid::Uuid;
 
-use crate::{db, services::downloads::sanitize_path_component, state::AppState};
+use crate::{
+    db, error::AppResult, services::downloads::sanitize_path_component, state::AppState,
+};
 
 use super::{
     album_dir_has_downloaded_audio, normalize_text, parse_release_year, recompute_partially_wanted,
     update_wanted,
 };
 
-pub(crate) async fn reconcile_library_files(state: &AppState) -> Result<usize, String> {
+pub(crate) async fn reconcile_library_files(state: &AppState) -> AppResult<usize> {
     let artists = state.monitored_artists.read().await.clone();
     let artist_names: HashMap<Uuid, String> = artists.into_iter().map(|a| (a.id, a.name)).collect();
     let albums_snapshot = state.monitored_albums.read().await.clone();
@@ -132,8 +134,7 @@ pub(crate) async fn reconcile_library_files(state: &AppState) -> Result<usize, S
                 album.acquired,
                 album.wanted,
             )
-            .await
-            .map_err(|e| format!("failed to update album flags during reconciliation: {e}"))?;
+            .await?;
             changed += 1;
         }
     }

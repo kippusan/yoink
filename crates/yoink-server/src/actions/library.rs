@@ -1,8 +1,12 @@
 use tracing::info;
 
-use crate::{services, state::AppState};
+use crate::{
+    error::{AppError, AppResult},
+    services,
+    state::AppState,
+};
 
-pub(super) async fn retag_library(state: &AppState) -> Result<(), String> {
+pub(super) async fn retag_library(state: &AppState) -> AppResult<()> {
     let s = state.clone();
     tokio::spawn(async move {
         match services::retag_existing_files(&s).await {
@@ -22,7 +26,7 @@ pub(super) async fn retag_library(state: &AppState) -> Result<(), String> {
     Ok(())
 }
 
-pub(super) async fn scan_import_library(state: &AppState) -> Result<(), String> {
+pub(super) async fn scan_import_library(state: &AppState) -> AppResult<()> {
     let s = state.clone();
     tokio::spawn(async move {
         match services::scan_and_import_library(&s).await {
@@ -46,7 +50,7 @@ pub(super) async fn scan_import_library(state: &AppState) -> Result<(), String> 
 pub(super) async fn confirm_import(
     state: &AppState,
     items: Vec<yoink_shared::ImportConfirmation>,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let summary = services::confirm_import_library(state, items).await?;
     info!(
         total = summary.total_selected,
@@ -56,12 +60,12 @@ pub(super) async fn confirm_import(
         "Confirmed import completed"
     );
     if !summary.errors.is_empty() {
-        return Err(format!(
+        return Err(AppError::conflict(format!(
             "Imported {}/{} albums. Errors: {}",
             summary.imported,
             summary.total_selected,
             summary.errors.join("; ")
-        ));
+        )));
     }
     Ok(())
 }

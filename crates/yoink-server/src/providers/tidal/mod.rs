@@ -60,7 +60,7 @@ impl TidalProvider {
         &self,
         path: &str,
         query: Vec<(String, String)>,
-    ) -> Result<T, String> {
+    ) -> Result<T, ProviderError> {
         hifi_get_json(
             &self.http,
             self.manual_base_url.as_deref(),
@@ -96,7 +96,7 @@ impl MetadataProvider for TidalProvider {
         let parsed = self
             .hifi_get::<HifiResponse>("/search/", vec![("a".to_string(), query.to_string())])
             .await
-            .map_err(ProviderError::from)?;
+            ?;
 
         let artists = parsed
             .data
@@ -148,7 +148,7 @@ impl MetadataProvider for TidalProvider {
                 ],
             )
             .await
-            .map_err(ProviderError::from)?;
+            ?;
 
         Ok(response
             .albums
@@ -184,7 +184,7 @@ impl MetadataProvider for TidalProvider {
                 vec![("id".to_string(), external_album_id.to_string())],
             )
             .await
-            .map_err(ProviderError::from)?;
+            ?;
 
         let album_extra = response.data.extra;
         let tracks = response
@@ -298,7 +298,7 @@ impl MetadataProvider for TidalProvider {
         let parsed = self
             .hifi_get::<HifiResponse>("/search/", vec![("a".to_string(), query.to_string())])
             .await
-            .map_err(ProviderError::from)?;
+            ?;
 
         let albums = parsed.data.albums.map(|p| p.items).unwrap_or_default();
 
@@ -330,7 +330,7 @@ impl MetadataProvider for TidalProvider {
         let parsed = self
             .hifi_get::<HifiResponse>("/search/", vec![("a".to_string(), query.to_string())])
             .await
-            .map_err(ProviderError::from)?;
+            ?;
 
         let tracks = parsed.data.tracks.map(|p| p.items).unwrap_or_default();
 
@@ -388,7 +388,7 @@ impl DownloadSource for TidalProvider {
                 ],
             )
             .await
-            .map_err(ProviderError::from)?;
+            ?;
 
         match extract_download_payload(&playback.data) {
             Ok(payload) => Ok(payload),
@@ -414,11 +414,11 @@ impl DownloadSource for TidalProvider {
                         ],
                     )
                     .await
-                    .map_err(ProviderError::from)?;
+                    ?;
 
-                extract_download_payload(&fallback_playback.data).map_err(ProviderError::from)
+                extract_download_payload(&fallback_playback.data)
             }
-            Err(err) => Err(ProviderError::from(err)),
+            Err(err) => Err(err),
         }
     }
 }

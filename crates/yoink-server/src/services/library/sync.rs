@@ -4,7 +4,13 @@ use chrono::Utc;
 use tracing::info;
 use uuid::Uuid;
 
-use crate::{db, models::MonitoredAlbum, providers::ProviderAlbum, state::AppState};
+use crate::{
+    db,
+    error::{AppError, AppResult},
+    models::MonitoredAlbum,
+    providers::ProviderAlbum,
+    state::AppState,
+};
 
 /// Sync albums for an artist from all linked metadata providers.
 /// Groups incoming albums by identity key (title + year), merges all provider
@@ -14,7 +20,7 @@ use crate::{db, models::MonitoredAlbum, providers::ProviderAlbum, state::AppStat
 /// For unmonitored (lightweight) artists, this still syncs albums from providers
 /// but does NOT remove stale albums (albums that no longer appear from providers)
 /// since they may have been explicitly added by the user.
-pub(crate) async fn sync_artist_albums(state: &AppState, artist_id: Uuid) -> Result<(), String> {
+pub(crate) async fn sync_artist_albums(state: &AppState, artist_id: Uuid) -> AppResult<()> {
     let artist_monitored = {
         let artists = state.monitored_artists.read().await;
         artists
@@ -24,12 +30,13 @@ pub(crate) async fn sync_artist_albums(state: &AppState, artist_id: Uuid) -> Res
             .unwrap_or(true) // default to true for safety
     };
 
-    let links = db::load_artist_provider_links(&state.db, artist_id)
-        .await
-        .map_err(|e| format!("failed to load provider links: {e}"))?;
+    let links = db::load_artist_provider_links(&state.db, artist_id).await?;
 
     if links.is_empty() {
-        return Err("No provider links found for this artist".to_string());
+        return Err(AppError::not_found(
+            "artist provider links",
+            Some(artist_id.to_string()),
+        ));
     }
 
     // ── 1. Collect albums from all linked providers ──────────────────────
@@ -50,7 +57,7 @@ pub(crate) async fn sync_artist_albums(state: &AppState, artist_id: Uuid) -> Res
                 info!(
                     provider = %link.provider,
                     artist_id = %artist_id,
-                    error = %err.0,
+                    error = %err,
                     "Failed to fetch albums from provider"
                 );
             }
@@ -143,8 +150,7 @@ pub(crate) async fn sync_artist_albums(state: &AppState, artist_id: Uuid) -> Res
                     existing.artist_credits = credits.clone();
                 }
                 db::upsert_album(&state.db, existing)
-                    .await
-                    .map_err(|e| format!("failed to update existing album: {e}"))?;
+                    .await?;
             }
             existing_id
         } else {
@@ -169,8 +175,7 @@ pub(crate) async fn sync_artist_albums(state: &AppState, artist_id: Uuid) -> Res
                 added_at: Utc::now(),
             };
             db::upsert_album(&state.db, &album)
-                .await
-                .map_err(|e| format!("failed to persist new album: {e}"))?;
+                .await?;
             albums.push(album);
             new_id
         };
@@ -189,8 +194,7 @@ pub(crate) async fn sync_artist_albums(state: &AppState, artist_id: Uuid) -> Res
                 cover_ref: album.cover_ref.clone(),
             };
             db::upsert_album_provider_link(&state.db, &link)
-                .await
-                .map_err(|e| format!("failed to persist album provider link: {e}"))?;
+                .await?;
 
             // Collect extra artists from this provider (skip the artist we're syncing for)
             for pa in &album.artists {
@@ -216,8 +220,7 @@ pub(crate) async fn sync_artist_albums(state: &AppState, artist_id: Uuid) -> Res
                     album.artist_id = resolved_ids[0];
                 }
                 db::set_album_artists(&state.db, album_id, &resolved_ids)
-                    .await
-                    .map_err(|e| format!("failed to set album artists: {e}"))?;
+                    .await?;
             }
         }
     }
@@ -240,8 +243,7 @@ pub(crate) async fn sync_artist_albums(state: &AppState, artist_id: Uuid) -> Res
 
         for id in &ids_to_remove {
             db::delete_album(&state.db, *id)
-                .await
-                .map_err(|e| format!("failed to delete stale album: {e}"))?;
+                .await?;
         }
         albums.retain(|album| !ids_to_remove.contains(&album.id));
     }

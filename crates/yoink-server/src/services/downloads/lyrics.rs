@@ -4,7 +4,10 @@ use std::time::Duration;
 use lrclib_api_rs::{LRCLibAPI, types::GetLyricsResponse};
 use tokio::fs;
 
-use crate::state::AppState;
+use crate::{
+    error::{AppError, AppResult},
+    state::AppState,
+};
 
 pub(crate) struct LyricsBundle {
     pub(crate) embedded_text: Option<String>,
@@ -101,9 +104,12 @@ fn strip_lrc_timestamps(input: &str) -> String {
     out.join("\n")
 }
 
-pub(crate) async fn write_lrc_sidecar(audio_path: &Path, synced_lrc: &str) -> Result<(), String> {
+pub(crate) async fn write_lrc_sidecar(audio_path: &Path, synced_lrc: &str) -> AppResult<()> {
     let sidecar_path = audio_path.with_extension("lrc");
     fs::write(&sidecar_path, synced_lrc)
         .await
-        .map_err(|err| format!("failed writing sidecar {}: {err}", sidecar_path.display()))
+        .map_err(|err| {
+            AppError::filesystem("write lyrics sidecar", sidecar_path.display().to_string(), err)
+        })?;
+    Ok(())
 }

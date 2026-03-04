@@ -588,10 +588,7 @@ impl MetadataProvider for MusicBrainzProvider {
         self.fetch_wikipedia_extract(external_artist_id).await
     }
 
-    async fn search_albums(
-        &self,
-        query: &str,
-    ) -> Result<Vec<ProviderSearchAlbum>, ProviderError> {
+    async fn search_albums(&self, query: &str) -> Result<Vec<ProviderSearchAlbum>, ProviderError> {
         let lucene_query = ReleaseGroupSearchQuery::query_builder()
             .release_group(query)
             .build();

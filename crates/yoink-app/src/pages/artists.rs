@@ -15,8 +15,8 @@ use crate::components::toast::dispatch_with_toast;
 use crate::components::{ErrorPanel, MobileMenuButton, Sidebar};
 use crate::hooks::{set_page_title, use_sse_version};
 use crate::styles::{
-    BREADCRUMB_CURRENT, BREADCRUMB_LINK, BREADCRUMB_NAV, BREADCRUMB_SEP, BTN_PRIMARY, EMPTY,
-    GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, HEADER_BAR, MUTED, SELECT, btn_cls, cls,
+    BREADCRUMB_CURRENT, BREADCRUMB_LINK, BREADCRUMB_NAV, BREADCRUMB_SEP, BTN_PRIMARY, EMPTY, GLASS,
+    GLASS_BODY, GLASS_HEADER, GLASS_TITLE, HEADER_BAR, MUTED, SELECT, btn_cls, cls,
 };
 
 // ── Page-specific Tailwind class constants ──────────────────

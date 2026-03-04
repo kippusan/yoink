@@ -22,10 +22,7 @@ pub(crate) fn update_wanted(album: &mut MonitoredAlbum) {
 
 /// Recompute the `partially_wanted` flag for an album by checking its tracks.
 /// Call this after toggling individual track monitoring.
-pub(crate) async fn recompute_partially_wanted(
-    db: &sqlx::SqlitePool,
-    album: &mut MonitoredAlbum,
-) {
+pub(crate) async fn recompute_partially_wanted(db: &sqlx::SqlitePool, album: &mut MonitoredAlbum) {
     if album.monitored {
         // Fully monitored albums are never "partially" wanted
         album.partially_wanted = false;

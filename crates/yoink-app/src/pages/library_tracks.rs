@@ -5,8 +5,12 @@ use yoink_shared::{LibraryTrack, SearchTrackResult, ServerAction};
 use crate::components::toast::dispatch_with_toast_loading;
 use crate::components::{MobileMenuButton, Sidebar};
 use crate::hooks::set_page_title;
-use crate::styles::{BREADCRUMB_CURRENT, BREADCRUMB_LINK, BREADCRUMB_NAV, BREADCRUMB_SEP, HEADER_BAR};
-use crate::styles::{BTN_PRIMARY, EMPTY, GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, MUTED, SELECT, btn_cls, cls};
+use crate::styles::{
+    BREADCRUMB_CURRENT, BREADCRUMB_LINK, BREADCRUMB_NAV, BREADCRUMB_SEP, HEADER_BAR,
+};
+use crate::styles::{
+    BTN_PRIMARY, EMPTY, GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, MUTED, SELECT, btn_cls, cls,
+};
 
 const SEARCH_INPUT: &str = "py-2 px-3.5 border border-black/[.08] dark:border-white/10 rounded-lg font-inherit text-sm bg-white/60 dark:bg-zinc-800/60 backdrop-blur-[8px] text-zinc-900 dark:text-zinc-100 outline-none w-full max-w-[360px] transition-[border-color,box-shadow] duration-150 focus:border-blue-500 focus:shadow-[0_0_0_3px_rgba(59,130,246,.15)] dark:focus:shadow-[0_0_0_3px_rgba(59,130,246,.2)] placeholder:text-zinc-400 dark:placeholder:text-zinc-600";
 
@@ -64,8 +68,10 @@ pub fn LibraryTracksTab() -> impl IntoView {
     let (sort_key, set_sort_key) = signal("artist".to_string());
     let (filter_key, set_filter_key) = signal("all".to_string());
 
-    let search_result: Resource<Result<SearchTracksResult, ServerFnError>> =
-        Resource::new(move || query.get(), |q| async move { search_tracks_library(q).await });
+    let search_result: Resource<Result<SearchTracksResult, ServerFnError>> = Resource::new(
+        move || query.get(),
+        |q| async move { search_tracks_library(q).await },
+    );
 
     view! {
         <Transition fallback=move || view! { <div class="p-6 max-md:p-4"><div class=EMPTY>"Loading tracks..."</div></div> }>

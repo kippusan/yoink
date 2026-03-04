@@ -512,10 +512,7 @@ impl MetadataProvider for DeezerProvider {
         .map(|md5| format!("artist:{md5}"))
     }
 
-    async fn search_albums(
-        &self,
-        query: &str,
-    ) -> Result<Vec<ProviderSearchAlbum>, ProviderError> {
+    async fn search_albums(&self, query: &str) -> Result<Vec<ProviderSearchAlbum>, ProviderError> {
         let url = Self::api_url("/search/album", &[("q", query), ("limit", "25")]);
         let albums: DeezerList<DeezerSearchAlbum> = self.deezer_get(&url).await?;
 
@@ -552,10 +549,7 @@ impl MetadataProvider for DeezerProvider {
             .collect())
     }
 
-    async fn search_tracks(
-        &self,
-        query: &str,
-    ) -> Result<Vec<ProviderSearchTrack>, ProviderError> {
+    async fn search_tracks(&self, query: &str) -> Result<Vec<ProviderSearchTrack>, ProviderError> {
         let url = Self::api_url("/search/track", &[("q", query), ("limit", "25")]);
         let tracks: DeezerList<DeezerSearchTrack> = self.deezer_get(&url).await?;
 

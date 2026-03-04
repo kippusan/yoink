@@ -7,8 +7,8 @@ use uuid::Uuid;
 use crate::{db, services::downloads::sanitize_path_component, state::AppState};
 
 use super::{
-    album_dir_has_downloaded_audio, normalize_text, parse_release_year,
-    recompute_partially_wanted, update_wanted,
+    album_dir_has_downloaded_audio, normalize_text, parse_release_year, recompute_partially_wanted,
+    update_wanted,
 };
 
 pub(crate) async fn reconcile_library_files(state: &AppState) -> Result<usize, String> {
@@ -33,8 +33,7 @@ pub(crate) async fn reconcile_library_files(state: &AppState) -> Result<usize, S
             };
 
             if !file_exists {
-                let _ =
-                    db::update_track_flags(&state.db, track.id, track.monitored, false).await;
+                let _ = db::update_track_flags(&state.db, track.id, track.monitored, false).await;
                 track_changes += 1;
             }
         }

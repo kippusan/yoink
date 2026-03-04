@@ -637,12 +637,14 @@ fn build_fetch_library_tracks_fn(state: &AppState) -> yoink_shared::FetchLibrary
 
             Ok(rows
                 .into_iter()
-                .map(|(track, album_id, album_title, artist_id, artist_name)| yoink_shared::LibraryTrack {
-                    track,
-                    album_id,
-                    album_title,
-                    artist_id,
-                    artist_name,
+                .map(|(track, album_id, album_title, artist_id, artist_name)| {
+                    yoink_shared::LibraryTrack {
+                        track,
+                        album_id,
+                        album_title,
+                        artist_id,
+                        artist_name,
+                    }
                 })
                 .collect())
         })

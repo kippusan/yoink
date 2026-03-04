@@ -1,7 +1,7 @@
 services:
   yoink:
     build: .
-    # image: ghcr.io/flyinpancake/yoink:latest  # uncomment when published
+    image: ghcr.io/flyinpancake/yoink:main
     container_name: yoink
     restart: unless-stopped
     ports:

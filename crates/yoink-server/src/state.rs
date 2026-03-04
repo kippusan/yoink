@@ -8,8 +8,9 @@ use tracing::info;
 use crate::{
     db,
     models::{DownloadJob, MonitoredAlbum, MonitoredArtist},
-    providers::{Quality, registry::ProviderRegistry},
+    providers::registry::ProviderRegistry,
 };
+use yoink_shared::Quality;
 
 #[derive(Clone)]
 pub(crate) struct AppState {

@@ -8,6 +8,7 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 use async_trait::async_trait;
 use tokio::sync::RwLock;
 use tracing::warn;
+use yoink_shared::Quality;
 
 use self::{
     api::hifi_get_json,
@@ -17,7 +18,7 @@ use self::{
 };
 use super::{
     DownloadSource, DownloadTrackContext, MetadataProvider, PlaybackInfo, ProviderAlbum,
-    ProviderArtist, ProviderError, ProviderSearchAlbum, ProviderSearchTrack, ProviderTrack, Quality,
+    ProviderArtist, ProviderError, ProviderSearchAlbum, ProviderSearchTrack, ProviderTrack,
 };
 
 // ── TidalProvider ───────────────────────────────────────────────────
@@ -274,10 +275,7 @@ impl MetadataProvider for TidalProvider {
             .and_then(|a| a.picture.or(a.selected_album_cover_fallback))
     }
 
-    async fn search_albums(
-        &self,
-        query: &str,
-    ) -> Result<Vec<ProviderSearchAlbum>, ProviderError> {
+    async fn search_albums(&self, query: &str) -> Result<Vec<ProviderSearchAlbum>, ProviderError> {
         // The hifi API /search/ endpoint returns albums when queried.
         // We use the same endpoint but extract the albums section.
         let parsed = self
@@ -311,10 +309,7 @@ impl MetadataProvider for TidalProvider {
             .collect())
     }
 
-    async fn search_tracks(
-        &self,
-        query: &str,
-    ) -> Result<Vec<ProviderSearchTrack>, ProviderError> {
+    async fn search_tracks(&self, query: &str) -> Result<Vec<ProviderSearchTrack>, ProviderError> {
         let parsed = self
             .hifi_get::<HifiResponse>("/search/", vec![("a".to_string(), query.to_string())])
             .await

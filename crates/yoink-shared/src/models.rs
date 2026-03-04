@@ -2,6 +2,50 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+/// Normalized quality level, provider-agnostic.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Quality {
+    /// Hi-res lossless (up to FLAC 24-bit/192kHz).
+    HiRes,
+    /// Standard lossless (FLAC 16-bit/44.1kHz).
+    Lossless,
+    /// High-quality lossy (e.g. 320kbps MP3/AAC).
+    High,
+    /// Low-quality lossy (e.g. 96 ~ 128kbps MP3/AAC).
+    Low,
+}
+
+impl Quality {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Quality::Lossless => "LOSSLESS",
+            Quality::HiRes => "HI_RES_LOSSLESS",
+            Quality::High => "HIGH",
+            Quality::Low => "LOW",
+        }
+    }
+}
+
+impl std::fmt::Display for Quality {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for Quality {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.trim().to_ascii_uppercase().as_str() {
+            "HI_RES_LOSSLESS" | "HIRES_LOSSLESS" | "HI_RES" | "HIRES" => Ok(Quality::HiRes),
+            "LOSSLESS" => Ok(Quality::Lossless),
+            "HIGH" => Ok(Quality::High),
+            "LOW" => Ok(Quality::Low),
+            _ => Err(format!("Invalid quality string: {}", s)),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum DownloadStatus {
@@ -32,7 +76,7 @@ pub struct DownloadJob {
     pub album_title: String,
     pub artist_name: String,
     pub status: DownloadStatus,
-    pub quality: String,
+    pub quality: Quality,
     pub total_tracks: usize,
     pub completed_tracks: usize,
     pub error: Option<String>,
@@ -213,4 +257,26 @@ pub struct SearchTrackResult {
     pub album_title: String,
     pub album_external_id: String,
     pub album_cover_url: Option<String>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Quality;
+
+    #[test]
+    fn quality_env_parser_handles_aliases_and_fallback() {
+        let q: Quality = "hires".parse().expect("should parse");
+        assert_eq!(q, Quality::HiRes);
+
+        let q: Quality = "HI_RES_LOSSLESS".parse().expect("should parse");
+        assert_eq!(q, Quality::HiRes);
+
+        let q: Quality = "  lossless  "
+            .parse()
+            .expect("should parse with whitespace");
+        assert_eq!(q, Quality::Lossless);
+
+        let q: Result<Quality, String> = "definitely-not-a-quality".parse();
+        assert!(q.is_err())
+    }
 }

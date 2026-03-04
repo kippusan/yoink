@@ -318,7 +318,7 @@ fn AlbumDetailContent(
         .as_ref()
         .map(|j| (j.completed_tracks, j.total_tracks));
     let job_error = latest_job.as_ref().and_then(|j| j.error.clone());
-    let job_quality = latest_job.as_ref().map(|j| j.quality.clone());
+    let job_quality = latest_job.as_ref().map(|j| j.quality);
 
     let status_pill_class = match &job_status {
         Some(s) => status_class(s).to_string(),
@@ -589,7 +589,7 @@ fn AlbumDetailContent(
                         }}
                         <span class=status_pill_class>{status_pill_text}</span>
                         {match &job_quality {
-                            Some(q) => view! { <span class="pill d7-pill-muted">{q.clone()}</span> }.into_any(),
+                            Some(q) => view! { <span class="pill d7-pill-muted">{q.to_string()}</span> }.into_any(),
                             None => view! { <span></span> }.into_any(),
                         }}
                     </div>

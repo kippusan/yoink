@@ -206,8 +206,7 @@ async fn store_album_tracks(
         };
 
         let _ = db::upsert_track(&state.db, &track_info, album_id).await;
-        let _ =
-            db::upsert_track_provider_link(&state.db, track_info.id, provider, &ext_id).await;
+        let _ = db::upsert_track_provider_link(&state.db, track_info.id, provider, &ext_id).await;
     }
 
     Ok(())
@@ -716,9 +715,9 @@ pub(crate) async fn dispatch_action_impl(
                 if let Some(job) = jobs.iter_mut().find(|j| {
                     j.album_id == album_id && j.status == yoink_shared::DownloadStatus::Failed
                 }) {
-                    let previous_quality = job.quality.clone();
+                    let previous_quality = job.quality;
                     job.status = yoink_shared::DownloadStatus::Queued;
-                    job.quality = state.default_quality.as_str().to_string();
+                    job.quality = state.default_quality;
                     job.error = None;
                     job.updated_at = Utc::now();
                     let _ = db::update_job(&state.db, job).await;
@@ -988,8 +987,13 @@ pub(crate) async fn dispatch_action_impl(
             monitor_all,
         } => {
             // 1. Find or create lightweight (unmonitored) artist.
-            let artist_id =
-                find_or_create_lightweight_artist(&state, &provider, &artist_external_id, &artist_name).await?;
+            let artist_id = find_or_create_lightweight_artist(
+                &state,
+                &provider,
+                &artist_external_id,
+                &artist_name,
+            )
+            .await?;
 
             // 2. Fetch album metadata from the provider.
             let prov = state
@@ -1067,7 +1071,8 @@ pub(crate) async fn dispatch_action_impl(
             };
 
             // 4. Fetch and store tracks.
-            store_album_tracks(&state, &provider, &external_album_id, album_id, monitor_all).await?;
+            store_album_tracks(&state, &provider, &external_album_id, album_id, monitor_all)
+                .await?;
 
             // 5. If monitored, queue download.
             if monitor_all {
@@ -1092,8 +1097,13 @@ pub(crate) async fn dispatch_action_impl(
             artist_name,
         } => {
             // 1. Find or create lightweight (unmonitored) artist.
-            let artist_id =
-                find_or_create_lightweight_artist(&state, &provider, &artist_external_id, &artist_name).await?;
+            let artist_id = find_or_create_lightweight_artist(
+                &state,
+                &provider,
+                &artist_external_id,
+                &artist_name,
+            )
+            .await?;
 
             // 2. Fetch album metadata to create the parent album.
             let prov = state
@@ -1204,8 +1214,14 @@ pub(crate) async fn dispatch_action_impl(
         } => {
             // Update the track's monitored flag in DB
             let current_acquired = {
-                let tracks = db::load_tracks_for_album(&state.db, album_id).await.unwrap_or_default();
-                tracks.iter().find(|t| t.id == track_id).map(|t| t.acquired).unwrap_or(false)
+                let tracks = db::load_tracks_for_album(&state.db, album_id)
+                    .await
+                    .unwrap_or_default();
+                tracks
+                    .iter()
+                    .find(|t| t.id == track_id)
+                    .map(|t| t.acquired)
+                    .unwrap_or(false)
             };
             let _ = db::update_track_flags(&state.db, track_id, monitored, current_acquired).await;
 
@@ -1227,14 +1243,18 @@ pub(crate) async fn dispatch_action_impl(
             state.notify_sse();
         }
 
-        ServerAction::BulkToggleTrackMonitor { album_id, monitored } => {
+        ServerAction::BulkToggleTrackMonitor {
+            album_id,
+            monitored,
+        } => {
             // Update all tracks for the album
             let tracks = db::load_tracks_for_album(&state.db, album_id)
                 .await
                 .unwrap_or_default();
 
             for track in &tracks {
-                let _ = db::update_track_flags(&state.db, track.id, monitored, track.acquired).await;
+                let _ =
+                    db::update_track_flags(&state.db, track.id, monitored, track.acquired).await;
             }
 
             // Recompute the album's partially_wanted flag and potentially enqueue

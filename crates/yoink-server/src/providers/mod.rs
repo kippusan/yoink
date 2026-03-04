@@ -9,6 +9,7 @@ use std::path::PathBuf;
 
 use async_trait::async_trait;
 use serde_json::Value;
+use yoink_shared::Quality;
 
 // ── Shared helpers ──────────────────────────────────────────────────
 
@@ -179,45 +180,6 @@ pub(crate) struct DownloadTrackContext {
     pub duration_secs: Option<u32>,
 }
 
-// ── Quality ─────────────────────────────────────────────────────────
-
-/// Normalized quality level, provider-agnostic.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum Quality {
-    Lossless,
-    HiRes,
-}
-
-impl Quality {
-    pub fn as_str(&self) -> &str {
-        match self {
-            Quality::Lossless => "LOSSLESS",
-            Quality::HiRes => "HI_RES_LOSSLESS",
-        }
-    }
-
-    pub fn from_str_lossy(s: &str) -> Self {
-        Self::from_env_with_fallback(s).0
-    }
-
-    pub fn from_env_with_fallback(s: &str) -> (Self, bool) {
-        let upper = s.trim().to_ascii_uppercase();
-        match upper.as_str() {
-            "HI_RES_LOSSLESS" | "HI_RES_LOSLESS" | "HIRES_LOSSLESS" | "HI_RES" | "HIRES" => {
-                (Quality::HiRes, false)
-            }
-            "LOSSLESS" | "HIGH" | "LOW" => (Quality::Lossless, false),
-            _ => (Quality::Lossless, true),
-        }
-    }
-}
-
-impl std::fmt::Display for Quality {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
 // ── Traits ──────────────────────────────────────────────────────────
 
 /// Provides metadata: artist search, album listing, track listing, image URLs.
@@ -284,19 +246,13 @@ pub(crate) trait MetadataProvider: Send + Sync {
 
     /// Search for albums by query string.
     /// Default returns empty; providers can override.
-    async fn search_albums(
-        &self,
-        _query: &str,
-    ) -> Result<Vec<ProviderSearchAlbum>, ProviderError> {
+    async fn search_albums(&self, _query: &str) -> Result<Vec<ProviderSearchAlbum>, ProviderError> {
         Ok(vec![])
     }
 
     /// Search for tracks by query string.
     /// Default returns empty; providers can override.
-    async fn search_tracks(
-        &self,
-        _query: &str,
-    ) -> Result<Vec<ProviderSearchTrack>, ProviderError> {
+    async fn search_tracks(&self, _query: &str) -> Result<Vec<ProviderSearchTrack>, ProviderError> {
         Ok(vec![])
     }
 }
@@ -319,24 +275,4 @@ pub(crate) trait DownloadSource: Send + Sync {
         quality: &Quality,
         context: Option<&DownloadTrackContext>,
     ) -> Result<PlaybackInfo, ProviderError>;
-}
-
-#[cfg(test)]
-mod tests {
-    use super::Quality;
-
-    #[test]
-    fn quality_env_parser_handles_aliases_and_fallback() {
-        let (q, used_fallback) = Quality::from_env_with_fallback("hires");
-        assert_eq!(q, Quality::HiRes);
-        assert!(!used_fallback);
-
-        let (q, used_fallback) = Quality::from_env_with_fallback("high");
-        assert_eq!(q, Quality::Lossless);
-        assert!(!used_fallback);
-
-        let (q, used_fallback) = Quality::from_env_with_fallback("definitely-not-a-quality");
-        assert_eq!(q, Quality::Lossless);
-        assert!(used_fallback);
-    }
 }

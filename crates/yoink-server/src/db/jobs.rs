@@ -31,7 +31,11 @@ impl From<JobRow> for DownloadJob {
             album_title: r.album_title,
             artist_name: r.artist_name,
             status: parse_status(&r.status),
-            quality: r.quality,
+            quality: r
+                .quality
+                .to_string()
+                .parse()
+                .expect("expected valid quality"),
             total_tracks: r.total_tracks as usize,
             completed_tracks: r.completed_tracks as usize,
             error: r.error,
@@ -61,13 +65,14 @@ pub(crate) async fn load_jobs(pool: &SqlitePool) -> Result<Vec<DownloadJob>, sql
 
 pub(crate) async fn insert_job(pool: &SqlitePool, job: &DownloadJob) -> Result<Uuid, sqlx::Error> {
     let status = job.status.as_str();
+    let quality = job.quality.as_str();
     let total = job.total_tracks as i32;
     let completed = job.completed_tracks as i32;
     sqlx::query!(
         "INSERT INTO download_jobs (id, album_id, source, album_title, artist_name, status, quality,
                                     total_tracks, completed_tracks, error, created_at, updated_at)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
-        job.id, job.album_id, job.source, job.album_title, job.artist_name, status, job.quality,
+        job.id, job.album_id, job.source, job.album_title, job.artist_name, status, quality,
         total, completed, job.error, job.created_at, job.updated_at,
     )
     .execute(pool)

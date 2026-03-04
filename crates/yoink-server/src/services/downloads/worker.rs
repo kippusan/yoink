@@ -4,13 +4,13 @@ use chrono::Utc;
 use tokio::fs;
 use tokio::task::JoinSet;
 use tracing::{debug, info, warn};
+use yoink_shared::Quality;
 
 use crate::{
     db,
     models::{DownloadJob, DownloadStatus},
     providers::{
         DownloadSource, DownloadTrackContext, MetadataProvider, PlaybackInfo, ProviderTrack,
-        Quality,
     },
     state::AppState,
 };
@@ -22,7 +22,7 @@ use super::metadata::{
 };
 
 pub(crate) async fn download_album_job(state: &AppState, job: DownloadJob) -> Result<(), String> {
-    let requested_quality = Quality::from_str_lossy(&job.quality);
+    let requested_quality = job.quality;
 
     // Resolve the provider link for this album to find the external ID and provider
     let album_links = db::load_album_provider_links(&state.db, job.album_id)
@@ -121,8 +121,8 @@ pub(crate) async fn download_album_job(state: &AppState, job: DownloadJob) -> Re
                         return true;
                     }
                     // Fallback: match by disc + track number
-                    let pt_disc = super::metadata::extract_disc_number(&pt.extra, None)
-                        .unwrap_or(1);
+                    let pt_disc =
+                        super::metadata::extract_disc_number(&pt.extra, None).unwrap_or(1);
                     mt.disc_number == pt_disc && mt.track_number == pt.track_number
                 })
             })
@@ -193,7 +193,7 @@ pub(crate) async fn download_album_job(state: &AppState, job: DownloadJob) -> Re
 
         let state_clone = state.clone();
         let job_clone = job.clone();
-        let requested_quality_clone = requested_quality.clone();
+        let requested_quality_clone = requested_quality;
         let download_source_clone = Arc::clone(&download_source);
         let metadata_provider_clone = Arc::clone(&metadata_provider);
         let metadata_provider_id = metadata_provider.id().to_string();
@@ -249,7 +249,7 @@ pub(crate) async fn download_album_job(state: &AppState, job: DownloadJob) -> Re
 
                     let state_clone = state.clone();
                     let job_clone = job.clone();
-                    let requested_quality_clone = requested_quality.clone();
+                    let requested_quality_clone = requested_quality;
                     let download_source_clone = Arc::clone(&download_source);
                     let metadata_provider_clone = Arc::clone(&metadata_provider);
                     let metadata_provider_id = metadata_provider.id().to_string();

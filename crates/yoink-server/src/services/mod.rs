@@ -7,7 +7,7 @@ pub(crate) use downloads::{
     retag_existing_files,
 };
 pub(crate) use library::{
-    confirm_import_library, merge_albums, preview_import_library, reconcile_library_files,
-    recompute_partially_wanted, scan_and_import_library, sync_artist_albums, update_wanted,
+    confirm_import_library, merge_albums, preview_import_library, recompute_partially_wanted,
+    reconcile_library_files, scan_and_import_library, sync_artist_albums, update_wanted,
 };
 pub(crate) use matching::recompute_artist_match_suggestions;

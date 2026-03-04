@@ -57,7 +57,8 @@ pub(crate) async fn enqueue_album_download(state: &AppState, album: &MonitoredAl
         return;
     }
 
-    let requested_quality = state.default_quality.clone();
+    // TODO: In the future, we could allow user to override quality per-album or even per-track.
+    let requested_quality = state.default_quality;
 
     // Resolve artist name for denormalization
     let artist_name = {
@@ -106,7 +107,7 @@ pub(crate) async fn enqueue_album_download(state: &AppState, album: &MonitoredAl
         album_title: album.title.clone(),
         artist_name,
         status: DownloadStatus::Queued,
-        quality: requested_quality.as_str().to_string(),
+        quality: requested_quality,
         total_tracks: 0,
         completed_tracks: 0,
         error: None,
@@ -189,12 +190,9 @@ pub(crate) async fn download_worker_loop(state: AppState) {
                     } else {
                         // Partially wanted album: acquired only if every
                         // monitored track is now acquired.
-                        album.acquired = db::all_monitored_tracks_acquired(
-                            &state.db,
-                            album.id,
-                        )
-                        .await
-                        .unwrap_or(false);
+                        album.acquired = db::all_monitored_tracks_acquired(&state.db, album.id)
+                            .await
+                            .unwrap_or(false);
                     }
                     update_wanted(album);
                     recompute_partially_wanted(&state.db, album).await;

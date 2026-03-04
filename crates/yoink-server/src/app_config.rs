@@ -2,8 +2,7 @@ use std::path::PathBuf;
 
 use better_config::{EnvConfig, env};
 
-use crate::config::DEFAULT_QUALITY;
-use crate::providers::Quality;
+use yoink_shared::Quality;
 
 const DEFAULT_MUSIC_ROOT: &str = "./music";
 const DEFAULT_DATABASE_URL: &str = "sqlite:./yoink.db?mode=rwc";
@@ -58,7 +57,7 @@ struct RawAppConfig {
     pub(crate) music_root: String,
 
     #[conf(from = "DEFAULT_QUALITY", default = "LOSSLESS")]
-    default_quality: String,
+    default_quality: Quality,
 
     #[conf(from = "DATABASE_URL", default = "sqlite:./yoink.db?mode=rwc")]
     pub(crate) database_url: String,
@@ -90,7 +89,6 @@ pub(crate) struct AppConfig {
     pub(crate) slskd_downloads_dir: String,
     pub(crate) music_root: String,
     pub(crate) default_quality: Quality,
-    pub(crate) default_quality_used_fallback: bool,
     pub(crate) database_url: String,
     pub(crate) leptos_site_root: String,
     pub(crate) log_format: String,
@@ -120,9 +118,7 @@ impl AppConfig {
         let slskd_username = normalize_string_opt(&raw.slskd_username).unwrap_or_default();
         let slskd_password = normalize_string_opt(&raw.slskd_password).unwrap_or_default();
         let music_root = normalize_string(&raw.music_root, DEFAULT_MUSIC_ROOT);
-        let normalized_default_quality = normalize_string(&raw.default_quality, DEFAULT_QUALITY);
-        let (default_quality, default_quality_used_fallback) =
-            Quality::from_env_with_fallback(&normalized_default_quality);
+        let default_quality = raw.default_quality;
         let database_url = normalize_string(&raw.database_url, DEFAULT_DATABASE_URL);
         let leptos_site_root = normalize_string(&raw.leptos_site_root, DEFAULT_SITE_ROOT);
         let log_format = normalize_string(&raw.log_format, DEFAULT_LOG_FORMAT).to_ascii_lowercase();
@@ -140,7 +136,6 @@ impl AppConfig {
             slskd_downloads_dir,
             music_root,
             default_quality,
-            default_quality_used_fallback,
             database_url,
             leptos_site_root,
             log_format,
@@ -195,7 +190,6 @@ mod tests {
 
             assert_eq!(cfg.music_root, DEFAULT_MUSIC_ROOT);
             assert_eq!(cfg.default_quality, Quality::Lossless);
-            assert!(!cfg.default_quality_used_fallback);
         });
     }
 
@@ -207,7 +201,6 @@ mod tests {
             let cfg = AppConfig::from_raw(raw);
 
             assert_eq!(cfg.default_quality, Quality::Lossless);
-            assert!(cfg.default_quality_used_fallback);
         });
     }
 

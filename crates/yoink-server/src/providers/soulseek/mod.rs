@@ -9,7 +9,8 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::{RwLock, Semaphore};
 use tracing::{debug, warn};
 
-use super::{DownloadSource, DownloadTrackContext, PlaybackInfo, ProviderError, Quality};
+use super::{DownloadSource, DownloadTrackContext, PlaybackInfo, ProviderError};
+use yoink_shared::Quality;
 
 pub(crate) struct SoulSeekSource {
     http: reqwest::Client,
@@ -250,6 +251,7 @@ impl SoulSeekSource {
         queries.push(format!("{album} {artist}"));
         let quality_hint = match quality {
             Quality::HiRes | Quality::Lossless => "flac",
+            _ => "mp3",
         };
         queries.push(format!("{artist} {album} {quality_hint}"));
 
@@ -589,6 +591,13 @@ fn pick_best_candidate(
                         score -= 12;
                     }
                 }
+                Quality::High | Quality::Low => {
+                    if ext == "mp3" || ext == "ogg" || ext == "aac" {
+                        score += 6;
+                    } else {
+                        score -= 12;
+                    }
+                }
             }
 
             if let Some(bitrate) = file.bit_rate {
@@ -755,6 +764,13 @@ fn extension_quality_score(ext: &str, quality: &Quality) -> i32 {
             "m4a" | "alac" => 60,
             "wav" => 40,
             "aac" | "ogg" | "mp3" => 10,
+            _ => 0,
+        },
+        Quality::High | Quality::Low => match ext {
+            "mp3" | "ogg" | "aac" => 60,
+            "flac" => 30,
+            "m4a" | "alac" => 20,
+            "wav" => 10,
             _ => 0,
         },
     }

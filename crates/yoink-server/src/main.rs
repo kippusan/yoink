@@ -27,8 +27,8 @@ use crate::{
     config::QUALITY_WARNING,
     logging::init_logging,
     providers::{
-        Quality, deezer::DeezerProvider, musicbrainz::MusicBrainzProvider,
-        registry::ProviderRegistry, soulseek::SoulSeekSource, tidal::TidalProvider,
+        deezer::DeezerProvider, musicbrainz::MusicBrainzProvider, registry::ProviderRegistry,
+        soulseek::SoulSeekSource, tidal::TidalProvider,
     },
     routes::build_router,
     server_context::build_server_context,
@@ -37,6 +37,7 @@ use crate::{
 };
 
 use yoink_app::{App, shell::shell};
+use yoink_shared::Quality;
 
 #[tokio::main]
 async fn main() {
@@ -50,13 +51,7 @@ async fn main() {
     let _leptos_routes = leptos_axum::generate_route_list(App);
 
     let music_root = app_config.music_root_path();
-    let default_quality = app_config.default_quality.clone();
-    if app_config.default_quality_used_fallback {
-        warn!(
-            fallback_quality = %default_quality,
-            "Invalid DEFAULT_QUALITY, falling back to LOSSLESS"
-        );
-    }
+    let default_quality = app_config.default_quality;
 
     let quality_warning = if default_quality == Quality::Lossless {
         QUALITY_WARNING
@@ -71,7 +66,7 @@ async fn main() {
 
     let state = AppState::new(
         music_root.clone(),
-        default_quality.clone(),
+        default_quality,
         app_config.download_lyrics,
         app_config.download_max_parallel_tracks,
         &db_url,

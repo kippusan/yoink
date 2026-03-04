@@ -306,7 +306,7 @@ fn JobRow(
                 }}
             </td>
             <td>{artist_name}</td>
-            <td><span class="pill d7-pill-muted">{job.quality}</span></td>
+            <td><span class="pill d7-pill-muted">{job.quality.to_string()}</span></td>
             <td>{progress}</td>
             <td><span class=sc>{st_label}</span></td>
             <td class=MUTED>{updated}</td>

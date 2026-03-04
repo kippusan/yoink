@@ -22,7 +22,8 @@ use leptoaster::{ToastBuilder, ToastLevel, ToastPosition, expect_toaster};
 
 const ICON_BTN: &str = "inline-flex items-center justify-center size-7 border border-black/[.08] dark:border-white/10 rounded-lg bg-white/50 dark:bg-zinc-800/50 backdrop-blur-[8px] text-zinc-500 dark:text-zinc-400 cursor-pointer transition-all duration-150 p-0 font-inherit text-[13px] hover:bg-blue-500 hover:border-blue-500 hover:text-white hover:shadow-[0_2px_8px_rgba(59,130,246,.3)]";
 const TREE_ARTIST_HEADER: &str = "flex items-center gap-2 px-5 py-3 border-b border-black/[.04] dark:border-white/[.04] bg-blue-500/[.03] dark:bg-blue-500/[.05]";
-const TREE_ALBUM_ROW: &str = "flex items-center gap-3 px-5 py-3 border-b border-black/[.04] dark:border-white/[.04]";
+const TREE_ALBUM_ROW: &str =
+    "flex items-center gap-3 px-5 py-3 border-b border-black/[.04] dark:border-white/[.04]";
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct WantedAlbumWithTracks {
@@ -149,7 +150,13 @@ fn WantedContent(data: WantedData) -> impl IntoView {
     let total_tracks: usize = tree
         .iter()
         .flat_map(|a| a.albums.iter())
-        .map(|ag| if ag.album.monitored { 0 } else { ag.wanted_tracks.len() })
+        .map(|ag| {
+            if ag.album.monitored {
+                0
+            } else {
+                ag.wanted_tracks.len()
+            }
+        })
         .sum();
     let summary = if total_tracks > 0 {
         format!("{total_albums} albums · {total_tracks} tracks")
@@ -407,7 +414,10 @@ fn AlbumWantedRow(
 ) -> impl IntoView {
     let album = album_group.album;
     let album_title = album.title.clone();
-    let release_date = album.release_date.clone().unwrap_or_else(|| "—".to_string());
+    let release_date = album
+        .release_date
+        .clone()
+        .unwrap_or_else(|| "—".to_string());
     let cover_url = album_cover_url(&album, 120);
     let fallback_initial = album_title
         .chars()

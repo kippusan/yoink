@@ -77,7 +77,9 @@ pub(super) async fn accept_match_suggestion(
                 external_title: suggestion.external_name.clone(),
                 cover_ref: None,
             };
-            let _ = db::upsert_album_provider_link(&state.db, &link).await;
+            db::upsert_album_provider_link(&state.db, &link)
+                .await
+                .map_err(|e| format!("failed to persist album provider link: {e}"))?;
         }
         "artist" => {
             let artist_links =
@@ -143,15 +145,21 @@ pub(super) async fn accept_match_suggestion(
                 external_name: suggestion.external_name.clone(),
                 image_ref: None,
             };
-            let _ = db::upsert_artist_provider_link(&state.db, &link).await;
+            db::upsert_artist_provider_link(&state.db, &link)
+                .await
+                .map_err(|e| format!("failed to persist artist provider link: {e}"))?;
 
-            let _ = services::sync_artist_albums(state, suggestion.scope_id).await;
+            services::sync_artist_albums(state, suggestion.scope_id)
+                .await
+                .map_err(|e| format!("failed to sync artist albums: {e}"))?;
             helpers::spawn_recompute_artist_match_suggestions(state, suggestion.scope_id);
         }
         _ => return Err("unknown suggestion scope type".to_string()),
     }
 
-    let _ = db::set_match_suggestion_status(&state.db, suggestion_id, "accepted").await;
+    db::set_match_suggestion_status(&state.db, suggestion_id, "accepted")
+        .await
+        .map_err(|e| format!("failed to update match suggestion status: {e}"))?;
 
     if suggestion.scope_type == "album" {
         let artist_id = {
@@ -178,7 +186,9 @@ pub(super) async fn dismiss_match_suggestion(
         .await
         .ok()
         .flatten();
-    let _ = db::set_match_suggestion_status(&state.db, suggestion_id, "dismissed").await;
+    db::set_match_suggestion_status(&state.db, suggestion_id, "dismissed")
+        .await
+        .map_err(|e| format!("failed to update match suggestion status: {e}"))?;
 
     if let Some(suggestion) = scope
         && suggestion.scope_type == "album"
@@ -202,7 +212,9 @@ pub(super) async fn refresh_match_suggestions(
     state: &AppState,
     artist_id: Uuid,
 ) -> Result<(), String> {
-    let _ = services::recompute_artist_match_suggestions(state, artist_id).await;
+    services::recompute_artist_match_suggestions(state, artist_id)
+        .await
+        .map_err(|e| format!("failed to recompute match suggestions: {e}"))?;
     state.notify_sse();
     Ok(())
 }

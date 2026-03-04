@@ -3,7 +3,7 @@ use std::{path::PathBuf, sync::Arc};
 use chrono::Utc;
 use sqlx::SqlitePool;
 use tokio::sync::{Notify, RwLock, broadcast};
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::{
     db,
@@ -55,7 +55,9 @@ impl AppState {
             ) {
                 j.status = crate::models::DownloadStatus::Queued;
                 j.updated_at = Utc::now();
-                let _ = db::update_job(&pool, &j).await;
+                if let Err(e) = db::update_job(&pool, &j).await {
+                    warn!(job_id = %j.id, error = %e, "Failed to reset stale job to queued during startup");
+                }
                 reset_count += 1;
             }
             jobs_clean.push(j);

@@ -11,7 +11,7 @@ use std::path::PathBuf;
 
 use chrono::Utc;
 use tokio::fs;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use uuid::Uuid;
 
@@ -147,7 +147,9 @@ pub(crate) async fn download_worker_loop(state: AppState) {
             {
                 job.status = DownloadStatus::Resolving;
                 job.updated_at = Utc::now();
-                let _ = db::update_job(&state.db, job).await;
+                if let Err(e) = db::update_job(&state.db, job).await {
+                    warn!(job_id = %job.id, error = %e, "Failed to persist job resolving status");
+                }
                 Some(job.clone())
             } else {
                 None
@@ -174,7 +176,9 @@ pub(crate) async fn download_worker_loop(state: AppState) {
                         existing.status = DownloadStatus::Completed;
                         existing.error = None;
                         existing.updated_at = Utc::now();
-                        let _ = db::update_job(&state.db, existing).await;
+                        if let Err(e) = db::update_job(&state.db, existing).await {
+                            warn!(job_id = %job.id, error = %e, "Failed to persist job completed status");
+                        }
                     }
                 }
                 info!(
@@ -196,14 +200,17 @@ pub(crate) async fn download_worker_loop(state: AppState) {
                     }
                     update_wanted(album);
                     recompute_partially_wanted(&state.db, album).await;
-                    let _ = db::update_album_flags(
+                    if let Err(e) = db::update_album_flags(
                         &state.db,
                         album.id,
                         album.monitored,
                         album.acquired,
                         album.wanted,
                     )
-                    .await;
+                    .await
+                    {
+                        warn!(album_id = %album.id, error = %e, "Failed to persist album flags after download completion");
+                    }
                 }
                 state.notify_sse();
             }
@@ -215,7 +222,9 @@ pub(crate) async fn download_worker_loop(state: AppState) {
                         existing.status = DownloadStatus::Failed;
                         existing.error = Some(err.clone());
                         existing.updated_at = Utc::now();
-                        let _ = db::update_job(&state.db, existing).await;
+                        if let Err(e) = db::update_job(&state.db, existing).await {
+                            warn!(job_id = %job.id, error = %e, "Failed to persist job failed status");
+                        }
                     }
                 }
                 let mut albums = state.monitored_albums.write().await;
@@ -223,14 +232,17 @@ pub(crate) async fn download_worker_loop(state: AppState) {
                     album.acquired = false;
                     update_wanted(album);
                     recompute_partially_wanted(&state.db, album).await;
-                    let _ = db::update_album_flags(
+                    if let Err(e) = db::update_album_flags(
                         &state.db,
                         album.id,
                         album.monitored,
                         album.acquired,
                         album.wanted,
                     )
-                    .await;
+                    .await
+                    {
+                        warn!(album_id = %album.id, error = %e, "Failed to persist album flags after download failure");
+                    }
                 }
                 state.notify_sse();
             }

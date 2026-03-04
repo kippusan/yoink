@@ -232,14 +232,17 @@ fn build_fetch_tracks_fn(state: &AppState) -> yoink_shared::FetchTracksFn {
                                 acquired: false,
                             };
 
-                            let _ = db::upsert_track(&s.db, &track_info, album_id).await;
-                            let _ = db::upsert_track_provider_link(
+                            db::upsert_track(&s.db, &track_info, album_id)
+                                .await
+                                .map_err(|e| format!("failed to persist track: {e}"))?;
+                            db::upsert_track_provider_link(
                                 &s.db,
                                 local_track_id,
                                 &link.provider,
                                 &t.external_id,
                             )
-                            .await;
+                            .await
+                            .map_err(|e| format!("failed to persist track provider link: {e}"))?;
                         }
 
                         let persisted = db::load_tracks_for_album(&s.db, album_id)
@@ -469,7 +472,9 @@ fn build_fetch_artist_images_fn(state: &AppState) -> yoink_shared::FetchArtistIm
                     // Update the stored ref so other code paths use the fresh one
                     let mut updated_link = link.clone();
                     updated_link.image_ref = Some(image_ref);
-                    let _ = db::upsert_artist_provider_link(&s.db, &updated_link).await;
+                    if let Err(e) = db::upsert_artist_provider_link(&s.db, &updated_link).await {
+                        tracing::warn!(error = %e, "Failed to persist updated artist provider link image_ref");
+                    }
                     continue;
                 }
 

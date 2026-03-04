@@ -565,14 +565,19 @@ async fn process_track_download(
         monitored: existing_monitored,
         acquired: true, // Just downloaded — mark as acquired
     };
-    let _ = db::upsert_track(&state.db, &track_info, job.album_id).await;
-    let _ = db::upsert_track_provider_link(
+    if let Err(e) = db::upsert_track(&state.db, &track_info, job.album_id).await {
+        warn!(track_id = %local_track_id, error = %e, "Failed to persist downloaded track to DB");
+    }
+    if let Err(e) = db::upsert_track_provider_link(
         &state.db,
         local_track_id,
         &metadata_provider_id,
         &track.external_id,
     )
-    .await;
+    .await
+    {
+        warn!(track_id = %local_track_id, error = %e, "Failed to persist track provider link");
+    }
 
     Ok(())
 }
@@ -605,7 +610,9 @@ pub(crate) async fn update_job_progress(
         job.status = status;
         job.error = error;
         job.updated_at = Utc::now();
-        let _ = db::update_job(&state.db, job).await;
+        if let Err(e) = db::update_job(&state.db, job).await {
+            warn!(job_id = %job_id, error = %e, "Failed to persist job progress to DB");
+        }
         debug!(
             job_id = %job_id,
             album_id = %job.album_id,

@@ -327,14 +327,15 @@ pub(crate) async fn confirm_import_library(
                     album.acquired = true;
                 }
                 update_wanted(album);
-                let _ = db::update_album_flags(
+                db::update_album_flags(
                     &state.db,
                     album.id,
                     album.monitored,
                     album.acquired,
                     album.wanted,
                 )
-                .await;
+                .await
+                .map_err(|e| format!("failed to update album flags: {e}"))?;
                 imported += 1;
             } else {
                 errors.push(format!(
@@ -483,7 +484,9 @@ async fn ensure_monitored_artist(
         monitored: true, // Imported artists are fully monitored
         added_at: Utc::now(),
     };
-    let _ = db::upsert_artist(&state.db, &monitored).await;
+    db::upsert_artist(&state.db, &monitored)
+        .await
+        .map_err(|e| format!("failed to persist artist: {e}"))?;
 
     let link = db::ArtistProviderLink {
         id: Uuid::now_v7(),
@@ -494,7 +497,9 @@ async fn ensure_monitored_artist(
         external_name: Some(artist.name),
         image_ref: artist.image_ref,
     };
-    let _ = db::upsert_artist_provider_link(&state.db, &link).await;
+    db::upsert_artist_provider_link(&state.db, &link)
+        .await
+        .map_err(|e| format!("failed to persist artist provider link: {e}"))?;
 
     {
         let mut artists = state.monitored_artists.write().await;
@@ -551,14 +556,15 @@ async fn import_local_album(
     }
     update_wanted(album);
     if changed {
-        let _ = db::update_album_flags(
+        db::update_album_flags(
             &state.db,
             album.id,
             album.monitored,
             album.acquired,
             album.wanted,
         )
-        .await;
+        .await
+        .map_err(|e| format!("failed to update album flags: {e}"))?;
     }
     Ok(changed)
 }

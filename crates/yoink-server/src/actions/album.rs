@@ -17,14 +17,15 @@ pub(super) async fn toggle_album_monitor(
         if let Some(album) = albums.iter_mut().find(|a| a.id == album_id) {
             album.monitored = monitored;
             services::update_wanted(album);
-            let _ = db::update_album_flags(
+            db::update_album_flags(
                 &state.db,
                 album.id,
                 album.monitored,
                 album.acquired,
                 album.wanted,
             )
-            .await;
+            .await
+            .map_err(|e| format!("failed to update album flags: {e}"))?;
             if album.monitored && !album.acquired {
                 album_to_queue = Some(album.clone());
             }
@@ -51,14 +52,15 @@ pub(super) async fn bulk_monitor(
         {
             album.monitored = monitored;
             services::update_wanted(album);
-            let _ = db::update_album_flags(
+            db::update_album_flags(
                 &state.db,
                 album.id,
                 album.monitored,
                 album.acquired,
                 album.wanted,
             )
-            .await;
+            .await
+            .map_err(|e| format!("failed to update album flags: {e}"))?;
             if album.monitored && !album.acquired {
                 to_queue.push(album.clone());
             }
@@ -123,14 +125,15 @@ pub(super) async fn remove_album_files(
                 existing.monitored = false;
             }
             services::update_wanted(existing);
-            let _ = db::update_album_flags(
+            db::update_album_flags(
                 &state.db,
                 existing.id,
                 existing.monitored,
                 existing.acquired,
                 existing.wanted,
             )
-            .await;
+            .await
+            .map_err(|e| format!("failed to update album flags: {e}"))?;
             if existing.monitored {
                 to_queue = Some(existing.clone());
             }
@@ -150,7 +153,9 @@ pub(super) async fn remove_album_files(
         });
     }
     for job_id in removed_completed_ids {
-        let _ = db::delete_job(&state.db, job_id).await;
+        db::delete_job(&state.db, job_id)
+            .await
+            .map_err(|e| format!("failed to delete completed job: {e}"))?;
     }
 
     if let Some(album) = to_queue {
@@ -209,7 +214,9 @@ pub(super) async fn remove_album_artist(
             if album.artist_id == artist_id && !album.artist_ids.is_empty() {
                 album.artist_id = album.artist_ids[0];
                 // Update the legacy column
-                let _ = db::upsert_album(&state.db, album).await;
+                db::upsert_album(&state.db, album)
+                    .await
+                    .map_err(|e| format!("failed to update album primary artist: {e}"))?;
             }
         }
     }
@@ -288,7 +295,9 @@ pub(super) async fn add_album(
             partially_wanted: false,
             added_at: Utc::now(),
         };
-        let _ = db::upsert_album(&state.db, &album).await;
+        db::upsert_album(&state.db, &album)
+            .await
+            .map_err(|e| format!("failed to persist album: {e}"))?;
 
         let link = db::AlbumProviderLink {
             id: Uuid::now_v7(),
@@ -299,8 +308,12 @@ pub(super) async fn add_album(
             external_title: Some(prov_album.title.clone()),
             cover_ref: prov_album.cover_ref.clone(),
         };
-        let _ = db::upsert_album_provider_link(&state.db, &link).await;
-        let _ = db::add_album_artist(&state.db, new_id, artist_id).await;
+        db::upsert_album_provider_link(&state.db, &link)
+            .await
+            .map_err(|e| format!("failed to persist album provider link: {e}"))?;
+        db::add_album_artist(&state.db, new_id, artist_id)
+            .await
+            .map_err(|e| format!("failed to persist album artist link: {e}"))?;
 
         {
             let mut albums = state.monitored_albums.write().await;

@@ -36,7 +36,9 @@ pub(crate) async fn recompute_artist_match_suggestions(
         .await
         .map_err(|e| format!("failed to load artist provider links: {e}"))?;
 
-    let _ = db::clear_pending_match_suggestions(&state.db, "artist", artist_id).await;
+    db::clear_pending_match_suggestions(&state.db, "artist", artist_id)
+        .await
+        .map_err(|e| format!("failed to clear pending artist match suggestions: {e}"))?;
 
     recompute_artist_level_suggestions(state, artist_id, &artist_name, &artist_links).await?;
 
@@ -112,7 +114,9 @@ async fn recompute_artist_level_suggestions(
             updated_at: now,
         };
 
-        let _ = db::upsert_match_suggestion(&state.db, &suggestion).await;
+        db::upsert_match_suggestion(&state.db, &suggestion)
+            .await
+            .map_err(|e| format!("failed to persist artist match suggestion: {e}"))?;
     }
 
     Ok(())
@@ -127,7 +131,9 @@ async fn recompute_album_match_suggestions(
         .await
         .map_err(|e| format!("failed to load album provider links: {e}"))?;
 
-    let _ = db::clear_pending_match_suggestions(&state.db, "album", album.id).await;
+    db::clear_pending_match_suggestions(&state.db, "album", album.id)
+        .await
+        .map_err(|e| format!("failed to clear pending album match suggestions: {e}"))?;
 
     if existing_links.is_empty() {
         return Ok(());
@@ -246,7 +252,9 @@ async fn recompute_album_match_suggestions(
             updated_at: now,
         };
 
-        let _ = db::upsert_match_suggestion(&state.db, &suggestion).await;
+        db::upsert_match_suggestion(&state.db, &suggestion)
+            .await
+            .map_err(|e| format!("failed to persist album match suggestion: {e}"))?;
     }
 
     Ok(())

@@ -77,7 +77,9 @@ pub(super) async fn add_track(
             partially_wanted: true, // will have a monitored track
             added_at: Utc::now(),
         };
-        let _ = db::upsert_album(&state.db, &album).await;
+        db::upsert_album(&state.db, &album)
+            .await
+            .map_err(|e| format!("failed to persist album: {e}"))?;
 
         let link = db::AlbumProviderLink {
             id: Uuid::now_v7(),
@@ -88,8 +90,12 @@ pub(super) async fn add_track(
             external_title: Some(prov_album.title.clone()),
             cover_ref: prov_album.cover_ref.clone(),
         };
-        let _ = db::upsert_album_provider_link(&state.db, &link).await;
-        let _ = db::add_album_artist(&state.db, new_id, artist_id).await;
+        db::upsert_album_provider_link(&state.db, &link)
+            .await
+            .map_err(|e| format!("failed to persist album provider link: {e}"))?;
+        db::add_album_artist(&state.db, new_id, artist_id)
+            .await
+            .map_err(|e| format!("failed to persist album artist link: {e}"))?;
 
         {
             let mut albums = state.monitored_albums.write().await;
@@ -105,7 +111,9 @@ pub(super) async fn add_track(
     if let Ok(Some(track_id)) =
         db::find_track_by_provider_link(&state.db, &provider, &external_track_id).await
     {
-        let _ = db::update_track_flags(&state.db, track_id, true, false).await;
+        db::update_track_flags(&state.db, track_id, true, false)
+            .await
+            .map_err(|e| format!("failed to update track flags: {e}"))?;
 
         // Recompute partially_wanted
         {
@@ -143,7 +151,9 @@ pub(super) async fn toggle_track_monitor(
             .map(|t| t.acquired)
             .unwrap_or(false)
     };
-    let _ = db::update_track_flags(&state.db, track_id, monitored, current_acquired).await;
+    db::update_track_flags(&state.db, track_id, monitored, current_acquired)
+        .await
+        .map_err(|e| format!("failed to update track flags: {e}"))?;
 
     // Recompute the album's partially_wanted flag
     {
@@ -175,7 +185,9 @@ pub(super) async fn bulk_toggle_track_monitor(
         .unwrap_or_default();
 
     for track in &tracks {
-        let _ = db::update_track_flags(&state.db, track.id, monitored, track.acquired).await;
+        db::update_track_flags(&state.db, track.id, monitored, track.acquired)
+            .await
+            .map_err(|e| format!("failed to update track flags: {e}"))?;
     }
 
     // Recompute the album's partially_wanted flag and potentially enqueue

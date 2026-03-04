@@ -52,13 +52,15 @@ pub(crate) async fn merge_albums(
             external_title: link.external_title,
             cover_ref: link.cover_ref,
         };
-        let _ = db::upsert_album_provider_link(&state.db, &moved).await;
+        db::upsert_album_provider_link(&state.db, &moved)
+            .await
+            .map_err(|e| format!("failed to move album provider link: {e}"))?;
     }
 
-    let _ = db::reassign_tracks_to_album(&state.db, source_album_id, target_album_id)
+    db::reassign_tracks_to_album(&state.db, source_album_id, target_album_id)
         .await
         .map_err(|e| format!("failed reassigning tracks: {e}"))?;
-    let _ = db::reassign_jobs_to_album(&state.db, source_album_id, target_album_id)
+    db::reassign_jobs_to_album(&state.db, source_album_id, target_album_id)
         .await
         .map_err(|e| format!("failed reassigning jobs: {e}"))?;
 
@@ -76,7 +78,9 @@ pub(crate) async fn merge_albums(
                 target.cover_url = Some(cover.to_string());
             }
 
-            let _ = db::upsert_album(&state.db, target).await;
+            db::upsert_album(&state.db, target)
+                .await
+                .map_err(|e| format!("failed to persist merged album: {e}"))?;
         }
         albums.retain(|a| a.id != source_album_id);
     }

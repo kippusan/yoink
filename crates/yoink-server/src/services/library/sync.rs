@@ -142,7 +142,9 @@ pub(crate) async fn sync_artist_albums(state: &AppState, artist_id: Uuid) -> Res
                 if !credits.is_empty() {
                     existing.artist_credits = credits.clone();
                 }
-                let _ = db::upsert_album(&state.db, existing).await;
+                db::upsert_album(&state.db, existing)
+                    .await
+                    .map_err(|e| format!("failed to update existing album: {e}"))?;
             }
             existing_id
         } else {
@@ -166,7 +168,9 @@ pub(crate) async fn sync_artist_albums(state: &AppState, artist_id: Uuid) -> Res
                 partially_wanted: false,
                 added_at: Utc::now(),
             };
-            let _ = db::upsert_album(&state.db, &album).await;
+            db::upsert_album(&state.db, &album)
+                .await
+                .map_err(|e| format!("failed to persist new album: {e}"))?;
             albums.push(album);
             new_id
         };
@@ -184,7 +188,9 @@ pub(crate) async fn sync_artist_albums(state: &AppState, artist_id: Uuid) -> Res
                 external_title: Some(album.title.clone()),
                 cover_ref: album.cover_ref.clone(),
             };
-            let _ = db::upsert_album_provider_link(&state.db, &link).await;
+            db::upsert_album_provider_link(&state.db, &link)
+                .await
+                .map_err(|e| format!("failed to persist album provider link: {e}"))?;
 
             // Collect extra artists from this provider (skip the artist we're syncing for)
             for pa in &album.artists {
@@ -209,7 +215,9 @@ pub(crate) async fn sync_artist_albums(state: &AppState, artist_id: Uuid) -> Res
                     album.artist_ids = resolved_ids.clone();
                     album.artist_id = resolved_ids[0];
                 }
-                let _ = db::set_album_artists(&state.db, album_id, &resolved_ids).await;
+                db::set_album_artists(&state.db, album_id, &resolved_ids)
+                    .await
+                    .map_err(|e| format!("failed to set album artists: {e}"))?;
             }
         }
     }
@@ -231,7 +239,9 @@ pub(crate) async fn sync_artist_albums(state: &AppState, artist_id: Uuid) -> Res
         }
 
         for id in &ids_to_remove {
-            let _ = db::delete_album(&state.db, *id).await;
+            db::delete_album(&state.db, *id)
+                .await
+                .map_err(|e| format!("failed to delete stale album: {e}"))?;
         }
         albums.retain(|album| !ids_to_remove.contains(&album.id));
     }

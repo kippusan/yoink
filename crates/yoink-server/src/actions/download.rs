@@ -12,7 +12,9 @@ pub(super) async fn cancel_download(state: &AppState, job_id: Uuid) -> Result<()
         job.status = yoink_shared::DownloadStatus::Failed;
         job.error = Some("Cancelled by user".to_string());
         job.updated_at = Utc::now();
-        let _ = db::update_job(&state.db, job).await;
+        db::update_job(&state.db, job)
+            .await
+            .map_err(|e| format!("failed to persist job cancellation: {e}"))?;
         info!(%job_id, "Cancelled download job");
     }
     drop(jobs);
@@ -21,7 +23,9 @@ pub(super) async fn cancel_download(state: &AppState, job_id: Uuid) -> Result<()
 }
 
 pub(super) async fn clear_completed(state: &AppState) -> Result<(), String> {
-    let _ = db::delete_completed_jobs(&state.db).await;
+    db::delete_completed_jobs(&state.db)
+        .await
+        .map_err(|e| format!("failed to delete completed jobs: {e}"))?;
     {
         let mut jobs = state.download_jobs.write().await;
         jobs.retain(|j| j.status != yoink_shared::DownloadStatus::Completed);
@@ -42,7 +46,9 @@ pub(super) async fn retry_download(state: &AppState, album_id: Uuid) -> Result<(
             job.quality = state.default_quality;
             job.error = None;
             job.updated_at = Utc::now();
-            let _ = db::update_job(&state.db, job).await;
+            db::update_job(&state.db, job)
+                .await
+                .map_err(|e| format!("failed to persist job retry: {e}"))?;
             info!(
                 %album_id,
                 job_id = %job.id,

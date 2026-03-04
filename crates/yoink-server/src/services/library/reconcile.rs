@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use tokio::fs;
-use tracing::info;
+use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::{db, services::downloads::sanitize_path_component, state::AppState};
@@ -33,7 +33,11 @@ pub(crate) async fn reconcile_library_files(state: &AppState) -> Result<usize, S
             };
 
             if !file_exists {
-                let _ = db::update_track_flags(&state.db, track.id, track.monitored, false).await;
+                if let Err(e) =
+                    db::update_track_flags(&state.db, track.id, track.monitored, false).await
+                {
+                    warn!(track_id = %track.id, error = %e, "Failed to clear acquired flag for missing track");
+                }
                 track_changes += 1;
             }
         }
@@ -121,14 +125,15 @@ pub(crate) async fn reconcile_library_files(state: &AppState) -> Result<usize, S
             album.acquired = false;
             update_wanted(album);
             recompute_partially_wanted(&state.db, album).await;
-            let _ = db::update_album_flags(
+            db::update_album_flags(
                 &state.db,
                 album.id,
                 album.monitored,
                 album.acquired,
                 album.wanted,
             )
-            .await;
+            .await
+            .map_err(|e| format!("failed to update album flags during reconciliation: {e}"))?;
             changed += 1;
         }
     }

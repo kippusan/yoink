@@ -134,7 +134,9 @@ pub(super) async fn find_or_create_lightweight_artist(
         monitored: false, // lightweight — no auto-sync
         added_at: Utc::now(),
     };
-    let _ = db::upsert_artist(&state.db, &artist).await;
+    db::upsert_artist(&state.db, &artist)
+        .await
+        .map_err(|e| format!("failed to persist lightweight artist: {e}"))?;
     {
         let mut artists = state.monitored_artists.write().await;
         artists.push(artist);
@@ -149,7 +151,9 @@ pub(super) async fn find_or_create_lightweight_artist(
         external_name: Some(artist_name.to_string()),
         image_ref: None,
     };
-    let _ = db::upsert_artist_provider_link(&state.db, &link).await;
+    db::upsert_artist_provider_link(&state.db, &link)
+        .await
+        .map_err(|e| format!("failed to persist artist provider link: {e}"))?;
 
     Ok(new_id)
 }
@@ -205,8 +209,12 @@ pub(super) async fn store_album_tracks(
             acquired: false,
         };
 
-        let _ = db::upsert_track(&state.db, &track_info, album_id).await;
-        let _ = db::upsert_track_provider_link(&state.db, track_info.id, provider, &ext_id).await;
+        db::upsert_track(&state.db, &track_info, album_id)
+            .await
+            .map_err(|e| format!("failed to persist track '{}': {e}", track_info.title))?;
+        db::upsert_track_provider_link(&state.db, track_info.id, provider, &ext_id)
+            .await
+            .map_err(|e| format!("failed to persist track provider link: {e}"))?;
     }
 
     Ok(())

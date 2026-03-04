@@ -66,3 +66,66 @@ pub(super) async fn retry_download(state: &AppState, album_id: Uuid) -> Result<(
     state.notify_sse();
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::models::DownloadStatus;
+    use crate::test_helpers::*;
+
+    #[tokio::test]
+    async fn cancel_download_marks_job_failed() {
+        let (state, _tmp) = test_app_state().await;
+        let artist = seed_artist(&state.db, "Artist").await;
+        let album = seed_album(&state.db, artist.id, "Album").await;
+        let job = seed_job(&state.db, album.id, DownloadStatus::Queued).await;
+
+        state.download_jobs.write().await.push(job.clone());
+
+        super::cancel_download(&state, job.id).await.unwrap();
+
+        let jobs = state.download_jobs.read().await;
+        let j = jobs.iter().find(|j| j.id == job.id).unwrap();
+        assert!(matches!(j.status, DownloadStatus::Failed));
+        assert_eq!(j.error.as_deref(), Some("Cancelled by user"));
+    }
+
+    #[tokio::test]
+    async fn cancel_download_ignores_non_queued() {
+        let (state, _tmp) = test_app_state().await;
+        let artist = seed_artist(&state.db, "Artist").await;
+        let album = seed_album(&state.db, artist.id, "Album").await;
+        let job = seed_job(&state.db, album.id, DownloadStatus::Downloading).await;
+
+        state.download_jobs.write().await.push(job.clone());
+
+        super::cancel_download(&state, job.id).await.unwrap();
+
+        let jobs = state.download_jobs.read().await;
+        let j = jobs.iter().find(|j| j.id == job.id).unwrap();
+        assert!(matches!(j.status, DownloadStatus::Downloading));
+    }
+
+    #[tokio::test]
+    async fn clear_completed_removes_only_completed_jobs() {
+        let (state, _tmp) = test_app_state().await;
+        let artist = seed_artist(&state.db, "Artist").await;
+        let album = seed_album(&state.db, artist.id, "Album").await;
+
+        let j1 = seed_job(&state.db, album.id, DownloadStatus::Completed).await;
+        let j2 = seed_job(&state.db, album.id, DownloadStatus::Queued).await;
+        let j3 = seed_job(&state.db, album.id, DownloadStatus::Completed).await;
+
+        {
+            let mut jobs = state.download_jobs.write().await;
+            jobs.push(j1);
+            jobs.push(j2.clone());
+            jobs.push(j3);
+        }
+
+        super::clear_completed(&state).await.unwrap();
+
+        let jobs = state.download_jobs.read().await;
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].id, j2.id);
+    }
+}

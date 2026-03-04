@@ -328,3 +328,286 @@ pub(super) async fn add_album(
     state.notify_sse();
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use crate::db;
+    use crate::providers::registry::ProviderRegistry;
+    use crate::providers::{ProviderAlbum, ProviderAlbumArtist, ProviderTrack};
+    use crate::test_helpers::*;
+
+    // ── ToggleAlbumMonitor ──────────────────────────────────────
+
+    #[tokio::test]
+    async fn toggle_album_monitor_sets_flags() {
+        let (state, _tmp) = test_app_state().await;
+        let artist = seed_artist(&state.db, "Artist").await;
+        let album = seed_album(&state.db, artist.id, "Album").await;
+
+        state.monitored_artists.write().await.push(artist.clone());
+        state.monitored_albums.write().await.push(album.clone());
+
+        super::toggle_album_monitor(&state, album.id, false)
+            .await
+            .unwrap();
+
+        let albums = state.monitored_albums.read().await;
+        let a = albums.iter().find(|a| a.id == album.id).unwrap();
+        assert!(!a.monitored);
+        assert!(!a.wanted);
+    }
+
+    #[tokio::test]
+    async fn toggle_album_monitor_enqueues_download_when_monitored() {
+        let (state, _tmp) = test_app_state().await;
+        let artist = seed_artist(&state.db, "Artist").await;
+        let mut album = seed_album(&state.db, artist.id, "Album").await;
+        album.monitored = false;
+        album.wanted = false;
+        album.acquired = false;
+        db::upsert_album(&state.db, &album).await.unwrap();
+
+        state.monitored_artists.write().await.push(artist.clone());
+        state.monitored_albums.write().await.push(album.clone());
+
+        super::toggle_album_monitor(&state, album.id, true)
+            .await
+            .unwrap();
+
+        let albums = state.monitored_albums.read().await;
+        let a = albums.iter().find(|a| a.id == album.id).unwrap();
+        assert!(a.monitored);
+
+        let jobs = state.download_jobs.read().await;
+        assert!(
+            jobs.iter().any(|j| j.album_id == album.id),
+            "should have enqueued a download job"
+        );
+    }
+
+    // ── BulkMonitor ─────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn bulk_monitor_toggles_all_albums_for_artist() {
+        let (state, _tmp) = test_app_state().await;
+        let artist = seed_artist(&state.db, "Artist").await;
+        let a1 = seed_album(&state.db, artist.id, "Album 1").await;
+        let a2 = seed_album(&state.db, artist.id, "Album 2").await;
+
+        state.monitored_artists.write().await.push(artist.clone());
+        {
+            let mut albums = state.monitored_albums.write().await;
+            albums.push(a1.clone());
+            albums.push(a2.clone());
+        }
+
+        super::bulk_monitor(&state, artist.id, false)
+            .await
+            .unwrap();
+
+        let albums = state.monitored_albums.read().await;
+        assert!(albums.iter().all(|a| !a.monitored));
+    }
+
+    // ── AddAlbumArtist / RemoveAlbumArtist ──────────────────────
+
+    #[tokio::test]
+    async fn add_and_remove_album_artist() {
+        let (state, _tmp) = test_app_state().await;
+        let a1 = seed_artist(&state.db, "Artist 1").await;
+        let a2 = seed_artist(&state.db, "Artist 2").await;
+        let album = seed_album(&state.db, a1.id, "Album").await;
+
+        state.monitored_artists.write().await.push(a1.clone());
+        state.monitored_artists.write().await.push(a2.clone());
+        state.monitored_albums.write().await.push(album.clone());
+
+        super::add_album_artist(&state, album.id, a2.id)
+            .await
+            .unwrap();
+
+        {
+            let albums = state.monitored_albums.read().await;
+            let a = albums.iter().find(|a| a.id == album.id).unwrap();
+            assert_eq!(a.artist_ids.len(), 2);
+            assert!(a.artist_ids.contains(&a2.id));
+        }
+
+        super::remove_album_artist(&state, album.id, a1.id)
+            .await
+            .unwrap();
+
+        {
+            let albums = state.monitored_albums.read().await;
+            let a = albums.iter().find(|a| a.id == album.id).unwrap();
+            assert_eq!(a.artist_ids, vec![a2.id]);
+            assert_eq!(a.artist_id, a2.id);
+        }
+    }
+
+    #[tokio::test]
+    async fn remove_sole_album_artist_returns_error() {
+        let (state, _tmp) = test_app_state().await;
+        let a1 = seed_artist(&state.db, "Solo").await;
+        let album = seed_album(&state.db, a1.id, "Album").await;
+
+        state.monitored_albums.write().await.push(album.clone());
+
+        let result = super::remove_album_artist(&state, album.id, a1.id).await;
+
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .contains("Cannot remove the only artist"));
+    }
+
+    // ── MergeAlbums ─────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn merge_albums_combines_tracks_and_links() {
+        let (state, _tmp) = test_app_state().await;
+        let artist = seed_artist(&state.db, "Artist").await;
+        let target = seed_album(&state.db, artist.id, "Target Album").await;
+        let source = seed_album(&state.db, artist.id, "Source Album").await;
+        seed_tracks(&state.db, target.id, 2).await;
+        seed_tracks(&state.db, source.id, 3).await;
+        seed_album_provider_link(&state.db, source.id, "tidal", "SRC1").await;
+
+        state.monitored_artists.write().await.push(artist.clone());
+        {
+            let mut albums = state.monitored_albums.write().await;
+            albums.push(target.clone());
+            albums.push(source.clone());
+        }
+
+        super::merge_albums(
+            &state,
+            target.id,
+            source.id,
+            Some("Merged Album".to_string()),
+            None,
+        )
+        .await
+        .unwrap();
+
+        let albums = state.monitored_albums.read().await;
+        assert_eq!(albums.len(), 1);
+        assert_eq!(albums[0].id, target.id);
+        assert_eq!(albums[0].title, "Merged Album");
+
+        let tracks = db::load_tracks_for_album(&state.db, target.id)
+            .await
+            .unwrap();
+        assert_eq!(tracks.len(), 5);
+
+        let links = db::load_album_provider_links(&state.db, target.id)
+            .await
+            .unwrap();
+        assert!(links.iter().any(|l| l.external_id == "SRC1"));
+    }
+
+    #[tokio::test]
+    async fn merge_albums_same_id_returns_error() {
+        let (state, _tmp) = test_app_state().await;
+        let artist = seed_artist(&state.db, "Artist").await;
+        let album = seed_album(&state.db, artist.id, "Album").await;
+
+        state.monitored_albums.write().await.push(album.clone());
+
+        let result = super::merge_albums(&state, album.id, album.id, None, None).await;
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("must be different"));
+    }
+
+    // ── AddAlbum with mock provider ─────────────────────────────
+
+    #[tokio::test]
+    async fn add_album_creates_album_and_tracks() {
+        let mock = Arc::new(MockMetadataProvider::new("mock_prov"));
+        *mock.fetch_albums_result.lock().await = Ok(vec![ProviderAlbum {
+            external_id: "ALB_EXT".to_string(),
+            title: "Mock Album".to_string(),
+            album_type: Some("album".to_string()),
+            release_date: Some("2024-06-01".to_string()),
+            cover_ref: None,
+            url: None,
+            explicit: false,
+            artists: vec![ProviderAlbumArtist {
+                external_id: "ART_EXT".to_string(),
+                name: "Mock Artist".to_string(),
+            }],
+        }]);
+        *mock.fetch_tracks_result.lock().await = Ok((
+            vec![
+                ProviderTrack {
+                    external_id: "TRK1".to_string(),
+                    title: "Track One".to_string(),
+                    version: None,
+                    track_number: 1,
+                    disc_number: Some(1),
+                    duration_secs: 200,
+                    isrc: Some("US1234567890".to_string()),
+                    artists: None,
+                    explicit: false,
+                    extra: std::collections::HashMap::new(),
+                },
+                ProviderTrack {
+                    external_id: "TRK2".to_string(),
+                    title: "Track Two".to_string(),
+                    version: None,
+                    track_number: 2,
+                    disc_number: Some(1),
+                    duration_secs: 180,
+                    isrc: None,
+                    artists: None,
+                    explicit: false,
+                    extra: std::collections::HashMap::new(),
+                },
+            ],
+            std::collections::HashMap::new(),
+        ));
+
+        let mut registry = ProviderRegistry::new();
+        registry.register_metadata(mock as Arc<dyn crate::providers::MetadataProvider>);
+
+        let (state, _tmp) = test_app_state_with_registry(registry).await;
+
+        super::add_album(
+            &state,
+            "mock_prov".to_string(),
+            "ALB_EXT".to_string(),
+            "ART_EXT".to_string(),
+            "Mock Artist".to_string(),
+            true,
+        )
+        .await
+        .unwrap();
+
+        let artists = state.monitored_artists.read().await;
+        assert_eq!(artists.len(), 1);
+        assert!(!artists[0].monitored); // lightweight
+
+        let albums = state.monitored_albums.read().await;
+        assert_eq!(albums.len(), 1);
+        assert_eq!(albums[0].title, "Mock Album");
+        assert!(albums[0].monitored);
+        let album_id = albums[0].id;
+        drop(albums);
+
+        let tracks = db::load_tracks_for_album(&state.db, album_id)
+            .await
+            .unwrap();
+        assert_eq!(tracks.len(), 2);
+        assert_eq!(tracks[0].title, "Track One");
+        assert!(tracks[0].monitored);
+
+        let album_links = db::load_album_provider_links(&state.db, album_id)
+            .await
+            .unwrap();
+        assert_eq!(album_links.len(), 1);
+        assert_eq!(album_links[0].external_id, "ALB_EXT");
+    }
+}

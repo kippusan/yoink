@@ -274,3 +274,215 @@ pub(super) async fn unlink_artist_provider(
     state.notify_sse();
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use crate::db;
+    use crate::providers::registry::ProviderRegistry;
+    use crate::test_helpers::*;
+
+    // ── RemoveArtist ────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn remove_artist_cascades() {
+        let (state, _tmp) = test_app_state().await;
+        let artist = seed_artist(&state.db, "Removable").await;
+        let album = seed_album(&state.db, artist.id, "Album").await;
+        seed_tracks(&state.db, album.id, 3).await;
+        seed_artist_provider_link(&state.db, artist.id, "tidal", "T1").await;
+
+        state.monitored_artists.write().await.push(artist.clone());
+        state.monitored_albums.write().await.push(album.clone());
+
+        super::remove_artist(&state, artist.id, false)
+            .await
+            .unwrap();
+
+        assert!(state.monitored_artists.read().await.is_empty());
+        assert!(state.monitored_albums.read().await.is_empty());
+        assert!(db::load_artists(&state.db).await.unwrap().is_empty());
+        assert!(db::load_albums(&state.db).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn remove_artist_detaches_from_multi_artist_album() {
+        let (state, _tmp) = test_app_state().await;
+        let a1 = seed_artist(&state.db, "Artist 1").await;
+        let a2 = seed_artist(&state.db, "Artist 2").await;
+
+        let mut album = seed_album(&state.db, a1.id, "Collab").await;
+        album.artist_ids = vec![a1.id, a2.id];
+        db::upsert_album(&state.db, &album).await.unwrap();
+        db::add_album_artist(&state.db, album.id, a2.id)
+            .await
+            .unwrap();
+
+        state.monitored_artists.write().await.push(a1.clone());
+        state.monitored_artists.write().await.push(a2.clone());
+        state.monitored_albums.write().await.push(album.clone());
+
+        super::remove_artist(&state, a1.id, false).await.unwrap();
+
+        let albums = state.monitored_albums.read().await;
+        assert_eq!(albums.len(), 1);
+        assert!(!albums[0].artist_ids.contains(&a1.id));
+        assert_eq!(albums[0].artist_id, a2.id);
+    }
+
+    // ── UpdateArtist ────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn update_artist_name_and_image() {
+        let (state, _tmp) = test_app_state().await;
+        let artist = seed_artist(&state.db, "Old Name").await;
+        state.monitored_artists.write().await.push(artist.clone());
+
+        super::update_artist(
+            &state,
+            artist.id,
+            Some("New Name".to_string()),
+            Some("https://img.test/photo.jpg".to_string()),
+        )
+        .await
+        .unwrap();
+
+        let artists = state.monitored_artists.read().await;
+        let a = artists.iter().find(|a| a.id == artist.id).unwrap();
+        assert_eq!(a.name, "New Name");
+        assert_eq!(a.image_url.as_deref(), Some("https://img.test/photo.jpg"));
+
+        let db_artists = db::load_artists(&state.db).await.unwrap();
+        assert_eq!(db_artists[0].name, "New Name");
+    }
+
+    #[tokio::test]
+    async fn update_artist_clear_image_with_empty_string() {
+        let (state, _tmp) = test_app_state().await;
+        let mut artist = seed_artist(&state.db, "Artist").await;
+        artist.image_url = Some("https://old.test/img.jpg".to_string());
+        db::upsert_artist(&state.db, &artist).await.unwrap();
+        state.monitored_artists.write().await.push(artist.clone());
+
+        super::update_artist(&state, artist.id, None, Some(String::new()))
+            .await
+            .unwrap();
+
+        let artists = state.monitored_artists.read().await;
+        let a = artists.iter().find(|a| a.id == artist.id).unwrap();
+        assert!(a.image_url.is_none());
+    }
+
+    // ── LinkArtistProvider / UnlinkArtistProvider ────────────────
+
+    #[tokio::test]
+    async fn link_and_unlink_artist_provider() {
+        let (state, _tmp) = test_app_state().await;
+        let artist = seed_artist(&state.db, "Artist").await;
+        state.monitored_artists.write().await.push(artist.clone());
+
+        super::link_artist_provider(
+            &state,
+            artist.id,
+            "deezer".to_string(),
+            "D999".to_string(),
+            None,
+            Some("Deezer Artist".to_string()),
+            None,
+        )
+        .await
+        .unwrap();
+
+        let links = db::load_artist_provider_links(&state.db, artist.id)
+            .await
+            .unwrap();
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].provider, "deezer");
+        assert_eq!(links[0].external_id, "D999");
+        assert_eq!(
+            links[0].external_url.as_deref(),
+            Some("https://www.deezer.com/artist/D999")
+        );
+
+        super::unlink_artist_provider(
+            &state,
+            artist.id,
+            "deezer".to_string(),
+            "D999".to_string(),
+        )
+        .await
+        .unwrap();
+
+        let links = db::load_artist_provider_links(&state.db, artist.id)
+            .await
+            .unwrap();
+        assert!(links.is_empty());
+    }
+
+    // ── AddArtist with mock provider ────────────────────────────
+
+    #[tokio::test]
+    async fn add_artist_creates_artist_and_provider_link() {
+        let mock = Arc::new(MockMetadataProvider::new("mock_prov"));
+        *mock.fetch_albums_result.lock().await = Ok(vec![]);
+
+        let mut registry = ProviderRegistry::new();
+        registry.register_metadata(mock as Arc<dyn crate::providers::MetadataProvider>);
+
+        let (state, _tmp) = test_app_state_with_registry(registry).await;
+
+        super::add_artist(
+            &state,
+            "New Artist".to_string(),
+            "mock_prov".to_string(),
+            "EXT_NEW".to_string(),
+            Some("https://img.test/new.jpg".to_string()),
+            None,
+        )
+        .await
+        .unwrap();
+
+        let artists = state.monitored_artists.read().await;
+        assert_eq!(artists.len(), 1);
+        assert_eq!(artists[0].name, "New Artist");
+        assert!(artists[0].monitored);
+
+        let artist_id = artists[0].id;
+        let links = db::load_artist_provider_links(&state.db, artist_id)
+            .await
+            .unwrap();
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].provider, "mock_prov");
+        assert_eq!(links[0].external_id, "EXT_NEW");
+    }
+
+    #[tokio::test]
+    async fn add_artist_reuses_existing_via_provider_link() {
+        let mock = Arc::new(MockMetadataProvider::new("mock_prov"));
+        *mock.fetch_albums_result.lock().await = Ok(vec![]);
+
+        let mut registry = ProviderRegistry::new();
+        registry.register_metadata(mock as Arc<dyn crate::providers::MetadataProvider>);
+
+        let (state, _tmp) = test_app_state_with_registry(registry).await;
+
+        let artist = seed_artist(&state.db, "Existing").await;
+        seed_artist_provider_link(&state.db, artist.id, "mock_prov", "EXIST_1").await;
+        state.monitored_artists.write().await.push(artist.clone());
+
+        super::add_artist(
+            &state,
+            "Existing".to_string(),
+            "mock_prov".to_string(),
+            "EXIST_1".to_string(),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let artists = state.monitored_artists.read().await;
+        assert_eq!(artists.len(), 1);
+    }
+}

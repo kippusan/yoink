@@ -196,3 +196,38 @@ pub(super) async fn bulk_toggle_track_monitor(
     state.notify_sse();
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::db;
+    use crate::test_helpers::*;
+
+    #[tokio::test]
+    async fn toggle_track_monitor_updates_flags_and_partially_wanted() {
+        let (state, _tmp) = test_app_state().await;
+        let artist = seed_artist(&state.db, "Artist").await;
+        let mut album = seed_album(&state.db, artist.id, "Album").await;
+        album.monitored = false;
+        album.wanted = false;
+        db::upsert_album(&state.db, &album).await.unwrap();
+
+        let tracks = seed_tracks(&state.db, album.id, 2).await;
+
+        state.monitored_artists.write().await.push(artist.clone());
+        state.monitored_albums.write().await.push(album.clone());
+
+        super::toggle_track_monitor(&state, tracks[0].id, album.id, true)
+            .await
+            .unwrap();
+
+        let db_tracks = db::load_tracks_for_album(&state.db, album.id)
+            .await
+            .unwrap();
+        let t = db_tracks.iter().find(|t| t.id == tracks[0].id).unwrap();
+        assert!(t.monitored);
+
+        let albums = state.monitored_albums.read().await;
+        let a = albums.iter().find(|a| a.id == album.id).unwrap();
+        assert!(a.partially_wanted);
+    }
+}

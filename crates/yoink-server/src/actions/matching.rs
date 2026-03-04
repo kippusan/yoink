@@ -206,3 +206,53 @@ pub(super) async fn refresh_match_suggestions(
     state.notify_sse();
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::db;
+    use crate::test_helpers::*;
+
+    #[tokio::test]
+    async fn dismiss_match_suggestion() {
+        let (state, _tmp) = test_app_state().await;
+        let artist = seed_artist(&state.db, "Artist").await;
+        state.monitored_artists.write().await.push(artist.clone());
+
+        let suggestion = db::MatchSuggestion {
+            id: uuid::Uuid::now_v7(),
+            scope_type: "artist".to_string(),
+            scope_id: artist.id,
+            left_provider: "tidal".to_string(),
+            left_external_id: "T1".to_string(),
+            right_provider: "deezer".to_string(),
+            right_external_id: "D1".to_string(),
+            match_kind: "name_match".to_string(),
+            confidence: 80,
+            explanation: None,
+            external_name: None,
+            external_url: None,
+            image_ref: None,
+            disambiguation: None,
+            artist_type: None,
+            country: None,
+            tags: vec![],
+            popularity: None,
+            status: "pending".to_string(),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        };
+        db::upsert_match_suggestion(&state.db, &suggestion)
+            .await
+            .unwrap();
+
+        super::dismiss_match_suggestion(&state, suggestion.id)
+            .await
+            .unwrap();
+
+        let loaded = db::load_match_suggestion_by_id(&state.db, suggestion.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded.status, "dismissed");
+    }
+}

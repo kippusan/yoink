@@ -6,9 +6,6 @@ mod library;
 mod matching;
 mod track;
 
-#[cfg(test)]
-mod tests;
-
 use crate::state::AppState;
 
 /// Execute a `ServerAction` against the real `AppState`.

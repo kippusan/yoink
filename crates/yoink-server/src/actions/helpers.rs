@@ -211,3 +211,23 @@ pub(super) async fn store_album_tracks(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn default_provider_artist_url_known_providers() {
+        assert_eq!(
+            super::default_provider_artist_url("tidal", "123"),
+            Some("https://tidal.com/browse/artist/123".to_string())
+        );
+        assert_eq!(
+            super::default_provider_artist_url("deezer", "456"),
+            Some("https://www.deezer.com/artist/456".to_string())
+        );
+        assert_eq!(
+            super::default_provider_artist_url("musicbrainz", "abc"),
+            Some("https://musicbrainz.org/artist/abc".to_string())
+        );
+        assert!(super::default_provider_artist_url("unknown", "x").is_none());
+    }
+}

@@ -351,7 +351,10 @@ impl SoulSeekSource {
             match self.post_json("/api/v0/searches", &req).await {
                 Ok(search) => return Ok(search),
                 Err(err) if is_rate_limited(&err) && attempt < 5 => {
-                    warn!(query, attempt, delay_secs, "SoulSeek search rate-limited; retrying");
+                    warn!(
+                        query,
+                        attempt, delay_secs, "SoulSeek search rate-limited; retrying"
+                    );
                     tokio::time::sleep(Duration::from_secs(delay_secs)).await;
                     delay_secs = (delay_secs * 2).min(8);
                 }
@@ -484,12 +487,12 @@ impl SoulSeekSource {
                         )));
                     }
 
-                    if is_complete_success(file) {
-                        if let Some(local) =
-                            self.find_local_file(dir.directory.as_deref(), &file.filename).await
-                        {
-                            return Ok(local);
-                        }
+                    if is_complete_success(file)
+                        && let Some(local) = self
+                            .find_local_file(dir.directory.as_deref(), &file.filename)
+                            .await
+                    {
+                        return Ok(local);
                     }
                 }
             }

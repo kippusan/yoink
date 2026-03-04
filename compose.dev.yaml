@@ -1,5 +1,17 @@
 ---
 services:
+  yoink:
+    # version tags are available like 0.1.0 use main for bleeding edge (not recommended, you'll bleed)
+    # the 0 and 0.x tags are not recommended as they may have breaking changes without a major version bump
+    build: .
+    container_name: yoink
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - yoink-data:/data
+      - ./music:/music
+      - ./development/slskd-data:/app
   slskd:
     image: slskd/slskd
     container_name: slskd
@@ -15,3 +27,6 @@ services:
     env_file:
       - .env.docker
     restart: always
+
+volumes:
+  yoink-data:

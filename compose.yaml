@@ -1,7 +1,8 @@
 services:
   yoink:
-    build: .
-    image: ghcr.io/flyinpancake/yoink:main
+    # version tags are available like 0.1.0 use main for bleeding edge (not recommended, you'll bleed)
+    # the 0 and 0.x tags are not recommended as they may have breaking changes without a major version bump
+    image: ghcr.io/flyinpancake/yoink:latest
     container_name: yoink
     restart: unless-stopped
     ports:
@@ -41,9 +42,12 @@ services:
   #     - "5030:5030"
   #   environment:
   #     SLSKD_REMOTE_CONFIGURATION: true
+  #     SLSKD_SLSK_USERNAME: your_slsk_username
+  #     SLSKD_SLSK_PASSWORD: your_slsk_password
   #   volumes:
-  #     - ./slskd-data:/app
-  #     - ./music:/music
+  #     - slskd-data:/app
+  #     - ./music:/music # or wherever you want slskd to save downloads
 
 volumes:
   yoink-data:
+  slskd-data:

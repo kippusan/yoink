@@ -229,6 +229,7 @@ pub(crate) async fn sync_artist_albums(state: &AppState, artist_id: Uuid) -> App
     // Only remove stale albums for fully monitored artists.
     // Lightweight (unmonitored) artists may have explicitly-added albums that
     // don't come from provider syncs, so we must not delete them.
+    let mut removed_album_ids = Vec::new();
     if artist_monitored {
         let mut ids_to_remove = Vec::new();
         for album in albums
@@ -246,6 +247,14 @@ pub(crate) async fn sync_artist_albums(state: &AppState, artist_id: Uuid) -> App
                 .await?;
         }
         albums.retain(|album| !ids_to_remove.contains(&album.id));
+        removed_album_ids = ids_to_remove;
+    }
+
+    drop(albums);
+    if !removed_album_ids.is_empty() {
+        let ids: HashSet<Uuid> = removed_album_ids.into_iter().collect();
+        let mut jobs = state.download_jobs.write().await;
+        jobs.retain(|j| !ids.contains(&j.album_id));
     }
 
     Ok(())
@@ -340,7 +349,16 @@ fn provider_priority(provider_id: &str) -> u8 {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use super::*;
+    use crate::db;
+    use crate::providers::registry::ProviderRegistry;
+    use crate::providers::{MetadataProvider, ProviderAlbumArtist};
+    use crate::test_helpers::{
+        MockMetadataProvider, seed_album, seed_artist, seed_artist_provider_link, seed_job,
+        test_app_state_with_registry,
+    };
 
     fn make_provider_album(
         title: &str,
@@ -358,6 +376,51 @@ mod tests {
             explicit,
             artists: Vec::new(),
         }
+    }
+
+    #[tokio::test]
+    async fn sync_artist_albums_removes_stale_album_jobs() {
+        let mock = Arc::new(MockMetadataProvider::new("mock_prov"));
+        *mock.fetch_albums_result.lock().await = Ok(vec![ProviderAlbum {
+            external_id: "incoming_1".to_string(),
+            title: "Fresh Album".to_string(),
+            album_type: Some("album".to_string()),
+            release_date: Some("2024-04-20".to_string()),
+            cover_ref: None,
+            url: None,
+            explicit: false,
+            artists: vec![ProviderAlbumArtist {
+                external_id: "artist_ext_1".to_string(),
+                name: "Artist".to_string(),
+            }],
+        }]);
+
+        let mut registry = ProviderRegistry::new();
+        registry.register_metadata(mock as Arc<dyn MetadataProvider>);
+        let (state, _tmp) = test_app_state_with_registry(registry).await;
+
+        let artist = seed_artist(&state.db, "Artist").await;
+        seed_artist_provider_link(&state.db, artist.id, "mock_prov", "artist_ext_1").await;
+
+        let mut stale = seed_album(&state.db, artist.id, "Stale Album").await;
+        stale.release_date = Some("2021-02-10".to_string());
+        db::upsert_album(&state.db, &stale).await.unwrap();
+        let stale_job = seed_job(&state.db, stale.id, crate::models::DownloadStatus::Queued).await;
+
+        state.monitored_artists.write().await.push(artist.clone());
+        state.monitored_albums.write().await.push(stale.clone());
+        state.download_jobs.write().await.push(stale_job);
+
+        super::sync_artist_albums(&state, artist.id).await.unwrap();
+
+        let jobs = db::load_jobs(&state.db).await.unwrap();
+        assert!(jobs.is_empty());
+        assert!(state.download_jobs.read().await.is_empty());
+
+        let albums = db::load_albums(&state.db).await.unwrap();
+        assert_eq!(albums.len(), 1);
+        assert_eq!(albums[0].title, "Fresh Album");
+        assert_ne!(albums[0].id, stale.id);
     }
 
     // ── normalize_title ─────────────────────────────────────────

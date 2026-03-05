@@ -49,7 +49,9 @@ pub async fn get_library_albums_data() -> Result<LibraryAlbumsData, ServerFnErro
             continue;
         }
 
-        let tracks = (ctx.fetch_tracks)(album.id).await.unwrap_or_default();
+        let tracks = (ctx.fetch_tracks)(album.id).await.map_err(|e| {
+            ServerFnError::new(format!("failed to load tracks for album {}: {e}", album.id))
+        })?;
         if tracks.iter().any(|t| t.monitored) {
             albums.push(album);
         }

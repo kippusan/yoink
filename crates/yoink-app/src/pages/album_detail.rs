@@ -130,12 +130,18 @@ pub async fn get_album_detail(album_id: String) -> Result<AlbumDetailData, Serve
             futures::future::join3(tracks_fut, links_fut, suggestions_fut).await;
 
         let jobs = ctx.download_jobs.read().await.clone();
+        let tracks = tracks_res
+            .map_err(|e| ServerFnError::new(format!("failed to load album tracks: {e}")))?;
+        let provider_links = links_res
+            .map_err(|e| ServerFnError::new(format!("failed to load album provider links: {e}")))?;
+        let match_suggestions = suggestions_res
+            .map_err(|e| ServerFnError::new(format!("failed to load album match suggestions: {e}")))?;
 
         (
-            tracks_res.unwrap_or_default(),
+            tracks,
             jobs,
-            links_res.unwrap_or_default(),
-            suggestions_res.unwrap_or_default(),
+            provider_links,
+            match_suggestions,
         )
     } else {
         let jobs = ctx.download_jobs.read().await.clone();
@@ -159,13 +165,16 @@ pub async fn get_album_detail(album_id: String) -> Result<AlbumDetailData, Serve
 pub fn AlbumDetailPage() -> impl IntoView {
     set_page_title("Album");
     let params = leptos_router::hooks::use_params_map();
-    let album_id = move || params.read().get("album_id").unwrap_or_default();
-    let artist_id = move || params.read().get("artist_id").unwrap_or_default();
+    let album_id = move || params.read().get("album_id");
+    let artist_id = move || params.read().get("artist_id");
 
     let version = use_sse_version();
-    let data = Resource::new(
+    let data: Resource<Result<AlbumDetailData, ServerFnError>> = Resource::new(
         move || (album_id(), version.get()),
-        |(id, _)| get_album_detail(id),
+        |(id, _)| async move {
+            let id = id.ok_or_else(|| ServerFnError::new("missing route parameter: album_id"))?;
+            get_album_detail(id).await
+        },
     );
 
     view! {
@@ -236,7 +245,10 @@ pub fn AlbumDetailPage() -> impl IntoView {
                             }.into_any(),
                             Ok(data) => match data.album {
                                 None => {
-                                    let back_href = format!("/artists/{}", aid);
+                                    let back_href = aid
+                                        .as_deref()
+                                        .map(|id| format!("/artists/{id}"))
+                                        .unwrap_or_else(|| "/library".to_string());
                                     view! {
                                         <div>
                                             <div class=HEADER_BAR>
@@ -292,7 +304,7 @@ fn AlbumDetailContent(
     jobs: Vec<DownloadJob>,
     provider_links: Vec<ProviderLink>,
     match_suggestions: Vec<MatchSuggestion>,
-    artist_id_param: String,
+    artist_id_param: Option<String>,
 ) -> impl IntoView {
     set_page_title(&album.title);
 
@@ -337,7 +349,10 @@ fn AlbumDetailContent(
         .as_ref()
         .map(|a| a.name.clone())
         .unwrap_or_else(|| "Unknown Artist".to_string());
-    let artist_link = format!("/artists/{artist_id_param}");
+    let artist_link = artist_id_param
+        .as_deref()
+        .map(|id| format!("/artists/{id}"))
+        .unwrap_or_else(|| "/library".to_string());
 
     let fallback_initial = album_title
         .chars()

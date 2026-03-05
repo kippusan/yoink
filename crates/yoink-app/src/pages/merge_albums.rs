@@ -75,14 +75,18 @@ pub async fn get_merge_albums_data(artist_id: String) -> Result<MergeAlbumsData,
 
     for album in &albums {
         album_by_id.insert(album.id, album.clone());
-        let links = (ctx.fetch_album_links)(album.id).await.unwrap_or_default();
+        let links = (ctx.fetch_album_links)(album.id).await.map_err(|e| {
+            ServerFnError::new(format!("failed to load provider links for album {}: {e}", album.id))
+        })?;
         for link in &links {
             pair_to_album.insert((link.provider.clone(), link.external_id.clone()), album.id);
         }
         links_by_album.insert(album.id, links);
         tracks_by_album.insert(
             album.id,
-            (ctx.fetch_tracks)(album.id).await.unwrap_or_default(),
+            (ctx.fetch_tracks)(album.id).await.map_err(|e| {
+                ServerFnError::new(format!("failed to load tracks for album {}: {e}", album.id))
+            })?,
         );
     }
 
@@ -103,7 +107,12 @@ pub async fn get_merge_albums_data(artist_id: String) -> Result<MergeAlbumsData,
     for album in &albums {
         let suggestions = (ctx.fetch_album_match_suggestions)(album.id)
             .await
-            .unwrap_or_default();
+            .map_err(|e| {
+                ServerFnError::new(format!(
+                    "failed to load match suggestions for album {}: {e}",
+                    album.id
+                ))
+            })?;
 
         for s in suggestions.into_iter().filter(|s| s.status == "pending") {
             let pair = (s.right_provider.clone(), s.right_external_id.clone());
@@ -147,7 +156,11 @@ pub async fn get_merge_albums_data(artist_id: String) -> Result<MergeAlbumsData,
         let b_tracks = tracks_by_album.get(&key.1).cloned().unwrap_or_default();
         let merged_tracks = build_merged_track_preview(&a_tracks, &b_tracks);
         let merged_links = build_merged_links_preview(&a_links, &b_links);
-        let meta = pair_meta.remove(key).unwrap();
+        let Some(meta) = pair_meta.remove(key) else {
+            return Err(ServerFnError::new(
+                "inconsistent merge candidate metadata for album pair",
+            ));
+        };
         let suggestion_ids = suggestion_ids_map.remove(key).unwrap_or_default();
 
         candidates.push(MergeCandidate {
@@ -530,12 +543,15 @@ pub fn MergeAlbumsPage() -> impl IntoView {
     set_page_title("Merge Albums");
 
     let params = leptos_router::hooks::use_params_map();
-    let artist_id = move || params.read().get("id").unwrap_or_default();
+    let artist_id = move || params.read().get("id");
     let version = use_sse_version();
 
-    let data = Resource::new(
+    let data: Resource<Result<MergeAlbumsData, ServerFnError>> = Resource::new(
         move || (artist_id(), version.get()),
-        |(id, _)| get_merge_albums_data(id),
+        |(id, _)| async move {
+            let id = id.ok_or_else(|| ServerFnError::new("missing route parameter: id"))?;
+            get_merge_albums_data(id).await
+        },
     );
 
     view! {
@@ -623,8 +639,11 @@ pub fn MergeAlbumsPage() -> impl IntoView {
                                 .artist
                                 .as_ref()
                                 .map(|a| a.id.to_string())
-                                .unwrap_or_default();
-                            let artist_link = format!("/artists/{}", artist_id_back);
+                                .or_else(|| artist_id());
+                            let artist_link = artist_id_back
+                                .as_deref()
+                                .map(|id| format!("/artists/{id}"))
+                                .unwrap_or_else(|| "/library".to_string());
                             let count = data.candidates.len();
 
                             view! {

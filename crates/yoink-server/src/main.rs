@@ -15,6 +15,8 @@ mod state;
 mod ui;
 
 #[cfg(test)]
+mod fk_regressions;
+#[cfg(test)]
 mod test_helpers;
 
 use std::{sync::Arc, time::Duration};

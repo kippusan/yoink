@@ -34,9 +34,15 @@ pub async fn search_all(query: String) -> Result<SearchAllResult, ServerFnError>
         });
     }
 
-    let artists = (ctx.search_artists)(q.clone()).await.unwrap_or_default();
-    let albums = (ctx.search_albums)(q.clone()).await.unwrap_or_default();
-    let tracks = (ctx.search_tracks)(q).await.unwrap_or_default();
+    let artists = (ctx.search_artists)(q.clone())
+        .await
+        .map_err(|e| ServerFnError::new(format!("failed to search artists: {e}")))?;
+    let albums = (ctx.search_albums)(q.clone())
+        .await
+        .map_err(|e| ServerFnError::new(format!("failed to search albums: {e}")))?;
+    let tracks = (ctx.search_tracks)(q)
+        .await
+        .map_err(|e| ServerFnError::new(format!("failed to search tracks: {e}")))?;
 
     Ok(SearchAllResult {
         artists,

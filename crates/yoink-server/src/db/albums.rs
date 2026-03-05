@@ -142,6 +142,16 @@ pub(crate) async fn delete_albums_by_artist(
     pool: &SqlitePool,
     artist_id: Uuid,
 ) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "DELETE FROM download_jobs
+         WHERE album_id IN (
+             SELECT id FROM albums WHERE artist_id = ?1
+         )",
+    )
+    .bind(artist_id)
+    .execute(pool)
+    .await?;
+
     sqlx::query!("DELETE FROM albums WHERE artist_id = $1", artist_id)
         .execute(pool)
         .await?;
@@ -149,6 +159,11 @@ pub(crate) async fn delete_albums_by_artist(
 }
 
 pub(crate) async fn delete_album(pool: &SqlitePool, album_id: Uuid) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM download_jobs WHERE album_id = ?1")
+        .bind(album_id)
+        .execute(pool)
+        .await?;
+
     sqlx::query!("DELETE FROM albums WHERE id = $1", album_id)
         .execute(pool)
         .await?;
@@ -310,6 +325,19 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn delete_album_removes_related_jobs() {
+        let pool = test_db().await;
+        let artist = seed_artist(&pool, "Artist").await;
+        let album = seed_album(&pool, artist.id, "Album").await;
+        seed_job(&pool, album.id, crate::models::DownloadStatus::Queued).await;
+
+        super::delete_album(&pool, album.id).await.unwrap();
+
+        let jobs = crate::db::load_jobs(&pool).await.unwrap();
+        assert!(jobs.is_empty());
+    }
+
+    #[tokio::test]
     async fn delete_albums_by_artist() {
         let pool = test_db().await;
         let artist1 = seed_artist(&pool, "Artist A").await;
@@ -323,6 +351,23 @@ mod tests {
         let albums = super::load_albums(&pool).await.unwrap();
         assert_eq!(albums.len(), 1);
         assert_eq!(albums[0].title, "Album 3");
+    }
+
+    #[tokio::test]
+    async fn delete_albums_by_artist_removes_related_jobs() {
+        let pool = test_db().await;
+        let artist1 = seed_artist(&pool, "Artist A").await;
+        let artist2 = seed_artist(&pool, "Artist B").await;
+        let album1 = seed_album(&pool, artist1.id, "Album 1").await;
+        let album2 = seed_album(&pool, artist2.id, "Album 2").await;
+        seed_job(&pool, album1.id, crate::models::DownloadStatus::Queued).await;
+        seed_job(&pool, album2.id, crate::models::DownloadStatus::Queued).await;
+
+        super::delete_albums_by_artist(&pool, artist1.id).await.unwrap();
+
+        let jobs = crate::db::load_jobs(&pool).await.unwrap();
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].album_id, album2.id);
     }
 
     #[tokio::test]

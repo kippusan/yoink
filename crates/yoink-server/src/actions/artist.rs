@@ -93,7 +93,7 @@ pub(super) async fn remove_artist(
     }
     // Remove albums solely owned by this artist; for multi-artist albums
     // just detach this artist.
-    {
+    let sole_album_ids = {
         let mut albums = state.monitored_albums.write().await;
         let mut sole_album_ids = Vec::new();
         for album in albums.iter_mut() {
@@ -119,6 +119,12 @@ pub(super) async fn remove_artist(
             db::delete_album(&state.db, *id).await?;
         }
         albums.retain(|a| !sole_album_ids.contains(&a.id));
+        sole_album_ids
+    };
+    if !sole_album_ids.is_empty() {
+        let ids: std::collections::HashSet<Uuid> = sole_album_ids.iter().copied().collect();
+        let mut jobs = state.download_jobs.write().await;
+        jobs.retain(|j| !ids.contains(&j.album_id));
     }
     db::delete_albums_by_artist(&state.db, artist_id).await?;
     db::delete_album_artists_by_artist(&state.db, artist_id).await?;
@@ -301,6 +307,58 @@ mod tests {
         assert!(state.monitored_albums.read().await.is_empty());
         assert!(db::load_artists(&state.db).await.unwrap().is_empty());
         assert!(db::load_albums(&state.db).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn remove_artist_with_download_job_deletes_successfully() {
+        let (state, _tmp) = test_app_state().await;
+        let artist = seed_artist(&state.db, "Removable").await;
+        let album = seed_album(&state.db, artist.id, "Album").await;
+        let job = seed_job(&state.db, album.id, crate::models::DownloadStatus::Queued).await;
+
+        state.monitored_artists.write().await.push(artist.clone());
+        state.monitored_albums.write().await.push(album.clone());
+        state.download_jobs.write().await.push(job);
+
+        super::remove_artist(&state, artist.id, false)
+            .await
+            .unwrap();
+
+        assert!(db::load_artists(&state.db).await.unwrap().is_empty());
+        assert!(db::load_albums(&state.db).await.unwrap().is_empty());
+        assert!(db::load_jobs(&state.db).await.unwrap().is_empty());
+        assert!(state.download_jobs.read().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn remove_artist_keeps_jobs_for_multi_artist_albums() {
+        let (state, _tmp) = test_app_state().await;
+        let a1 = seed_artist(&state.db, "Artist 1").await;
+        let a2 = seed_artist(&state.db, "Artist 2").await;
+
+        let mut album = seed_album(&state.db, a1.id, "Collab").await;
+        album.artist_ids = vec![a1.id, a2.id];
+        db::upsert_album(&state.db, &album).await.unwrap();
+        db::add_album_artist(&state.db, album.id, a2.id).await.unwrap();
+
+        let job = seed_job(&state.db, album.id, crate::models::DownloadStatus::Queued).await;
+
+        state.monitored_artists.write().await.push(a1.clone());
+        state.monitored_artists.write().await.push(a2.clone());
+        state.monitored_albums.write().await.push(album.clone());
+        state.download_jobs.write().await.push(job);
+
+        super::remove_artist(&state, a1.id, false).await.unwrap();
+
+        let jobs = db::load_jobs(&state.db).await.unwrap();
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].album_id, album.id);
+        assert_eq!(state.download_jobs.read().await.len(), 1);
+
+        let albums = db::load_albums(&state.db).await.unwrap();
+        assert_eq!(albums.len(), 1);
+        assert_eq!(albums[0].artist_id, a2.id);
+        assert!(!albums[0].artist_ids.contains(&a1.id));
     }
 
     #[tokio::test]

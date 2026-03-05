@@ -11,7 +11,9 @@ use leptoaster::{ToastBuilder, ToastLevel, ToastPosition, expect_toaster};
 
 use super::provider_icon_svg;
 use crate::actions::dispatch_action;
-use crate::components::toast::{dispatch_with_toast, dispatch_with_toast_loading};
+use crate::components::toast::{
+    dispatch_with_toast, dispatch_with_toast_loading, toast_missing_context,
+};
 use crate::components::{
     ConfirmDialog, EditArtistDialog, ErrorPanel, LinkProviderDialog, MobileMenuButton, Sidebar,
 };
@@ -64,7 +66,7 @@ pub async fn get_artist_detail(artist_id: String) -> Result<ArtistDetailData, Se
     let provider_links = if artist.is_some() {
         (ctx.fetch_artist_links)(artist_uuid)
             .await
-            .unwrap_or_default()
+            .map_err(|e| ServerFnError::new(format!("failed to load artist provider links: {e}")))?
     } else {
         Vec::new()
     };
@@ -72,7 +74,9 @@ pub async fn get_artist_detail(artist_id: String) -> Result<ArtistDetailData, Se
     let match_suggestions = if artist.is_some() {
         (ctx.fetch_artist_match_suggestions)(artist_uuid)
             .await
-            .unwrap_or_default()
+            .map_err(|e| {
+                ServerFnError::new(format!("failed to load artist match suggestions: {e}"))
+            })?
     } else {
         Vec::new()
     };
@@ -109,12 +113,15 @@ pub async fn get_artist_images(artist_id: String) -> Result<Vec<ArtistImageOptio
 pub fn ArtistDetailPage() -> impl IntoView {
     set_page_title("Artist");
     let params = leptos_router::hooks::use_params_map();
-    let artist_id = move || params.read().get("id").unwrap_or_default();
+    let artist_id = move || params.read().get("id");
 
     let version = use_sse_version();
-    let data = Resource::new(
+    let data: Resource<Result<ArtistDetailData, ServerFnError>> = Resource::new(
         move || (artist_id(), version.get()),
-        |(id, _)| get_artist_detail(id),
+        |(id, _)| async move {
+            let id = id.ok_or_else(|| ServerFnError::new("missing route parameter: id"))?;
+            get_artist_detail(id).await
+        },
     );
 
     // Stable signals — created once, updated by an Effect when the Resource
@@ -692,7 +699,10 @@ fn ArtistDetailContent(
                 on_confirm={
                     let artist_sig = artist;
                     move |_: bool| {
-                        let aid = artist_sig.get_untracked().map(|a| a.id).unwrap_or_default();
+                        let Some(aid) = artist_sig.get_untracked().map(|a| a.id) else {
+                            toast_missing_context("Artist");
+                            return;
+                        };
                         dispatch_with_toast(ServerAction::BulkMonitor { artist_id: aid, monitored: false }, "All albums unmonitored");
                     }
                 }
@@ -707,10 +717,13 @@ fn ArtistDetailContent(
                 on_confirm={
                     let artist_sig = artist;
                     move |remove_files: bool| {
-                        removing_artist.set(true);
                         let navigate = leptos_router::hooks::use_navigate();
                         let toaster = expect_toaster();
-                        let aid = artist_sig.get_untracked().map(|a| a.id).unwrap_or_default();
+                        let Some(aid) = artist_sig.get_untracked().map(|a| a.id) else {
+                            toast_missing_context("Artist");
+                            return;
+                        };
+                        removing_artist.set(true);
                         leptos::task::spawn_local(async move {
                             match dispatch_action(ServerAction::RemoveArtist { artist_id: aid, remove_files }).await {
                                 Ok(()) => {
@@ -874,11 +887,10 @@ fn AlbumSleeve(
     let show_remove_files = RwSignal::new(false);
 
     let cover_url = album_cover_url(&album, 640);
-    let detail_url = format!(
-        "/artists/{}/albums/{}",
-        artist_id.get_untracked().map(|a| a.id).unwrap_or_default(),
-        album_id_for_url
-    );
+    let detail_url = artist_id
+        .get_untracked()
+        .map(|a| format!("/artists/{}/albums/{}", a.id, album_id_for_url))
+        .unwrap_or_else(|| "/library".to_string());
 
     // Reactively derive mutable album flags from the canonical albums signal.
     // This ensures that when the server updates an album (e.g. toggling monitor),

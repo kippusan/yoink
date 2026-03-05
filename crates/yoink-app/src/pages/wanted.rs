@@ -58,11 +58,13 @@ pub async fn get_wanted_data() -> Result<WantedData, ServerFnError> {
         let fetch_tracks = ctx.fetch_tracks.clone();
         let album = album.clone();
         async move {
-            let tracks = (fetch_tracks)(album.id).await.unwrap_or_default();
-            WantedAlbumWithTracks { album, tracks }
+            let tracks = (fetch_tracks)(album.id).await.map_err(|e| {
+                ServerFnError::new(format!("failed to load tracks for album {}: {e}", album.id))
+            })?;
+            Ok::<WantedAlbumWithTracks, ServerFnError>(WantedAlbumWithTracks { album, tracks })
         }
     });
-    let albums = futures::future::join_all(fetches).await;
+    let albums = futures::future::try_join_all(fetches).await?;
 
     Ok(WantedData {
         albums,

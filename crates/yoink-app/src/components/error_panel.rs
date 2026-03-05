@@ -71,3 +71,54 @@ pub fn ErrorPanel(
         </div>
     }
 }
+
+#[cfg(all(test, feature = "ssr"))]
+mod tests {
+    use super::*;
+    use leptos::prelude::{Owner, RenderHtml};
+
+    fn render_message_only(message: &str) -> String {
+        Owner::new().with(|| view! { <ErrorPanel message=message.to_string() /> }.to_html())
+    }
+
+    fn render_with_retry(message: &str, retry_href: &str) -> String {
+        Owner::new().with(|| {
+            view! { <ErrorPanel message=message.to_string() retry_href=retry_href.to_string() /> }
+                .to_html()
+        })
+    }
+
+    fn render_with_details(message: &str, details: &str) -> String {
+        Owner::new().with(|| {
+            view! { <ErrorPanel message=message.to_string() details=details.to_string() /> }
+                .to_html()
+        })
+    }
+
+    #[test]
+    fn renders_message_and_retry_link_when_provided() {
+        let html = render_with_retry("Something failed", "/retry");
+
+        assert!(html.contains("Something failed"));
+        assert!(html.contains("href=\"/retry\""));
+        assert!(html.contains(">Retry<"));
+    }
+
+    #[test]
+    fn renders_details_toggle_but_hides_details_by_default() {
+        let html = render_with_details("Something failed", "stack trace line");
+
+        assert!(html.contains("Show details"));
+        assert!(html.contains("aria-expanded=\"false\""));
+        assert!(!html.contains("stack trace line"));
+    }
+
+    #[test]
+    fn does_not_render_toggle_when_details_missing() {
+        let html = render_message_only("Something failed");
+
+        assert!(!html.contains("Show details"));
+        assert!(!html.contains("Hide details"));
+        assert!(!html.contains("aria-expanded="));
+    }
+}

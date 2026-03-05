@@ -190,31 +190,36 @@ pub fn ResolveArtistDialog(
                             // ── Choose mode ─────────────────────
                             <Show when=move || mode.get() == "choose">
                                 <div class="p-5 flex flex-col gap-3">
-                                    // "Add as new artist" button — only if we have provider info
+                                    // "Add as new artist" button — only if we have full source identity
                                     {move || {
-                                        let has_provider = credit_provider_stored.with_value(|p| p.is_some());
-                                        let provider_display = credit_provider_stored.with_value(|p| {
-                                            p.as_deref().map(provider_display_name).unwrap_or_default()
-                                        });
+                                        let add_source = credit_provider_stored
+                                            .with_value(|p| p.clone())
+                                            .zip(credit_external_id_stored.with_value(|e| e.clone()));
+                                        let provider_display = add_source
+                                            .as_ref()
+                                            .map(|(provider, _)| provider_display_name(provider))
+                                            .unwrap_or_default();
                                         let name = credit_name_stored.with_value(|n| n.clone());
-                                        if has_provider {
+                                        if let Some((provider, external_id)) = add_source {
                                             view! {
                                                 <button type="button"
                                                     class="flex items-start gap-3 w-full text-left p-4 rounded-xl border border-black/[.06] dark:border-white/[.08] bg-white/50 dark:bg-zinc-800/50 transition-all duration-150 hover:border-blue-500/30 hover:bg-blue-500/[.04] dark:hover:bg-blue-500/[.06] cursor-pointer group"
                                                     disabled=move || adding_new.get()
                                                     on:click={
+                                                        let provider = provider.clone();
+                                                        let external_id = external_id.clone();
                                                         move |_| {
                                                             adding_new.set(true);
                                                             let name = credit_name_stored.with_value(|n| n.clone());
-                                                            let provider = credit_provider_stored.with_value(|p| p.clone().unwrap_or_default());
-                                                            let external_id = credit_external_id_stored.with_value(|e| e.clone().unwrap_or_default());
+                                                            let provider = provider.clone();
+                                                            let external_id = external_id.clone();
                                                             let toaster = expect_toaster();
                                                             leptos::task::spawn_local(async move {
                                                                 // Add the artist (re-sync will associate with album)
                                                                 let add_result = dispatch_action(ServerAction::AddArtist {
                                                                     name: name.clone(),
-                                                                    provider: provider.clone(),
-                                                                    external_id: external_id.clone(),
+                                                                    provider,
+                                                                    external_id,
                                                                     image_url: None,
                                                                     external_url: None,
                                                                 }).await;
@@ -480,14 +485,23 @@ fn ExistingArtistRow(
                         leptos::task::spawn_local(async move {
                             // 1. Link the provider to the existing artist (if we have provider info)
                             if let (Some(provider), Some(external_id)) = (credit_provider, credit_external_id) {
-                                let _ = dispatch_action(ServerAction::LinkArtistProvider {
+                                if let Err(e) = dispatch_action(ServerAction::LinkArtistProvider {
                                     artist_id,
                                     provider,
                                     external_id,
                                     external_url: None,
                                     external_name: Some(artist_name.clone()),
                                     image_ref: None,
-                                }).await;
+                                }).await {
+                                    toaster.toast(
+                                        ToastBuilder::new(format!("Error linking provider: {e}"))
+                                            .with_level(ToastLevel::Error)
+                                            .with_position(ToastPosition::BottomRight)
+                                            .with_expiry(Some(8_000)),
+                                    );
+                                    linking.set(false);
+                                    return;
+                                }
                             }
                             // 2. Add artist to the album
                             match dispatch_action(ServerAction::AddAlbumArtist {

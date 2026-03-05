@@ -13,6 +13,17 @@ pub fn dispatch_with_toast(action: ServerAction, success_msg: &str) {
     dispatch_with_toast_loading(action, success_msg, None);
 }
 
+/// Show a consistent error toast when required view context vanished.
+pub fn toast_missing_context(entity: &str) {
+    let toaster = expect_toaster();
+    toaster.toast(
+        ToastBuilder::new(format!("{entity} is no longer available"))
+            .with_level(ToastLevel::Error)
+            .with_position(ToastPosition::BottomRight)
+            .with_expiry(Some(8_000)),
+    );
+}
+
 /// Like `dispatch_with_toast`, but also sets a loading signal to `true` while
 /// the async operation is in flight and back to `false` when it completes.
 /// Pass `Some(signal)` to enable loading tracking, or `None` to behave like

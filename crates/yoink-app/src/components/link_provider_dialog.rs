@@ -4,10 +4,10 @@ use lucide_leptos::X;
 
 use yoink_shared::{SearchArtistResult, ServerAction, provider_display_name};
 
-use super::{Button, ButtonSize, ButtonVariant, fallback_initial};
+use super::{Badge, BadgeSurface, Button, ButtonSize, ButtonVariant, fallback_initial};
 use crate::actions::dispatch_action;
 use crate::pages::provider_icon_svg;
-use crate::styles::{SEARCH_INPUT, TAG_BORDERED_NEUTRAL};
+use crate::styles::SEARCH_INPUT;
 use leptoaster::{ToastBuilder, ToastLevel, ToastPosition, expect_toaster};
 
 // ── Tailwind class constants ────────────────────────────────
@@ -382,10 +382,10 @@ fn LinkResultRow(
                 <div class="flex items-center gap-1.5">
                     <span class="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate">{result.name.clone()}</span>
                     // Provider badge
-                    <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-zinc-100 dark:bg-zinc-700/60 text-zinc-500 dark:text-zinc-400 shrink-0">
+                    <Badge surface=BadgeSurface::Outline>
                         <span class="shrink-0 [&>svg]:size-2.5" inner_html=provider_icon></span>
                         {provider_display}
-                    </span>
+                    </Badge>
                 </div>
                 // Subtitle: disambiguation/type/country + popularity
                 {subtitle.map(|s| view! {
@@ -395,9 +395,7 @@ fn LinkResultRow(
                 {(!tags.is_empty()).then(|| view! {
                     <div class="flex flex-wrap gap-1 mt-0.5">
                         {tags.into_iter().take(3).map(|tag| view! {
-                            <span class=TAG_BORDERED_NEUTRAL>
-                                {tag}
-                            </span>
+                            <Badge surface=BadgeSurface::Outline>{tag}</Badge>
                         }).collect_view()}
                     </div>
                 })}

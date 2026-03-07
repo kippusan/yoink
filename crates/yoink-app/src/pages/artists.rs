@@ -14,13 +14,11 @@ use leptoaster::{ToastBuilder, ToastLevel, ToastPosition, expect_toaster};
 use crate::actions::dispatch_action;
 use crate::components::toast::dispatch_with_toast;
 use crate::components::{
-    Breadcrumb, BreadcrumbItem, Button, ButtonVariant, ErrorPanel, PageShell, fallback_initial,
+    Badge, BadgeSize, BadgeSurface, BadgeVariant, Breadcrumb, BreadcrumbItem, Button,
+    ButtonVariant, ErrorPanel, PageShell, fallback_initial,
 };
 use crate::hooks::{set_page_title, use_sse_version};
-use crate::styles::{
-    EMPTY, GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, SEARCH_INPUT, SELECT, TAG_BORDERED_INFO,
-    TAG_BORDERED_NEUTRAL, TAG_BORDERED_WARNING,
-};
+use crate::styles::{EMPTY, GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, SEARCH_INPUT, SELECT};
 
 // ── Page-specific Tailwind class constants ──────────────────
 
@@ -605,16 +603,22 @@ fn SearchResultRow(artist: SearchArtistResult, set_query: WriteSignal<String>) -
                         let profile_url_clone = profile_url.clone();
                         let display = provider_display.clone();
                         view! {
-                            <a class="inline-flex items-center px-2 py-0.5 text-[11px] font-medium text-blue-600 dark:text-blue-400 bg-blue-500/[.08] border border-blue-500/20 rounded-md no-underline hover:bg-blue-500/15" href=profile_url_clone target="_blank" rel="noreferrer">
+                            <Badge
+                                variant=BadgeVariant::Info
+                                surface=BadgeSurface::Outline
+                                size=BadgeSize::Sm
+                                href=profile_url_clone
+                                new_tab=true
+                            >
                                 {display}
-                            </a>
+                            </Badge>
                         }.into_any()
                     } else {
                         let display = provider_display.clone();
                         view! {
-                            <span class="inline-flex items-center px-2 py-0.5 text-[11px] font-medium text-zinc-500 dark:text-zinc-400 bg-zinc-500/[.08] border border-zinc-500/20 rounded-md">
+                            <Badge surface=BadgeSurface::Outline size=BadgeSize::Sm>
                                 {display}
-                            </span>
+                            </Badge>
                         }.into_any()
                     }}
                 </div>
@@ -626,9 +630,7 @@ fn SearchResultRow(artist: SearchArtistResult, set_query: WriteSignal<String>) -
                 {(!tags.is_empty()).then(|| view! {
                     <div class="flex flex-wrap gap-1 mt-1">
                         {tags.into_iter().map(|tag| view! {
-                            <span class=TAG_BORDERED_NEUTRAL>
-                                {tag}
-                            </span>
+                            <Badge surface=BadgeSurface::Outline>{tag}</Badge>
                         }).collect_view()}
                     </div>
                 })}
@@ -709,15 +711,23 @@ fn ArtistCard(artist: MonitoredArtist, albums: Vec<MonitoredAlbum>) -> impl Into
                         <div class="text-[15px] font-bold text-zinc-900 dark:text-zinc-100 whitespace-nowrap overflow-hidden text-ellipsis">{artist.name}</div>
                         {if is_monitored {
                             view! {
-                                <span class=TAG_BORDERED_INFO>
+                                <Badge
+                                    variant=BadgeVariant::Info
+                                    surface=BadgeSurface::Outline
+                                    size=BadgeSize::Sm
+                                >
                                     "Monitored"
-                                </span>
+                                </Badge>
                             }.into_any()
                         } else {
                             view! {
-                                <span class=TAG_BORDERED_WARNING>
+                                <Badge
+                                    variant=BadgeVariant::Warning
+                                    surface=BadgeSurface::Outline
+                                    size=BadgeSize::Sm
+                                >
                                     "Lightweight"
-                                </span>
+                                </Badge>
                             }.into_any()
                         }}
                     </div>

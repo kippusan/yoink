@@ -8,7 +8,8 @@ use yoink_shared::{
 };
 
 use crate::components::{
-    Button, ButtonSize, ButtonVariant, ErrorPanel, MobileMenuButton, PageShell,
+    Badge, BadgeSize, BadgeVariant, Button, ButtonSize, ButtonVariant, ErrorPanel,
+    MobileMenuButton, PageShell,
 };
 use crate::hooks::{set_page_title, use_sse_version};
 use crate::styles::{EMPTY, GLASS, GLASS_HEADER, GLASS_TITLE, HEADER_BAR, MUTED};
@@ -27,6 +28,14 @@ const STAT_MINI: &str = "text-center px-3 py-2";
 const STAT_MINI_LABEL: &str =
     "text-[11px] uppercase tracking-wide text-zinc-500 dark:text-zinc-400";
 const STAT_MINI_VALUE: &str = "text-lg font-bold text-zinc-900 dark:text-zinc-100";
+
+fn import_status_badge_variant(status: &ImportMatchStatus) -> BadgeVariant {
+    match status {
+        ImportMatchStatus::Matched => BadgeVariant::Success,
+        ImportMatchStatus::Partial => BadgeVariant::Accent,
+        ImportMatchStatus::Unmatched => BadgeVariant::Danger,
+    }
+}
 
 // ── Server functions ────────────────────────────────────────
 
@@ -522,9 +531,9 @@ fn ImportRow(item: ImportPreviewItem, selected: RwSignal<Option<usize>>) -> impl
 
             // Right side: status pill
             <div class="flex items-center gap-2 shrink-0">
-                <span class={match_status.css_class()}>
+                <Badge size=BadgeSize::Pill variant=import_status_badge_variant(&match_status)>
                     {match_status.label()}
-                </span>
+                </Badge>
             </div>
         </div>
     }

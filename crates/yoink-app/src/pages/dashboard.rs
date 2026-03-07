@@ -5,12 +5,13 @@ use leptos::prelude::*;
 
 use yoink_shared::{
     DownloadJob, DownloadStatus, MonitoredAlbum, MonitoredArtist, ServerAction, build_artist_names,
-    status_class, status_label_text,
+    status_label_text,
 };
 
 use crate::components::toast::{dispatch_with_toast, dispatch_with_toast_loading};
 use crate::components::{
-    Button, ButtonVariant, ConfirmDialog, ErrorPanel, MobileMenuButton, PageShell,
+    Badge, BadgeSize, Button, ButtonVariant, ConfirmDialog, ErrorPanel, MobileMenuButton,
+    PageShell, download_status_badge_variant,
 };
 use crate::hooks::{set_page_title, use_sse_version};
 use crate::styles::{EMPTY, GLASS, GLASS_HEADER, GLASS_TITLE, HEADER_BAR, MUTED};
@@ -279,7 +280,7 @@ fn JobRow(
     job: DownloadJob,
     #[allow(unused_variables)] artist_names: HashMap<yoink_shared::Uuid, String>,
 ) -> impl IntoView {
-    let sc = status_class(&job.status).to_string();
+    let status_variant = download_status_badge_variant(&job.status);
     let st_label = status_label_text(&job.status, job.completed_tracks, job.total_tracks);
     let progress = format!("{}/{}", job.completed_tracks, job.total_tracks);
     let artist_name = job.artist_name.clone();
@@ -299,9 +300,9 @@ fn JobRow(
                 }}
             </td>
             <td>{artist_name}</td>
-            <td><span class="pill bg-black/5 text-zinc-500 dark:bg-white/[.06] dark:text-zinc-400">{job.quality.to_string()}</span></td>
+            <td><Badge size=BadgeSize::Pill>{job.quality.to_string()}</Badge></td>
             <td>{progress}</td>
-            <td><span class=sc>{st_label}</span></td>
+            <td><Badge size=BadgeSize::Pill variant=status_variant>{st_label}</Badge></td>
             <td class=MUTED>{updated}</td>
             <td>
                 {if is_queued {

@@ -7,12 +7,12 @@ use lucide_leptos::{ChevronDown, ChevronRight, X};
 use yoink_shared::{
     DownloadJob, DownloadStatus, MonitoredAlbum, MonitoredArtist, ServerAction, TrackInfo,
     WantedAlbumGroup, WantedArtistGroup, album_cover_url, build_latest_jobs, build_wanted_tree,
-    status_class,
 };
 
 use crate::components::toast::dispatch_with_toast;
 use crate::components::{
-    Button, ButtonVariant, ErrorPanel, MobileMenuButton, PageShell, fallback_initial,
+    Badge, BadgeSize, Button, ButtonVariant, ErrorPanel, MobileMenuButton, PageShell,
+    download_status_badge_variant, fallback_initial,
 };
 use crate::hooks::{set_page_title, use_sse_version};
 use crate::styles::{EMPTY, GLASS, GLASS_HEADER, GLASS_TITLE, HEADER_BAR, MUTED};
@@ -425,11 +425,10 @@ fn AlbumWantedRow(
             Some(DownloadStatus::Failed) | Some(DownloadStatus::Completed)
         );
 
-    let status_class_name = job_status
+    let status_variant = job_status
         .as_ref()
-        .map(status_class)
-        .unwrap_or("pill")
-        .to_string();
+        .map(download_status_badge_variant)
+        .unwrap_or_default();
     let status_text = job_status
         .as_ref()
         .map(|s| s.as_str().to_string())
@@ -462,7 +461,7 @@ fn AlbumWantedRow(
                 <div class="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate">{album_title}</div>
                 <div class="text-xs text-zinc-500 dark:text-zinc-400">{release_date}</div>
             </div>
-            <span class=status_class_name>{status_text}</span>
+            <Badge size=BadgeSize::Pill variant=status_variant>{status_text}</Badge>
             <div class="flex gap-1.5 shrink-0 items-center">
                 {if is_failed {
                     view! {

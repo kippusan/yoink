@@ -12,24 +12,6 @@ pub const EMPTY: &str = "text-center py-10 px-4 text-zinc-400 dark:text-zinc-600
 pub const SELECT: &str = "py-1 px-2 border border-black/[.06] dark:border-white/[.08] rounded-lg text-xs bg-white/40 dark:bg-zinc-800/40 text-zinc-900 dark:text-zinc-100 outline-none cursor-pointer transition-[border-color,box-shadow] duration-150 focus:border-blue-500 focus:shadow-[0_0_0_2px_rgba(59,130,246,.12)]";
 pub const SEARCH_INPUT: &str = "py-2 px-3.5 border border-black/[.08] dark:border-white/10 rounded-lg font-inherit text-sm bg-white/60 dark:bg-zinc-800/60 backdrop-blur-[8px] text-zinc-900 dark:text-zinc-100 outline-none w-full transition-[border-color,box-shadow] duration-150 focus:border-blue-500 focus:shadow-[0_0_0_3px_rgba(59,130,246,.15)] dark:focus:shadow-[0_0_0_3px_rgba(59,130,246,.2)] placeholder:text-zinc-400 dark:placeholder:text-zinc-600";
 
-// ── Micro-badge / tag constants ─────────────────────────────
-// Simple (no border) inline tags — 10px, pill-rounded
-pub const TAG_NEUTRAL: &str =
-    "text-[10px] px-1.5 py-px rounded bg-zinc-500/[.08] text-zinc-500 dark:text-zinc-400";
-pub const TAG_NEUTRAL_MONO: &str =
-    "text-[10px] px-1.5 py-px rounded bg-zinc-500/[.08] text-zinc-500 dark:text-zinc-400 font-mono";
-pub const TAG_SUCCESS: &str =
-    "text-[10px] px-1.5 py-px rounded bg-green-500/[.12] text-green-600 dark:text-green-400";
-pub const TAG_WARNING: &str =
-    "text-[10px] px-1.5 py-px rounded bg-amber-500/[.12] text-amber-600 dark:text-amber-300";
-pub const TAG_INFO: &str =
-    "text-[10px] px-1.5 py-px rounded bg-blue-500/[.10] text-blue-600 dark:text-blue-400";
-pub const TAG_EXPLICIT: &str = "text-[10px] px-1.5 py-px rounded bg-zinc-200 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300";
-// Bordered variant — with border + inline-flex
-pub const TAG_BORDERED_NEUTRAL: &str = "inline-flex items-center px-1.5 py-px text-[10px] font-medium text-zinc-500 dark:text-zinc-400 bg-zinc-500/[.06] border border-zinc-500/10 rounded";
-pub const TAG_BORDERED_INFO: &str = "inline-flex items-center px-1.5 py-px text-[10px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-500/[.08] border border-blue-500/20 rounded";
-pub const TAG_BORDERED_WARNING: &str = "inline-flex items-center px-1.5 py-px text-[10px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-500/[.08] border border-amber-500/20 rounded";
-
 // ── Sticky header bar ───────────────────────────────────────
 pub const HEADER_BAR: &str = "bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[16px] border-b border-black/[.06] dark:border-white/[.06] px-6 max-md:px-4 py-3.5 flex items-center justify-between sticky top-0 z-40";
 

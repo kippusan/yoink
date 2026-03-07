@@ -8,12 +8,11 @@ use yoink_shared::{
 
 use crate::components::toast::dispatch_with_toast;
 use crate::components::{
-    Breadcrumb, BreadcrumbItem, Button, ButtonSize, ButtonVariant, ErrorPanel, PageShell,
+    Badge, BadgeSize, BadgeSurface, BadgeVariant, Breadcrumb, BreadcrumbItem, Button, ButtonSize,
+    ButtonVariant, ErrorPanel, PageShell,
 };
 use crate::hooks::{set_page_title, use_sse_version};
-use crate::styles::{
-    GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, MUTED, SELECT, TAG_BORDERED_NEUTRAL,
-};
+use crate::styles::{GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, MUTED, SELECT};
 
 // ── Data structures ─────────────────────────────────────────
 
@@ -256,14 +255,14 @@ fn build_merged_links_preview(
 
 // ── UI helpers ──────────────────────────────────────────────
 
-/// Confidence badge with color coding.
-fn confidence_class(confidence: u8) -> &'static str {
+/// Confidence badge tone.
+fn confidence_variant(confidence: u8) -> BadgeVariant {
     if confidence >= 80 {
-        "text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 border-emerald-500/20"
+        BadgeVariant::Success
     } else if confidence >= 50 {
-        "text-amber-700 dark:text-amber-300 bg-amber-500/10 border-amber-500/20"
+        BadgeVariant::Warning
     } else {
-        "text-red-700 dark:text-red-300 bg-red-500/10 border-red-500/20"
+        BadgeVariant::Danger
     }
 }
 
@@ -281,21 +280,23 @@ fn ProviderBadge(link: ProviderLink) -> impl IntoView {
     let label = provider_display_name(&link.provider);
     match link.external_url {
         Some(url) => view! {
-            <a
+            <Badge
+                variant=BadgeVariant::Info
+                surface=BadgeSurface::Outline
                 href=url
-                target="_blank"
-                rel="noreferrer"
-                class="inline-flex items-center px-1.5 py-px text-[10px] font-medium text-blue-600 dark:text-blue-400 bg-blue-500/[.08] border border-blue-500/20 rounded no-underline hover:bg-blue-500/15"
+                new_tab=true
                 title=link.external_id
             >
                 {label}
-            </a>
-        }.into_any(),
+            </Badge>
+        }
+        .into_any(),
         None => view! {
-            <span class=TAG_BORDERED_NEUTRAL title=link.external_id>
+            <Badge surface=BadgeSurface::Outline title=link.external_id>
                 {label}
-            </span>
-        }.into_any(),
+            </Badge>
+        }
+        .into_any(),
     }
 }
 
@@ -334,7 +335,7 @@ fn AlbumCard(album: MonitoredAlbum, links: Vec<ProviderLink>, track_count: usize
 
 #[component]
 fn MergeCandidateCard(candidate: MergeCandidate) -> impl IntoView {
-    let conf_cls = confidence_class(candidate.confidence);
+    let conf_variant = confidence_variant(candidate.confidence);
     let kind_label = match_kind_label(&candidate.match_kind).to_string();
 
     // Title options for the dropdown.
@@ -364,9 +365,13 @@ fn MergeCandidateCard(candidate: MergeCandidate) -> impl IntoView {
             // ── Header: confidence + match kind ────────────────
             <div class=GLASS_HEADER>
                 <div class="flex items-center gap-2">
-                    <span class={format!("inline-flex items-center px-2 py-0.5 text-xs font-semibold border rounded-md {}", conf_cls)}>
+                    <Badge
+                        variant=conf_variant
+                        surface=BadgeSurface::Outline
+                        size=BadgeSize::Sm
+                    >
                         {format!("{}%", candidate.confidence)}
-                    </span>
+                    </Badge>
                     <span class="text-sm font-medium text-zinc-900 dark:text-zinc-100">
                         {kind_label}
                     </span>

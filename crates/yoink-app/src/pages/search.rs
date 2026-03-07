@@ -5,12 +5,11 @@ use std::collections::HashSet;
 use yoink_shared::{SearchAlbumResult, SearchArtistResult, SearchTrackResult, ServerAction};
 
 use crate::components::toast::dispatch_with_toast_loading;
-use crate::components::{Breadcrumb, BreadcrumbItem, Button, ButtonVariant, PageShell};
-use crate::hooks::set_page_title;
-use crate::styles::{
-    EMPTY, GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, MUTED, SEARCH_INPUT, TAG_EXPLICIT,
-    TAG_INFO, TAG_NEUTRAL, TAG_NEUTRAL_MONO, TAG_WARNING,
+use crate::components::{
+    Badge, BadgeVariant, Breadcrumb, BreadcrumbItem, Button, ButtonVariant, PageShell,
 };
+use crate::hooks::set_page_title;
+use crate::styles::{EMPTY, GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, MUTED, SEARCH_INPUT};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SearchAllResult {
@@ -143,6 +142,7 @@ fn SearchArtistsSection(items: Vec<SearchArtistResult>, dedupe: bool) -> impl In
                                 let name = r.name.clone();
                                 let image_url = r.image_url.clone();
                                 let external_url = r.url.clone();
+                                let tags = r.tags.clone();
                                 let type_country = match (&r.artist_type, &r.country) {
                                     (Some(t), Some(c)) if !t.is_empty() && !c.is_empty() => {
                                         format!("{} · {}", t, c)
@@ -178,14 +178,17 @@ fn SearchArtistsSection(items: Vec<SearchArtistResult>, dedupe: bool) -> impl In
                                                 view! { <span></span> }.into_any()
                                             }}
                                             <div class="flex items-center gap-1.5 mt-1 flex-wrap">
-                                                <span class=TAG_NEUTRAL_MONO>{r.external_id.clone()}</span>
+                                                <Badge mono=true>{r.external_id.clone()}</Badge>
                                                 {if let Some(pop) = r.popularity {
-                                                    view! { <span class=TAG_INFO>{format!("pop {pop}")}</span> }.into_any()
+                                                    view! {
+                                                        <Badge variant=BadgeVariant::Info>{format!("pop {pop}")}</Badge>
+                                                    }
+                                                    .into_any()
                                                 } else {
                                                     view! { <span></span> }.into_any()
                                                 }}
-                                                {r.tags.iter().take(2).map(|t| {
-                                                    view! { <span class=TAG_WARNING>{t.clone()}</span> }
+                                                {tags.into_iter().take(2).map(|tag| {
+                                                    view! { <Badge variant=BadgeVariant::Warning>{tag}</Badge> }
                                                 }).collect_view()}
                                             </div>
                                         </div>
@@ -272,21 +275,21 @@ fn SearchAlbumsSection(items: Vec<SearchAlbumResult>, dedupe: bool) -> impl Into
                                             <div class={cls!(MUTED, "text-xs truncate")}>{format!("{} · {}", r.artist_name, r.provider)}</div>
                                             <div class="flex items-center gap-1.5 mt-1 flex-wrap">
                                                 {if let Some(rt) = r.album_type.clone() {
-                                                    view! { <span class=TAG_NEUTRAL>{rt}</span> }.into_any()
+                                                    view! { <Badge>{rt}</Badge> }.into_any()
                                                 } else {
                                                     view! { <span></span> }.into_any()
                                                 }}
                                                 {if let Some(rd) = r.release_date.clone() {
-                                                    view! { <span class=TAG_NEUTRAL>{rd}</span> }.into_any()
+                                                    view! { <Badge>{rd}</Badge> }.into_any()
                                                 } else {
                                                     view! { <span></span> }.into_any()
                                                 }}
                                                 {if r.explicit {
-                                                    view! { <span class=TAG_EXPLICIT>"Explicit"</span> }.into_any()
+                                                    view! { <Badge variant=BadgeVariant::Explicit>"Explicit"</Badge> }.into_any()
                                                 } else {
                                                     view! { <span></span> }.into_any()
                                                 }}
-                                                <span class=TAG_NEUTRAL_MONO>{r.external_id.clone()}</span>
+                                                <Badge mono=true>{r.external_id.clone()}</Badge>
                                             </div>
                                         </div>
                                         {if let Some(url) = r.url.clone() {
@@ -373,26 +376,26 @@ fn SearchTracksSection(items: Vec<SearchTrackResult>, dedupe: bool) -> impl Into
                                             <div class="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">{r.title}</div>
                                             <div class={cls!(MUTED, "text-xs truncate")}>{format!("{} · {}", r.artist_name, r.album_title)}</div>
                                             <div class="flex items-center gap-1.5 mt-1 flex-wrap">
-                                                <span class=TAG_INFO>
+                                                <Badge variant=BadgeVariant::Info>
                                                     {r.provider.clone()}
-                                                </span>
-                                                <span class=TAG_NEUTRAL>{r.duration_display.clone()}</span>
+                                                </Badge>
+                                                <Badge>{r.duration_display.clone()}</Badge>
                                                 {if let Some(v) = r.version.clone() {
                                                     if v.is_empty() {
                                                         view! { <span></span> }.into_any()
                                                     } else {
-                                                        view! { <span class=TAG_NEUTRAL>{v}</span> }.into_any()
+                                                        view! { <Badge>{v}</Badge> }.into_any()
                                                     }
                                                 } else {
                                                     view! { <span></span> }.into_any()
                                                 }}
                                                 {if let Some(isrc) = r.isrc.clone() {
-                                                    view! { <span class=TAG_NEUTRAL_MONO>{isrc}</span> }.into_any()
+                                                    view! { <Badge mono=true>{isrc}</Badge> }.into_any()
                                                 } else {
                                                     view! { <span></span> }.into_any()
                                                 }}
                                                 {if r.explicit {
-                                                    view! { <span class=TAG_EXPLICIT>"Explicit"</span> }.into_any()
+                                                    view! { <Badge variant=BadgeVariant::Explicit>"Explicit"</Badge> }.into_any()
                                                 } else {
                                                     view! { <span></span> }.into_any()
                                                 }}

@@ -1,4 +1,5 @@
 mod album_card;
+mod badge;
 mod breadcrumb;
 mod button;
 pub(crate) mod confirm_dialog;
@@ -12,6 +13,7 @@ mod sleeve_badge;
 pub mod toast;
 
 pub use album_card::{AlbumCard, MonitorToggle};
+pub use badge::{Badge, BadgeSize, BadgeSurface, BadgeVariant, download_status_badge_variant};
 pub use breadcrumb::{Breadcrumb, BreadcrumbItem};
 pub use button::{Button, ButtonSize, ButtonVariant};
 pub use confirm_dialog::ConfirmDialog;

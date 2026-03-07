@@ -5,14 +5,15 @@ use lucide_leptos::{ArrowLeft, Bookmark, Check, Download, GitCompareArrows, Refr
 use yoink_shared::{
     DownloadJob, DownloadStatus, MatchSuggestion, MonitoredAlbum, MonitoredArtist, ProviderLink,
     ServerAction, TrackInfo, Uuid, album_cover_url, album_type_label, build_latest_jobs,
-    provider_display_name, status_class, status_label_text,
+    provider_display_name, status_label_text,
 };
 
 use super::provider_icon_svg;
 use crate::components::toast::{dispatch_with_toast, dispatch_with_toast_loading};
 use crate::components::{
-    Breadcrumb, BreadcrumbItem, Button, ButtonSize, ButtonVariant, ConfirmDialog, ErrorPanel,
-    PageShell, ResolveArtistDialog, fallback_initial,
+    Badge, BadgeSize, BadgeSurface, BadgeVariant, Breadcrumb, BreadcrumbItem, Button, ButtonSize,
+    ButtonVariant, ConfirmDialog, ErrorPanel, PageShell, ResolveArtistDialog,
+    download_status_badge_variant, fallback_initial,
 };
 use crate::hooks::{set_page_title, use_sse_version};
 use crate::styles::{GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, MUTED};
@@ -316,7 +317,7 @@ fn AlbumDetailContent(
     let job_error = latest_job.as_ref().and_then(|j| j.error.clone());
     let job_quality = latest_job.as_ref().map(|j| j.quality);
 
-    let status_pill_class = job_status.as_ref().map(|s| status_class(s).to_string());
+    let status_pill_variant = job_status.as_ref().map(download_status_badge_variant);
     let status_pill_text = job_status.as_ref().map(|s| {
         status_label_text(
             s,
@@ -383,20 +384,35 @@ fn AlbumDetailContent(
                 <div class=GLASS_HEADER>
                     <div class="flex flex-wrap items-center gap-2">
                         {if is_acquired {
-                            view! { <span class="pill" style="background:rgba(34,197,94,.12);color:#22c55e">"Acquired"</span> }.into_any()
+                            view! { <Badge size=BadgeSize::Pill variant=BadgeVariant::Success>"Acquired"</Badge> }.into_any()
                         } else if is_wanted {
-                            view! { <span class="pill" style="background:rgba(245,158,11,.12);color:#f59e0b">"Wanted"</span> }.into_any()
+                            view! { <Badge size=BadgeSize::Pill variant=BadgeVariant::Warning>"Wanted"</Badge> }.into_any()
                         } else if is_partially_wanted {
-                            view! { <span class="pill" style="background:rgba(245,158,11,.08);color:#d97706">"Partially Wanted"</span> }.into_any()
+                            view! {
+                                <Badge
+                                    size=BadgeSize::Pill
+                                    variant=BadgeVariant::Warning
+                                    surface=BadgeSurface::Outline
+                                >
+                                    "Partially Wanted"
+                                </Badge>
+                            }
+                            .into_any()
                         } else {
                             view! { <span></span> }.into_any()
                         }}
-                        {match (&status_pill_class, &status_pill_text) {
-                            (Some(cls), Some(text)) => view! { <span class=cls.clone()>{text.clone()}</span> }.into_any(),
+                        {match (status_pill_variant, status_pill_text.clone()) {
+                            (Some(variant), Some(text)) => view! {
+                                <Badge size=BadgeSize::Pill variant=variant>{text}</Badge>
+                            }
+                            .into_any(),
                             _ => view! { <span></span> }.into_any(),
                         }}
-                        {match (&job_status, &job_quality) {
-                            (Some(_), Some(q)) => view! { <span class="pill bg-black/5 text-zinc-500 dark:bg-white/[.06] dark:text-zinc-400">{q.to_string()}</span> }.into_any(),
+                        {match (job_status.clone(), job_quality) {
+                            (Some(_), Some(q)) => view! {
+                                <Badge size=BadgeSize::Pill>{q.to_string()}</Badge>
+                            }
+                            .into_any(),
                             _ => view! { <span></span> }.into_any(),
                         }}
                     </div>
@@ -589,16 +605,22 @@ fn AlbumDetailContent(
                                             let icon_svg = provider_icon_svg(&link.provider);
                                             match external_url {
                                                 Some(url) => view! {
-                                                    <a href=url class="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium text-blue-600 dark:text-blue-400 bg-blue-500/[.08] border border-blue-500/20 rounded-md no-underline hover:bg-blue-500/15" target="_blank" rel="noreferrer">
+                                                    <Badge
+                                                        variant=BadgeVariant::Info
+                                                        surface=BadgeSurface::Outline
+                                                        size=BadgeSize::Sm
+                                                        href=url
+                                                        new_tab=true
+                                                    >
                                                         <span class="shrink-0 [&>svg]:size-3 text-blue-500/60 dark:text-blue-400/60" inner_html=icon_svg></span>
                                                         {display}
-                                                    </a>
+                                                    </Badge>
                                                 }.into_any(),
                                                 None => view! {
-                                                    <span class="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium text-zinc-500 dark:text-zinc-400 bg-zinc-500/[.08] border border-zinc-500/20 rounded-md">
+                                                    <Badge surface=BadgeSurface::Outline size=BadgeSize::Sm>
                                                         <span class="shrink-0 [&>svg]:size-3 text-zinc-400/60 dark:text-zinc-500/60" inner_html=icon_svg></span>
                                                         {display}
-                                                    </span>
+                                                    </Badge>
                                                 }.into_any(),
                                             }
                                         }).collect_view()}

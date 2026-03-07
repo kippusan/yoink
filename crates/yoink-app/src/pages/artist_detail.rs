@@ -18,15 +18,12 @@ use crate::components::toast::{
     dispatch_with_toast, dispatch_with_toast_loading, toast_missing_context,
 };
 use crate::components::{
-    AlbumCard, Breadcrumb, BreadcrumbItem, Button, ButtonSize, ButtonVariant, ConfirmDialog,
-    EditArtistDialog, ErrorPanel, LinkProviderDialog, MonitorToggle, PageShell, SleeveBadge,
-    fallback_initial,
+    AlbumCard, Badge, BadgeSize, BadgeSurface, BadgeVariant, Breadcrumb, BreadcrumbItem, Button,
+    ButtonSize, ButtonVariant, ConfirmDialog, EditArtistDialog, ErrorPanel, LinkProviderDialog,
+    MonitorToggle, PageShell, SleeveBadge, fallback_initial,
 };
 use crate::hooks::{set_page_title, use_sse_version};
-use crate::styles::{
-    EMPTY, GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, MUTED, SELECT, TAG_BORDERED_INFO,
-    TAG_BORDERED_NEUTRAL, TAG_BORDERED_WARNING,
-};
+use crate::styles::{EMPTY, GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, MUTED, SELECT};
 
 // ── DTO ─────────────────────────────────────────────────────
 
@@ -326,15 +323,23 @@ fn ArtistDetailContent(
                                     <span>{format!("{album_count} albums \u{00b7} {monitored_count} monitored \u{00b7} {acquired_count} acquired \u{00b7} {wanted_count} wanted")}</span>
                                     {if artist_monitored {
                                         view! {
-                                            <span class=TAG_BORDERED_INFO>
+                                            <Badge
+                                                variant=BadgeVariant::Info
+                                                surface=BadgeSurface::Outline
+                                                size=BadgeSize::Sm
+                                            >
                                                 "Monitored"
-                                            </span>
+                                            </Badge>
                                         }.into_any()
                                     } else {
                                         view! {
-                                            <span class=TAG_BORDERED_WARNING>
+                                            <Badge
+                                                variant=BadgeVariant::Warning
+                                                surface=BadgeSurface::Outline
+                                                size=BadgeSize::Sm
+                                            >
                                                 "Lightweight"
-                                            </span>
+                                            </Badge>
                                         }.into_any()
                                     }}
                                 </div>
@@ -527,6 +532,13 @@ fn ArtistDetailContent(
                                                 (None, None) => None,
                                             }
                                         };
+                                        let confidence_variant = if m.confidence >= 80 {
+                                            BadgeVariant::Success
+                                        } else if m.confidence >= 50 {
+                                            BadgeVariant::Warning
+                                        } else {
+                                            BadgeVariant::Danger
+                                        };
                                         view! {
                                             <div class="flex items-start gap-3 p-2 rounded-lg border border-black/[.06] dark:border-white/[.08] bg-white/60 dark:bg-zinc-800/60">
                                                 {match image_url {
@@ -543,19 +555,30 @@ fn ArtistDetailContent(
                                                         <span class="text-[15px] font-semibold text-zinc-900 dark:text-zinc-100">{name}</span>
                                                         {if let Some(url) = m.external_url.clone() {
                                                             view! {
-                                                                <a class="inline-flex items-center px-2 py-0.5 text-[11px] font-medium text-blue-600 dark:text-blue-400 bg-blue-500/[.08] border border-blue-500/20 rounded-md no-underline hover:bg-blue-500/15" href=url target="_blank" rel="noreferrer">
+                                                                <Badge
+                                                                    variant=BadgeVariant::Info
+                                                                    surface=BadgeSurface::Outline
+                                                                    size=BadgeSize::Sm
+                                                                    href=url
+                                                                    new_tab=true
+                                                                >
                                                                     {right.clone()}
-                                                                </a>
+                                                                </Badge>
                                                             }.into_any()
                                                         } else {
                                                             view! {
-                                                                <span class="inline-flex items-center px-2 py-0.5 text-[11px] font-medium text-zinc-500 dark:text-zinc-400 bg-zinc-500/[.08] border border-zinc-500/20 rounded-md">
+                                                                <Badge
+                                                                    surface=BadgeSurface::Outline
+                                                                    size=BadgeSize::Sm
+                                                                >
                                                                     {right.clone()}
-                                                                </span>
+                                                                </Badge>
                                                             }.into_any()
                                                         }}
-                                                        <span class="pill bg-black/5 text-zinc-500 dark:bg-white/[.06] dark:text-zinc-400">{kind}</span>
-                                                        <span class="pill">{format!("{}%", m.confidence)}</span>
+                                                        <Badge size=BadgeSize::Pill>{kind}</Badge>
+                                                        <Badge variant=confidence_variant size=BadgeSize::Pill>
+                                                            {format!("{}%", m.confidence)}
+                                                        </Badge>
                                                     </div>
 
                                                     {subtitle.map(|s| view! {
@@ -565,7 +588,7 @@ fn ArtistDetailContent(
                                                     {(!m.tags.is_empty()).then(|| view! {
                                                         <div class="flex flex-wrap gap-1 mt-1">
                                                             {m.tags.into_iter().map(|tag| view! {
-                                                                <span class=TAG_BORDERED_NEUTRAL>{tag}</span>
+                                                                <Badge surface=BadgeSurface::Outline>{tag}</Badge>
                                                             }).collect_view()}
                                                         </div>
                                                     })}

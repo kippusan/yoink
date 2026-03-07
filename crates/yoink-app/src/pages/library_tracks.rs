@@ -5,11 +5,12 @@ use lucide_leptos::{ArrowDown, ArrowUp, ChevronDown, ChevronRight};
 use yoink_shared::{LibraryTrack, SearchTrackResult, ServerAction};
 
 use crate::components::toast::dispatch_with_toast_loading;
-use crate::components::{Breadcrumb, BreadcrumbItem, Button, ButtonVariant, PageShell};
+use crate::components::{
+    Badge, BadgeVariant, Breadcrumb, BreadcrumbItem, Button, ButtonVariant, PageShell,
+};
 use crate::hooks::set_page_title;
 use crate::styles::{
-    EMPTY, GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, MUTED, SEARCH_INPUT, SELECT, TAG_NEUTRAL,
-    TAG_SUCCESS, TAG_WARNING,
+    EMPTY, GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, MUTED, SEARCH_INPUT, SELECT,
 };
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -185,6 +186,8 @@ const GROUP_HEADER: &str = "flex items-center gap-2 px-5 max-md:px-3.5 py-2.5 bg
 const COVER_THUMB: &str =
     "w-10 h-10 rounded-md overflow-hidden bg-zinc-200 dark:bg-zinc-700 shrink-0";
 const COVER_FALLBACK: &str = "w-full h-full flex items-center justify-center text-xs font-bold text-zinc-400 dark:text-zinc-600";
+const DESKTOP_TRACK_GRID: &str =
+    "grid-cols-[40px_minmax(0,2.4fr)_minmax(120px,1fr)_minmax(120px,1fr)_max-content_max-content]";
 
 // ── Main component ──────────────────────────────────────────
 
@@ -384,7 +387,10 @@ pub fn LibraryTracksTab() -> impl IntoView {
                                     </div>
                                     <div class={cls!(GLASS_BODY, "p-0!")}>
                                         // ── Table header row (hidden on mobile) ──
-                                        <div class="max-md:hidden grid grid-cols-[40px_minmax(0,3fr)_minmax(0,1fr)_minmax(0,1fr)_56px_72px] gap-3 px-5 py-2.5 border-b border-black/[.06] dark:border-white/[.06] items-center">
+                                        <div class={cls!(
+                                            "max-md:hidden grid gap-3 px-5 py-2.5 border-b border-black/[.06] dark:border-white/[.06] items-center",
+                                            DESKTOP_TRACK_GRID,
+                                        )}>
                                             <span></span>
                                             <span
                                                 class=move || if sort_key.get() == SortKey::Title { TH_ACTIVE } else { TH_BASE }
@@ -701,12 +707,12 @@ fn render_track_row(row: LibraryTrack) -> impl IntoView {
     let _idle = !t.monitored && !t.acquired;
     let fallback = crate::components::fallback_initial(&row.album_title);
 
-    let status_tag = if t.acquired {
-        TAG_SUCCESS
+    let status_variant = if t.acquired {
+        BadgeVariant::Success
     } else if wanted {
-        TAG_WARNING
+        BadgeVariant::Warning
     } else {
-        TAG_NEUTRAL
+        BadgeVariant::Neutral
     };
     let status_text = if t.acquired {
         "Acquired"
@@ -721,7 +727,10 @@ fn render_track_row(row: LibraryTrack) -> impl IntoView {
 
     view! {
         // ── Desktop row (md+): grid layout matching header ──
-        <div class="max-md:hidden grid grid-cols-[40px_minmax(0,3fr)_minmax(0,1fr)_minmax(0,1fr)_56px_72px] gap-3 px-5 py-2 items-center transition-colors duration-100 hover:bg-blue-500/[.03] dark:hover:bg-blue-500/[.05] border-b border-black/[.02] dark:border-white/[.02] last:border-b-0">
+        <div class={cls!(
+            "max-md:hidden grid gap-3 px-5 py-2 items-center transition-colors duration-100 hover:bg-blue-500/[.03] dark:hover:bg-blue-500/[.05] border-b border-black/[.02] dark:border-white/[.02] last:border-b-0",
+            DESKTOP_TRACK_GRID,
+        )}>
             // Cover thumbnail
             <div class=COVER_THUMB>
                 {match &row.album_cover_url {
@@ -744,7 +753,12 @@ fn render_track_row(row: LibraryTrack) -> impl IntoView {
                 }}
                 {if explicit {
                     view! {
-                        <span class="inline-flex items-center justify-center px-1 py-px text-[9px] font-bold leading-none tracking-wide uppercase rounded bg-zinc-200 text-zinc-500 dark:bg-zinc-700 dark:text-zinc-400 shrink-0">"E"</span>
+                        <Badge
+                            variant=BadgeVariant::Explicit
+                            class="shrink-0 justify-center gap-0 px-1 text-[9px] font-bold leading-none tracking-wide uppercase"
+                        >
+                            "E"
+                        </Badge>
                     }.into_any()
                 } else {
                     view! { <span></span> }.into_any()
@@ -761,7 +775,7 @@ fn render_track_row(row: LibraryTrack) -> impl IntoView {
             // Duration
             <span class={cls!(MUTED, "text-xs tabular-nums")}>{t.duration_display.clone()}</span>
             // Status
-            <span class=status_tag>{status_text}</span>
+            <Badge variant=status_variant>{status_text}</Badge>
         </div>
 
         // ── Mobile row (<md): compact card layout ───────────
@@ -784,7 +798,12 @@ fn render_track_row(row: LibraryTrack) -> impl IntoView {
                     <span class="text-sm text-zinc-900 dark:text-zinc-100 truncate">{t.title}</span>
                     {if explicit {
                         view! {
-                            <span class="inline-flex items-center justify-center px-1 py-px text-[9px] font-bold leading-none tracking-wide uppercase rounded bg-zinc-200 text-zinc-500 dark:bg-zinc-700 dark:text-zinc-400 shrink-0">"E"</span>
+                            <Badge
+                                variant=BadgeVariant::Explicit
+                                class="shrink-0 justify-center gap-0 px-1 text-[9px] font-bold leading-none tracking-wide uppercase"
+                            >
+                                "E"
+                            </Badge>
                         }.into_any()
                     } else {
                         view! { <span></span> }.into_any()
@@ -793,7 +812,7 @@ fn render_track_row(row: LibraryTrack) -> impl IntoView {
                 <div class={cls!(MUTED, "text-xs truncate")}>{format!("{} \u{00b7} {}", row.artist_name, row.album_title)}</div>
             </div>
             <div class="shrink-0 flex flex-col items-end gap-1">
-                <span class=status_tag>{status_text}</span>
+                <Badge variant=status_variant>{status_text}</Badge>
                 <span class={cls!(MUTED, "text-[10px] tabular-nums")}>{t.duration_display}</span>
             </div>
         </div>

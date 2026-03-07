@@ -1,3 +1,4 @@
+use crate::cls;
 use leptos::prelude::*;
 use lucide_leptos::{Check, FolderOpen, Music, Search};
 
@@ -6,11 +7,11 @@ use yoink_shared::{
     ImportResultSummary,
 };
 
-use crate::components::{ErrorPanel, MobileMenuButton, Sidebar};
-use crate::hooks::{set_page_title, use_sse_version};
-use crate::styles::{
-    BTN, BTN_PRIMARY, EMPTY, GLASS, GLASS_HEADER, GLASS_TITLE, HEADER_BAR, MUTED, btn_cls, cls,
+use crate::components::{
+    Button, ButtonSize, ButtonVariant, ErrorPanel, MobileMenuButton, PageShell,
 };
+use crate::hooks::{set_page_title, use_sse_version};
+use crate::styles::{EMPTY, GLASS, GLASS_HEADER, GLASS_TITLE, HEADER_BAR, MUTED};
 
 #[cfg(feature = "hydrate")]
 use leptoaster::{ToastBuilder, ToastLevel, ToastPosition, expect_toaster};
@@ -61,9 +62,7 @@ pub fn ImportPage() -> impl IntoView {
     let preview_data = Resource::new(move || version.get(), |_| preview_import_library());
 
     view! {
-        <div class="flex min-h-screen">
-            <Sidebar active="import" />
-            <div class="ml-[220px] max-md:ml-0 flex-1 min-h-screen overflow-x-hidden">
+        <PageShell active="import">
                 <Transition fallback=move || view! {
                     <div>
                         <div class=HEADER_BAR>
@@ -105,8 +104,7 @@ pub fn ImportPage() -> impl IntoView {
                         })
                     }}
                 </Transition>
-            </div>
-        </div>
+        </PageShell>
     }
 }
 
@@ -241,7 +239,7 @@ fn ImportContent(items: Vec<ImportPreviewItem>) -> impl IntoView {
             <div class="flex items-center gap-3">
                 <MobileMenuButton />
                 <h1 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 m-0">"Manual Import"</h1>
-                <span class={cls(MUTED, "text-[13px]")}>{format!("{total} folders found")}</span>
+                <span class={cls!(MUTED, "text-[13px]")}>{format!("{total} folders found")}</span>
             </div>
         </div>
 
@@ -320,26 +318,20 @@ fn ImportContent(items: Vec<ImportPreviewItem>) -> impl IntoView {
                 <div class=GLASS_HEADER>
                     <h2 class=GLASS_TITLE>"Discovered Albums"</h2>
                     <div class="flex flex-wrap items-center gap-2">
-                        <button type="button"
-                            class={cls(BTN, "px-2.5 py-0.5 text-xs")}
-                            on:click=select_all_matched>
+                        <Button on:click=select_all_matched>
                             "Select All"
-                        </button>
-                        <button type="button"
-                            class={cls(BTN, "px-2.5 py-0.5 text-xs")}
-                            on:click=deselect_all>
+                        </Button>
+                        <Button on:click=deselect_all>
                             "Deselect All"
-                        </button>
-                        <button type="button"
-                            class=move || btn_cls(BTN_PRIMARY, "px-3 py-1 text-xs", importing.get())
-                            disabled=move || importing.get()
+                        </Button>
+                        <Button variant=ButtonVariant::Primary size=ButtonSize::Md loading=importing
                             on:click=do_import>
                             {move || if importing.get() {
                                 "Importing\u{2026}".to_string()
                             } else {
                                 "Import Selected".to_string()
                             }}
-                        </button>
+                        </Button>
                     </div>
                 </div>
 
@@ -519,12 +511,10 @@ fn ImportRow(item: ImportPreviewItem, selected: RwSignal<Option<usize>>) -> impl
                             <span class="text-[11px] text-red-500 dark:text-red-400">
                                 "No match found"
                             </span>
-                            <a href=search_url
-                                class={cls(BTN, "px-2 py-0.5 text-[11px] gap-1")}
-                            >
+                            <Button size=ButtonSize::Xs href=search_url>
                                 <Search attr:class="size-3" />
                                 "Add Artist"
-                            </a>
+                            </Button>
                         </div>
                     }.into_any()
                 }}

@@ -1,17 +1,16 @@
+use crate::cls;
 use leptos::prelude::*;
 use lucide_leptos::{House, SearchX};
 
-use crate::components::{MobileMenuButton, Sidebar};
+use crate::components::{Button, ButtonSize, ButtonVariant, MobileMenuButton, PageShell};
 use crate::hooks::set_page_title;
-use crate::styles::{BTN_PRIMARY, HEADER_BAR, MUTED, cls};
+use crate::styles::{HEADER_BAR, MUTED};
 
 #[component]
 pub fn NotFoundPage() -> impl IntoView {
     set_page_title("Not Found");
     view! {
-        <div class="flex min-h-screen">
-            <Sidebar active="" />
-            <div class="ml-[220px] max-md:ml-0 flex-1 min-h-screen overflow-x-hidden">
+        <PageShell active="">
                 // Header
                 <div class=HEADER_BAR>
                     <div class="flex items-center gap-2"><MobileMenuButton /><h1 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 m-0">"Not Found"</h1></div>
@@ -23,15 +22,14 @@ pub fn NotFoundPage() -> impl IntoView {
                         <SearchX />
                     </div>
                     <h2 class="text-xl font-bold text-zinc-900 dark:text-zinc-100 mb-2">"Page not found"</h2>
-                    <p class={cls(MUTED, "text-sm mb-6 max-w-xs")}>
+                    <p class={cls!(MUTED, "text-sm mb-6 max-w-xs")}>
                         "The page you\u{2019}re looking for doesn\u{2019}t exist or has been moved."
                     </p>
-                    <a href="/" class={cls(BTN_PRIMARY, "inline-flex items-center gap-1.5 no-underline")}>
+                    <Button variant=ButtonVariant::Primary size=ButtonSize::Lg href="/">
                         <House size=16 />
                         "Back to Dashboard"
-                    </a>
+                    </Button>
                 </div>
-            </div>
-        </div>
+        </PageShell>
     }
 }

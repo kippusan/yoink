@@ -2,6 +2,7 @@ use leptos::portal::Portal;
 use leptos::prelude::*;
 use yoink_shared::{ArtistImageOption, ServerAction, Uuid, provider_display_name};
 
+use super::{Button, ButtonSize, ButtonVariant, fallback_initial};
 use crate::components::toast::dispatch_with_toast_loading;
 use crate::pages::artist_detail::get_artist_images;
 
@@ -12,9 +13,6 @@ const CARD: &str = "bg-white/80 dark:bg-zinc-800/80 backdrop-blur-[16px] border 
 const TITLE: &str = "text-[15px] font-semibold text-zinc-900 dark:text-zinc-100 m-0 mb-4";
 const LABEL: &str = "block text-[13px] font-medium text-zinc-700 dark:text-zinc-300 mb-1.5";
 const INPUT: &str = "w-full px-3 py-2 text-sm bg-white/60 dark:bg-zinc-800/60 border border-black/[.08] dark:border-white/10 rounded-lg text-zinc-900 dark:text-zinc-100 outline-none transition-[border-color,box-shadow] duration-150 focus:border-blue-500 focus:shadow-[0_0_0_2px_rgba(59,130,246,.12)]";
-const BTN_CANCEL: &str = "inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 bg-white/60 dark:bg-zinc-800/60 backdrop-blur-[8px] border border-black/[.08] dark:border-white/10 rounded-lg font-inherit text-[13px] font-medium cursor-pointer text-zinc-600 dark:text-zinc-300 no-underline transition-all duration-150 whitespace-nowrap hover:bg-white/85 hover:border-zinc-400 dark:hover:bg-zinc-800/85 dark:hover:border-zinc-500";
-const BTN_SAVE: &str = "inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 bg-blue-500 backdrop-blur-[8px] border border-blue-500 rounded-lg font-inherit text-[13px] font-medium cursor-pointer text-white no-underline transition-all duration-150 whitespace-nowrap shadow-[0_2px_12px_rgba(59,130,246,.25)] hover:bg-blue-400 hover:border-blue-400 hover:shadow-[0_4px_20px_rgba(59,130,246,.35)]";
-const BTN_SECONDARY: &str = "inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-white/60 dark:bg-zinc-800/60 backdrop-blur-[8px] border border-black/[.08] dark:border-white/10 rounded-lg font-inherit text-[12px] font-medium cursor-pointer text-zinc-600 dark:text-zinc-300 no-underline transition-all duration-150 whitespace-nowrap hover:bg-white/85 hover:border-blue-500/20 dark:hover:bg-zinc-800/85 dark:hover:border-blue-500/30";
 
 const IMG_OPTION: &str =
     "relative cursor-pointer rounded-xl overflow-hidden border-2 transition-all duration-150";
@@ -203,9 +201,7 @@ pub fn EditArtistDialog(
                                 {move || {
                                     let url = resolved_image_url();
                                     let name = name_input.get();
-                                    let initial = name.chars().next()
-                                        .map(|c| c.to_uppercase().to_string())
-                                        .unwrap_or_else(|| "?".to_string());
+                                    let initial = fallback_initial(&name);
                                     match url {
                                         Some(u) if !u.is_empty() => view! {
                                             <img
@@ -366,10 +362,9 @@ pub fn EditArtistDialog(
                         <div class="mb-5 pb-4 border-t border-black/[.06] dark:border-white/[.06] pt-4">
                             <label class=LABEL>"Bio"</label>
                             <div class="flex items-center gap-2">
-                                <button
-                                    type="button"
-                                    class=BTN_SECONDARY
-                                    disabled=move || fetching_bio.get()
+                                <Button
+                                    size=ButtonSize::Md
+                                    loading=fetching_bio
                                     on:click=on_fetch_bio
                                 >
                                     {move || if fetching_bio.get() {
@@ -379,7 +374,7 @@ pub fn EditArtistDialog(
                                     } else {
                                         "Fetch Bio"
                                     }}
-                                </button>
+                                </Button>
                                 <span class="text-[11px] text-zinc-400 dark:text-zinc-500">
                                     {move || if has_bio.get() {
                                         "Bio already present. Re-fetch to update."
@@ -392,17 +387,17 @@ pub fn EditArtistDialog(
 
                         // ── Action buttons ──────────────────────
                         <div class="flex justify-end gap-2">
-                            <button type="button" class=BTN_CANCEL on:click=move |_| open.set(false)>
+                            <Button size=ButtonSize::Lg on:click=move |_| open.set(false)>
                                 "Cancel"
-                            </button>
-                            <button
-                                type="button"
-                                class=BTN_SAVE
-                                disabled=move || saving.get()
+                            </Button>
+                            <Button
+                                variant=ButtonVariant::Primary
+                                size=ButtonSize::Lg
+                                loading=saving
                                 on:click=on_save
                             >
                                 {move || if saving.get() { "Saving\u{2026}" } else { "Save" }}
-                            </button>
+                            </Button>
                         </div>
                     </div>
                 </div>

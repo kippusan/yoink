@@ -1,7 +1,7 @@
+use crate::cls;
 use leptos::prelude::*;
 use lucide_leptos::{
-    ArrowLeft, Bookmark, BookmarkCheck, BookmarkX, ChevronRight, GitMerge, Pencil, Plus, RefreshCw,
-    Trash2, X,
+    ArrowLeft, Bookmark, BookmarkCheck, BookmarkX, GitMerge, Pencil, Plus, RefreshCw, Trash2, X,
 };
 
 use yoink_shared::{
@@ -18,14 +18,13 @@ use crate::components::toast::{
     dispatch_with_toast, dispatch_with_toast_loading, toast_missing_context,
 };
 use crate::components::{
-    ConfirmDialog, EditArtistDialog, ErrorPanel, LinkProviderDialog, MobileMenuButton, Sidebar,
-    SleeveBadge, SleeveBadgeView,
+    Breadcrumb, BreadcrumbItem, Button, ButtonSize, ButtonVariant, ConfirmDialog, EditArtistDialog,
+    ErrorPanel, LinkProviderDialog, PageShell, SleeveBadge, SleeveBadgeView, fallback_initial,
 };
 use crate::hooks::{set_page_title, use_sse_version};
 use crate::styles::{
-    BREADCRUMB_CURRENT, BREADCRUMB_LINK, BREADCRUMB_NAV, BREADCRUMB_SEP, BTN, BTN_DANGER,
-    BTN_PRIMARY, EMPTY, GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, HEADER_BAR, MUTED, SELECT,
-    btn_cls, cls,
+    EMPTY, GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, MUTED, SELECT, TAG_BORDERED_INFO,
+    TAG_BORDERED_NEUTRAL, TAG_BORDERED_WARNING,
 };
 
 // ── DTO ─────────────────────────────────────────────────────
@@ -162,19 +161,14 @@ pub fn ArtistDetailPage() -> impl IntoView {
     });
 
     view! {
-        <div class="flex min-h-screen">
-            <Sidebar active="library-artists" />
-            <div class="ml-[220px] max-md:ml-0 flex-1 min-h-screen overflow-x-hidden">
+        <PageShell active="library-artists">
                 // Skeleton — shown only until first data arrives
                 <Show when=move || !has_loaded.get()>
                     <div>
-                        <div class=HEADER_BAR>
-                            <nav class=BREADCRUMB_NAV aria-label="Breadcrumb"><MobileMenuButton />
-                                <a href="/library" class=BREADCRUMB_LINK>"Library"</a>
-                                <span class=BREADCRUMB_SEP><ChevronRight /></span>
-                                <div class="h-4 w-28 bg-zinc-200 dark:bg-zinc-700 rounded animate-pulse"></div>
-                            </nav>
-                        </div>
+                        <Breadcrumb items=vec![
+                            BreadcrumbItem::link("Library", "/library"),
+                            BreadcrumbItem::current("\u{2026}"),
+                        ] />
                         <div class="p-6 max-md:p-4">
                             <div class="mb-5 bg-white/70 dark:bg-zinc-800/60 rounded-xl border border-black/[.06] dark:border-white/[.08] p-5">
                                 <div class="flex flex-wrap items-center gap-5 animate-pulse">
@@ -229,19 +223,16 @@ pub fn ArtistDetailPage() -> impl IntoView {
                 // Artist not found
                 <Show when=move || has_loaded.get() && artist_sig.get().is_none() && load_error.get().is_none()>
                     <div>
-                        <div class=HEADER_BAR>
-                            <nav class=BREADCRUMB_NAV aria-label="Breadcrumb"><MobileMenuButton />
-                                <a href="/library" class=BREADCRUMB_LINK>"Library"</a>
-                                <span class=BREADCRUMB_SEP><ChevronRight /></span>
-                                <span class=BREADCRUMB_CURRENT>"Not Found"</span>
-                            </nav>
-                        </div>
+                        <Breadcrumb items=vec![
+                            BreadcrumbItem::link("Library", "/library"),
+                            BreadcrumbItem::current("Not Found"),
+                        ] />
                         <div class="p-6 max-md:p-4">
                             <div class="text-zinc-500">"Artist not found."</div>
-                            <a href="/library" class={cls(BTN, "mt-4 inline-flex items-center gap-1.5")}>
+                            <Button size=ButtonSize::Lg class="mt-4" href="/library">
                                 <ArrowLeft size=14 />
                                 "Library"
-                            </a>
+                            </Button>
                         </div>
                     </div>
                 </Show>
@@ -255,8 +246,7 @@ pub fn ArtistDetailPage() -> impl IntoView {
                         match_suggestions=match_suggestions_sig
                     />
                 </Show>
-            </div>
-        </div>
+        </PageShell>
     }
 }
 
@@ -296,13 +286,10 @@ fn ArtistDetailContent(
             let a = a();
             set_page_title(&a.name);
             view! {
-                <div class=HEADER_BAR>
-                    <nav class=BREADCRUMB_NAV aria-label="Breadcrumb"><MobileMenuButton />
-                        <a href="/library" class=BREADCRUMB_LINK>"Library"</a>
-                        <span class=BREADCRUMB_SEP><ChevronRight /></span>
-                        <span class=BREADCRUMB_CURRENT>{a.name}</span>
-                    </nav>
-                </div>
+                <Breadcrumb items=vec![
+                    BreadcrumbItem::link("Library", "/library"),
+                    BreadcrumbItem::current(a.name),
+                ] />
             }
         }}
 
@@ -316,16 +303,14 @@ fn ArtistDetailContent(
                 let acquired_count = all_albums.iter().filter(|a| a.acquired).count();
                 let wanted_count = all_albums.iter().filter(|a| a.wanted).count();
 
-                let fallback_initial = a.name.chars().next()
-                    .map(|c| c.to_uppercase().to_string())
-                    .unwrap_or_else(|| "?".to_string());
+                let fallback_initial = fallback_initial(&a.name);
 
                 let artist_id = a.id;
                 let artist_monitored = a.monitored;
 
                 view! {
-                    <div class={cls(GLASS, "mb-5")}>
-                        <div class={cls(GLASS_BODY, "flex flex-wrap items-center gap-5")}>
+                    <div class={cls!(GLASS, "mb-5")}>
+                        <div class={cls!(GLASS_BODY, "flex flex-wrap items-center gap-5")}>
                             {match a.image_url.clone() {
                                 Some(url) => view! {
                                     <img class="size-20 rounded-full object-cover border-2 border-blue-500/20 dark:border-blue-500/30 shrink-0 bg-zinc-200 dark:bg-zinc-800" src=url alt="" />
@@ -336,17 +321,17 @@ fn ArtistDetailContent(
                             }}
                             <div class="flex-1 min-w-0">
                                 <div class="text-[22px] font-bold mb-1">{a.name.clone()}</div>
-                                <div class={cls(MUTED, "text-[13px] mb-2 flex flex-wrap items-center gap-2")}>
+                                <div class={cls!(MUTED, "text-[13px] mb-2 flex flex-wrap items-center gap-2")}>
                                     <span>{format!("{album_count} albums \u{00b7} {monitored_count} monitored \u{00b7} {acquired_count} acquired \u{00b7} {wanted_count} wanted")}</span>
                                     {if artist_monitored {
                                         view! {
-                                            <span class="inline-flex items-center px-1.5 py-px text-[10px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-500/[.08] border border-blue-500/20 rounded">
+                                            <span class=TAG_BORDERED_INFO>
                                                 "Monitored"
                                             </span>
                                         }.into_any()
                                     } else {
                                         view! {
-                                            <span class="inline-flex items-center px-1.5 py-px text-[10px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-500/[.08] border border-amber-500/20 rounded">
+                                            <span class=TAG_BORDERED_WARNING>
                                                 "Lightweight"
                                             </span>
                                         }.into_any()
@@ -425,19 +410,15 @@ fn ArtistDetailContent(
                                 }}
 
                                 <div class="flex flex-wrap gap-1.5">
-                                    <button type="button"
-                                        class={cls(BTN, "px-2.5 py-0.5 text-xs inline-flex items-center gap-1.5")}
-                                        on:click=move |_| {
+                                    <Button on:click=move |_| {
                                             show_edit_artist.set(true);
                                         }>
                                         <Pencil size=14 />
                                         "Edit"
-                                    </button>
+                                    </Button>
                                     {if artist_monitored {
                                         view! {
-                                            <button type="button"
-                                                class=move || btn_cls(BTN, "px-2.5 py-0.5 text-xs inline-flex items-center gap-1.5", sync_loading.get())
-                                                disabled=move || sync_loading.get()
+                                            <Button loading=sync_loading
                                                 on:click={
                                                     move |_| {
                                                         dispatch_with_toast_loading(ServerAction::SyncArtistAlbums { artist_id }, "Album sync started", Some(sync_loading));
@@ -445,13 +426,11 @@ fn ArtistDetailContent(
                                                 }>
                                                 <span class=move || if sync_loading.get() { "animate-spin flex" } else { "flex" }><RefreshCw size=14 /></span>
                                                 {move || if sync_loading.get() { "Syncing\u{2026}" } else { "Sync Albums" }}
-                                            </button>
+                                            </Button>
                                         }.into_any()
                                     } else {
                                         view! {
-                                            <button type="button"
-                                                class=move || btn_cls(BTN_PRIMARY, "px-2.5 py-0.5 text-xs inline-flex items-center gap-1.5", promote_loading.get())
-                                                disabled=move || promote_loading.get()
+                                            <Button variant=ButtonVariant::Primary loading=promote_loading
                                                 on:click={
                                                     move |_| {
                                                         dispatch_with_toast_loading(
@@ -463,16 +442,16 @@ fn ArtistDetailContent(
                                                 }>
                                                 <Bookmark size=14 />
                                                 {move || if promote_loading.get() { "Promoting\u{2026}" } else { "Monitor Artist" }}
-                                            </button>
+                                            </Button>
                                         }.into_any()
                                     }}
-                                    <button type="button" class={cls(BTN_DANGER, "px-2.5 py-0.5 text-xs inline-flex items-center gap-1.5 ml-auto")}
+                                    <Button variant=ButtonVariant::Danger class="ml-auto"
                                         on:click=move |_| {
                                             show_remove_artist.set(true);
                                         }>
                                         <Trash2 size=14 />
                                         "Remove Artist"
-                                    </button>
+                                    </Button>
                                 </div>
                             </div>
                         </div>
@@ -503,12 +482,10 @@ fn ArtistDetailContent(
                     view! { <span></span> }.into_any()
                 } else {
                     view! {
-                        <div class={cls(GLASS, "mb-5")}>
+                        <div class={cls!(GLASS, "mb-5")}>
                             <div class=GLASS_HEADER>
                                 <h2 class=GLASS_TITLE>{format!("Potential Matches ({})", pending.len())}</h2>
-                                <button
-                                    type="button"
-                                    class={cls(BTN, "px-2.5 py-0.5 text-xs")}
+                                <Button
                                     on:click={
 
                                         move |_| {
@@ -520,7 +497,7 @@ fn ArtistDetailContent(
                                     }
                                 >
                                     "Refresh"
-                                </button>
+                                </Button>
                             </div>
                             <div class=GLASS_BODY>
                                 <div class="flex flex-col gap-2">
@@ -533,11 +510,7 @@ fn ArtistDetailContent(
                                             .clone()
                                             .unwrap_or_else(|| "Unknown artist match".to_string());
                                         let image_url = m.image_url.clone();
-                                        let fallback_initial = name
-                                            .chars()
-                                            .next()
-                                            .map(|c| c.to_uppercase().to_string())
-                                            .unwrap_or_else(|| "?".to_string());
+                                        let fallback_initial = fallback_initial(&name);
                                         let type_country: Option<String> = match (&m.artist_type, &m.country) {
                                             (Some(t), Some(c)) => Some(format!("{t} from {c}")),
                                             (Some(t), None) => Some(t.clone()),
@@ -591,7 +564,7 @@ fn ArtistDetailContent(
                                                     {(!m.tags.is_empty()).then(|| view! {
                                                         <div class="flex flex-wrap gap-1 mt-1">
                                                             {m.tags.into_iter().map(|tag| view! {
-                                                                <span class="inline-flex items-center px-1.5 py-px text-[10px] font-medium text-zinc-500 dark:text-zinc-400 bg-zinc-500/[.06] border border-zinc-500/10 rounded">{tag}</span>
+                                                                <span class=TAG_BORDERED_NEUTRAL>{tag}</span>
                                                             }).collect_view()}
                                                         </div>
                                                     })}
@@ -603,9 +576,9 @@ fn ArtistDetailContent(
                                                 </div>
 
                                                 <div class="flex flex-col lg:flex-row items-center gap-1.5 shrink-0">
-                                                    <button
-                                                        type="button"
-                                                        class={cls(BTN_PRIMARY, "px-2 py-0.5 text-xs")}
+                                                    <Button
+                                                        variant=ButtonVariant::Primary
+                                                        size=ButtonSize::Xs
                                                         on:click=move |_| {
                                                             dispatch_with_toast(
                                                                 ServerAction::AcceptMatchSuggestion { suggestion_id },
@@ -614,10 +587,9 @@ fn ArtistDetailContent(
                                                         }
                                                     >
                                                         "Accept"
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        class={cls(BTN, "px-2 py-0.5 text-xs")}
+                                                    </Button>
+                                                    <Button
+                                                        size=ButtonSize::Xs
                                                         on:click=move |_| {
                                                             dispatch_with_toast(
                                                                 ServerAction::DismissMatchSuggestion { suggestion_id },
@@ -626,7 +598,7 @@ fn ArtistDetailContent(
                                                         }
                                                     >
                                                         "Dismiss"
-                                                    </button>
+                                                    </Button>
                                                 </div>
                                             </div>
                                         }
@@ -744,25 +716,22 @@ fn ArtistDetailContent(
                 <div class=GLASS_HEADER>
                     <div class="flex items-center gap-3">
                         <h2 class=GLASS_TITLE>"Discography"</h2>
-                        <span class={cls(MUTED, "text-xs")}>{move || format!("{} albums", albums.get().len())}</span>
+                        <span class={cls!(MUTED, "text-xs")}>{move || format!("{} albums", albums.get().len())}</span>
                     </div>
                     <div class="flex flex-wrap items-center gap-2">
                         {move || {
                             let a = a();
                             let artist_id = a.id;
                             view! {
-                                <a
-                                    href={
-                                        format!("/artists/{}/merge-albums", artist_id)
-                                    }
-                                    class={cls(BTN, "px-2.5 py-0.5 text-xs no-underline inline-flex items-center gap-1.5")}
+                                <Button
+                                    href={format!("/artists/{}/merge-albums", artist_id)}
                                 >
                                     <GitMerge size=14 />
                                     "Merge Albums"
-                                </a>
-                                <button type="button"
-                                    class=move || btn_cls(BTN_PRIMARY, "px-2.5 py-0.5 text-xs inline-flex items-center gap-1.5", monitor_all_loading.get())
-                                    disabled=move || monitor_all_loading.get()
+                                </Button>
+                                <Button
+                                    variant=ButtonVariant::Primary
+                                    loading=monitor_all_loading
                                     on:click={
                                         move |_| {
                                             dispatch_with_toast_loading(ServerAction::BulkMonitor { artist_id, monitored: true }, "All albums monitored", Some(monitor_all_loading));
@@ -770,14 +739,14 @@ fn ArtistDetailContent(
                                     }>
                                     <BookmarkCheck size=14 />
                                     {move || if monitor_all_loading.get() { "Monitoring\u{2026}" } else { "Monitor All" }}
-                                </button>
-                                <button type="button" class={cls(BTN, "px-2.5 py-0.5 text-xs inline-flex items-center gap-1.5")}
+                                </Button>
+                                <Button
                                     on:click=move |_| {
                                         show_unmonitor_all.set(true);
                                     }>
                                     <BookmarkX size=14 />
                                     "Unmonitor All"
-                                </button>
+                                </Button>
                             }
                         }}
                         <div class="w-px h-4 bg-black/10 dark:bg-white/10 mx-1"></div>
@@ -828,7 +797,7 @@ fn ArtistDetailContent(
                             <div class=EMPTY>"No albums synced. Hit Sync Albums to fetch from provider."</div>
                         </Show>
                         <Show when=move || !sorted_albums.get().is_empty()>
-                            <div class={cls(GLASS_BODY, "p-4")}>
+                            <div class={cls!(GLASS_BODY, "p-4")}>
                                 <div class="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-5 max-md:grid-cols-[repeat(auto-fill,minmax(140px,1fr))] max-md:gap-3">
                                     <For
                                         each=move || sorted_albums.get()
@@ -939,11 +908,7 @@ fn AlbumSleeve(
         latest.get(&album_id).cloned()
     };
 
-    let fallback_initial = album_title
-        .chars()
-        .next()
-        .map(|c| c.to_uppercase().to_string())
-        .unwrap_or_else(|| "?".to_string());
+    let fallback_initial = fallback_initial(&album_title);
 
     view! {
         // ── Album card (grid cell) ──────────────────────────

@@ -1,7 +1,6 @@
+use crate::cls;
 use leptos::prelude::*;
-use lucide_leptos::{
-    ArrowLeft, Bookmark, Check, ChevronRight, Download, GitCompareArrows, RefreshCw, Trash2, X,
-};
+use lucide_leptos::{ArrowLeft, Bookmark, Check, Download, GitCompareArrows, RefreshCw, Trash2, X};
 
 use yoink_shared::{
     DownloadJob, DownloadStatus, MatchSuggestion, MonitoredAlbum, MonitoredArtist, ProviderLink,
@@ -12,13 +11,11 @@ use yoink_shared::{
 use super::provider_icon_svg;
 use crate::components::toast::{dispatch_with_toast, dispatch_with_toast_loading};
 use crate::components::{
-    ConfirmDialog, ErrorPanel, MobileMenuButton, ResolveArtistDialog, Sidebar,
+    Breadcrumb, BreadcrumbItem, Button, ButtonSize, ButtonVariant, ConfirmDialog, ErrorPanel,
+    PageShell, ResolveArtistDialog, fallback_initial,
 };
 use crate::hooks::{set_page_title, use_sse_version};
-use crate::styles::{
-    BREADCRUMB_CURRENT, BREADCRUMB_LINK, BREADCRUMB_NAV, BREADCRUMB_SEP, BTN, BTN_DANGER,
-    BTN_PRIMARY, GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, HEADER_BAR, MUTED, btn_cls, cls,
-};
+use crate::styles::{GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, MUTED};
 
 // ── DTO ─────────────────────────────────────────────────────
 
@@ -176,20 +173,14 @@ pub fn AlbumDetailPage() -> impl IntoView {
     );
 
     view! {
-        <div class="flex min-h-screen">
-            <Sidebar active="library-artists" />
-            <div class="ml-[220px] max-md:ml-0 flex-1 min-h-screen overflow-x-hidden">
+        <PageShell active="library-artists">
                 <Transition fallback=move || view! {
                     <div>
-                        <div class=HEADER_BAR>
-                            <nav class=BREADCRUMB_NAV aria-label="Breadcrumb"><MobileMenuButton />
-                                <a href="/library" class=BREADCRUMB_LINK>"Library"</a>
-                                <span class=BREADCRUMB_SEP><ChevronRight /></span>
-                                <div class="h-4 w-20 bg-zinc-200 dark:bg-zinc-700 rounded animate-pulse"></div>
-                                <span class=BREADCRUMB_SEP><ChevronRight /></span>
-                                <div class="h-4 w-28 bg-zinc-200 dark:bg-zinc-700 rounded animate-pulse"></div>
-                            </nav>
-                        </div>
+                        <Breadcrumb items=vec![
+                            BreadcrumbItem::link("Library", "/library"),
+                            BreadcrumbItem::link("\u{2026}", "#"),
+                            BreadcrumbItem::current("\u{2026}"),
+                        ] />
                         <div class="p-6 max-md:p-4">
                             // Skeleton hero card
                             <div class="mb-5 bg-white/70 dark:bg-zinc-800/60 rounded-xl border border-black/[.06] dark:border-white/[.08] p-5">
@@ -249,21 +240,17 @@ pub fn AlbumDetailPage() -> impl IntoView {
                                         .unwrap_or_else(|| "/library".to_string());
                                     view! {
                                         <div>
-                                            <div class=HEADER_BAR>
-                                                <nav class=BREADCRUMB_NAV aria-label="Breadcrumb"><MobileMenuButton />
-                                                    <a href="/library" class=BREADCRUMB_LINK>"Library"</a>
-                                                    <span class=BREADCRUMB_SEP><ChevronRight /></span>
-                                                    <a href=back_href class=BREADCRUMB_LINK>"Artist"</a>
-                                                    <span class=BREADCRUMB_SEP><ChevronRight /></span>
-                                                    <span class=BREADCRUMB_CURRENT>"Not Found"</span>
-                                                </nav>
-                                            </div>
+                                            <Breadcrumb items=vec![
+                                                BreadcrumbItem::link("Library", "/library"),
+                                                BreadcrumbItem::link("Artist", back_href),
+                                                BreadcrumbItem::current("Not Found"),
+                                            ] />
                                             <div class="p-6 max-md:p-4">
                                                 <div class="text-zinc-500">"Album not found."</div>
-                                                <a href="/library" class={cls(BTN, "mt-4 inline-flex items-center gap-1.5")}>
+                                                <Button href="/library" class="mt-4">
                                                     <ArrowLeft size=14 />
                                                     "Library"
-                                                </a>
+                                                </Button>
                                             </div>
                                         </div>
                                     }.into_any()
@@ -286,8 +273,7 @@ pub fn AlbumDetailPage() -> impl IntoView {
                         })
                     }}
                 </Transition>
-            </div>
-        </div>
+        </PageShell>
     }
 }
 
@@ -348,11 +334,7 @@ fn AlbumDetailContent(
         .map(|id| format!("/artists/{id}"))
         .unwrap_or_else(|| "/library".to_string());
 
-    let fallback_initial = album_title
-        .chars()
-        .next()
-        .map(|c| c.to_uppercase().to_string())
-        .unwrap_or_else(|| "?".to_string());
+    let fallback_initial = fallback_initial(&album_title);
 
     let total_duration_secs: u32 = tracks.iter().map(|t| t.duration_secs).sum();
     let total_mins = total_duration_secs / 60;
@@ -388,21 +370,15 @@ fn AlbumDetailContent(
 
     view! {
         // ── Sticky header with breadcrumb ───────────────────
-        <div class=HEADER_BAR>
-            <nav class=BREADCRUMB_NAV aria-label="Breadcrumb"><MobileMenuButton />
-                <a href="/library" class=BREADCRUMB_LINK>"Library"</a>
-                <span class=BREADCRUMB_SEP><ChevronRight /></span>
-                <a href=artist_link.clone() class=BREADCRUMB_LINK>
-                    {artist_name.clone()}
-                </a>
-                <span class=BREADCRUMB_SEP><ChevronRight /></span>
-                <span class=BREADCRUMB_CURRENT>{album_title.clone()}</span>
-            </nav>
-        </div>
+        <Breadcrumb items=vec![
+            BreadcrumbItem::link("Library", "/library"),
+            BreadcrumbItem::link(artist_name.clone(), artist_link.clone()),
+            BreadcrumbItem::current(album_title.clone()),
+        ] />
 
         <div class="p-6 max-md:p-4">
             // ── Hero card ───────────────────────────────────
-            <div class={cls(GLASS, "mb-5")}>
+            <div class={cls!(GLASS, "mb-5")}>
                 // ── Header bar: status pills (left) + action buttons (right) ──
                 <div class=GLASS_HEADER>
                     <div class="flex flex-wrap items-center gap-2">
@@ -427,9 +403,10 @@ fn AlbumDetailContent(
                     <div class="flex flex-wrap items-center gap-2">
                         {if can_retry {
                             view! {
-                                <button type="button"
-                                    class=move || btn_cls(BTN_PRIMARY, "px-3 py-1.5 text-xs inline-flex items-center gap-1.5", download_loading.get())
-                                    disabled=move || download_loading.get()
+                                <Button
+                                    variant=ButtonVariant::Primary
+                                    size=ButtonSize::Md
+                                    loading=download_loading
                                     on:click={
                                         move |_| {
                                             dispatch_with_toast_loading(ServerAction::RetryDownload { album_id }, "Download requeued", Some(download_loading));
@@ -437,13 +414,14 @@ fn AlbumDetailContent(
                                     }>
                                     <RefreshCw size=14 />
                                     {move || if download_loading.get() { "Retrying\u{2026}" } else { "Retry" }}
-                                </button>
+                                </Button>
                             }.into_any()
                         } else if can_download {
                             view! {
-                                <button type="button"
-                                    class=move || btn_cls(BTN_PRIMARY, "px-3 py-1.5 text-xs inline-flex items-center gap-1.5", download_loading.get())
-                                    disabled=move || download_loading.get()
+                                <Button
+                                    variant=ButtonVariant::Primary
+                                    size=ButtonSize::Md
+                                    loading=download_loading
                                     on:click={
                                         move |_| {
                                             dispatch_with_toast_loading(ServerAction::RetryDownload { album_id }, "Download started", Some(download_loading));
@@ -451,7 +429,7 @@ fn AlbumDetailContent(
                                     }>
                                     <Download size=14 />
                                     {move || if download_loading.get() { "Starting\u{2026}" } else { "Download" }}
-                                </button>
+                                </Button>
                             }.into_any()
                         } else {
                             view! { <span></span> }.into_any()
@@ -459,8 +437,9 @@ fn AlbumDetailContent(
 
                         {if is_monitored {
                             view! {
-                                <button type="button" class={cls(BTN, "px-3 py-1.5 text-xs inline-flex items-center gap-1.5")}
-                                    title="Monitored \u{2014} click to unmonitor"
+                                <Button
+                                    size=ButtonSize::Md
+                                    attr:title="Monitored \u{2014} click to unmonitor"
                                     on:click={
                                         move |_| {
                                             dispatch_with_toast(ServerAction::ToggleAlbumMonitor { album_id, monitored: false }, "Album unmonitored");
@@ -468,12 +447,13 @@ fn AlbumDetailContent(
                                     }>
                                     <Bookmark size=14 fill="currentColor" />
                                     "Unmonitor"
-                                </button>
+                                </Button>
                             }.into_any()
                         } else {
                             view! {
-                                <button type="button" class={cls(BTN, "px-3 py-1.5 text-xs inline-flex items-center gap-1.5")}
-                                    title="Not monitored \u{2014} click to monitor"
+                                <Button
+                                    size=ButtonSize::Md
+                                    attr:title="Not monitored \u{2014} click to monitor"
                                     on:click={
                                         move |_| {
                                             dispatch_with_toast(ServerAction::ToggleAlbumMonitor { album_id, monitored: true }, "Album monitored");
@@ -481,19 +461,22 @@ fn AlbumDetailContent(
                                     }>
                                     <Bookmark size=14 />
                                     "Monitor"
-                                </button>
+                                </Button>
                             }.into_any()
                         }}
 
                         {if is_acquired {
                             view! {
-                                <button type="button" class={cls(BTN_DANGER, "px-3 py-1.5 text-xs inline-flex items-center gap-1.5")} title="Delete downloaded files"
+                                <Button
+                                    variant=ButtonVariant::Danger
+                                    size=ButtonSize::Md
+                                    attr:title="Delete downloaded files"
                                     on:click=move |_| {
                                         show_remove_files.set(true);
                                     }>
                                     <Trash2 size=14 />
                                     "Remove Files"
-                                </button>
+                                </Button>
                             }.into_any()
                         } else {
                             view! { <span></span> }.into_any()
@@ -512,7 +495,7 @@ fn AlbumDetailContent(
                 }}
 
                 // ── Body: cover art + identity info ──
-                <div class={cls(GLASS_BODY, "p-5 md:p-6")}>
+                <div class={cls!(GLASS_BODY, "p-5 md:p-6")}>
                     <div class="flex gap-5">
                         // Cover art — compact square, no glow effects
                         <div class="shrink-0 w-28 h-28 md:w-40 md:h-40 rounded-lg overflow-hidden bg-zinc-200 dark:bg-zinc-800">
@@ -542,7 +525,7 @@ fn AlbumDetailContent(
                             <h1 class="text-xl md:text-2xl font-bold text-zinc-900 dark:text-zinc-100 m-0 mb-1.5 leading-snug break-words">{album_title.clone()}</h1>
 
                             // Artist(s) · date · tracks
-                            <div class={cls(MUTED, "text-sm flex flex-wrap items-center gap-1.5")}>
+                            <div class={cls!(MUTED, "text-sm flex flex-wrap items-center gap-1.5")}>
                                 {if album_artists.is_empty() {
                                     // Fallback: show primary artist only
                                     view! {
@@ -632,14 +615,14 @@ fn AlbumDetailContent(
             // ── Potential matches (own card, only if pending) ─
             {if match_suggestions.iter().any(|m| m.status == "pending") {
                 view! {
-                    <div class={cls(GLASS, "mb-5")}>
+                    <div class={cls!(GLASS, "mb-5")}>
                         <div class=GLASS_HEADER>
-                            <h2 class={cls(GLASS_TITLE, "inline-flex items-center gap-2")}>
+                            <h2 class={cls!(GLASS_TITLE, "inline-flex items-center gap-2")}>
                                 <GitCompareArrows size=16 />
                                 "Potential Matches"
                             </h2>
                         </div>
-                        <div class={cls(GLASS_BODY, "px-5 py-3")}>
+                        <div class={cls!(GLASS_BODY, "px-5 py-3")}>
                             <div class="flex flex-col gap-2">
                                 {match_suggestions.iter().filter(|m| m.status == "pending").map(|m| {
                                     let suggestion_id = m.id;
@@ -662,9 +645,9 @@ fn AlbumDetailContent(
                                                 <span>{format!("{}: {}", display_provider, display_name)}</span>
                                             </div>
                                             <div class="shrink-0 flex items-center gap-1.5">
-                                                <button
-                                                    type="button"
-                                                    class={cls(BTN_PRIMARY, "px-2 py-0.5 text-[11px] inline-flex items-center gap-1")}
+                                                <Button
+                                                    variant=ButtonVariant::Primary
+                                                    size=ButtonSize::Xs
                                                     on:click=move |_| {
                                                         dispatch_with_toast(
                                                             ServerAction::AcceptMatchSuggestion { suggestion_id },
@@ -674,10 +657,9 @@ fn AlbumDetailContent(
                                                 >
                                                     <Check size=12 />
                                                     "Accept"
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    class={cls(BTN, "px-2 py-0.5 text-[11px] inline-flex items-center gap-1")}
+                                                </Button>
+                                                <Button
+                                                    size=ButtonSize::Xs
                                                     on:click=move |_| {
                                                         dispatch_with_toast(
                                                             ServerAction::DismissMatchSuggestion { suggestion_id },
@@ -687,7 +669,7 @@ fn AlbumDetailContent(
                                                 >
                                                     <X size=12 />
                                                     "Dismiss"
-                                                </button>
+                                                </Button>
                                             </div>
                                         </div>
                                     }
@@ -705,7 +687,7 @@ fn AlbumDetailContent(
                 <div class=GLASS_HEADER>
                     <div class="flex items-center gap-3">
                         <h2 class=GLASS_TITLE>"Tracklist"</h2>
-                        <span class={cls(MUTED, "text-xs")}>{format!("{track_count} tracks \u{00b7} {duration_display}")}</span>
+                        <span class={cls!(MUTED, "text-xs")}>{format!("{track_count} tracks \u{00b7} {duration_display}")}</span>
                     </div>
                 </div>
                 {if tracks.is_empty() {
@@ -722,7 +704,7 @@ fn AlbumDetailContent(
                         set
                     };
                     view! {
-                        <div class={cls(GLASS_BODY, "p-0!")}>
+                        <div class={cls!(GLASS_BODY, "p-0!")}>
                             <div class="divide-y divide-black/[.04] dark:divide-white/[.04]">
                                 {
                                     let has_multiple_discs = tracks.iter().any(|t| t.disc_number > 1);

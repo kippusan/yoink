@@ -1,3 +1,4 @@
+use crate::cls;
 use std::collections::HashMap;
 
 use leptos::prelude::*;
@@ -8,16 +9,12 @@ use yoink_shared::{
 };
 
 use crate::components::toast::dispatch_with_toast_loading;
-use crate::components::{MobileMenuButton, Sidebar};
+use crate::components::{Breadcrumb, BreadcrumbItem, Button, ButtonVariant, PageShell};
 use crate::hooks::set_page_title;
 use crate::styles::{
-    BREADCRUMB_CURRENT, BREADCRUMB_LINK, BREADCRUMB_NAV, BREADCRUMB_SEP, HEADER_BAR,
+    EMPTY, GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, MUTED, SEARCH_INPUT, SELECT, TAG_NEUTRAL,
+    TAG_SUCCESS, TAG_WARNING,
 };
-use crate::styles::{
-    BTN_PRIMARY, EMPTY, GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, MUTED, SELECT, btn_cls, cls,
-};
-
-const SEARCH_INPUT: &str = "py-2 px-3.5 border border-black/[.08] dark:border-white/10 rounded-lg font-inherit text-sm bg-white/60 dark:bg-zinc-800/60 backdrop-blur-[8px] text-zinc-900 dark:text-zinc-100 outline-none w-full max-w-[360px] transition-[border-color,box-shadow] duration-150 focus:border-blue-500 focus:shadow-[0_0_0_3px_rgba(59,130,246,.15)] dark:focus:shadow-[0_0_0_3px_rgba(59,130,246,.2)] placeholder:text-zinc-400 dark:placeholder:text-zinc-600";
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct LibraryAlbumsData {
@@ -117,7 +114,7 @@ pub fn LibraryAlbumsTab() -> impl IntoView {
                                         <div class="flex flex-wrap items-center gap-2">
                                             <input
                                                 type="text"
-                                                class=SEARCH_INPUT
+                                                class={cls!(SEARCH_INPUT, "max-w-[360px]")}
                                                 placeholder="Search albums (local + provider)..."
                                                 prop:value=move || query.get()
                                                 on:input=move |ev| set_query.set(event_target_value(&ev))
@@ -143,7 +140,7 @@ pub fn LibraryAlbumsTab() -> impl IntoView {
                                     <div class=GLASS_HEADER>
                                         <h2 class=GLASS_TITLE>"Albums"</h2>
                                     </div>
-                                    <div class={cls(GLASS_BODY, "p-4")}>
+                                    <div class={cls!(GLASS_BODY, "p-4")}>
                                         <div class="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
                                             {move || {
                                                 let q = query.get().trim().to_lowercase();
@@ -205,13 +202,13 @@ pub fn LibraryAlbumsTab() -> impl IntoView {
                                                                         }}
                                                                     </div>
                                                                     <div class="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate">{album.title.clone()}</div>
-                                                                    <div class={cls(MUTED, "text-xs truncate")}>{artist_name}</div>
+                                                                    <div class={cls!(MUTED, "text-xs truncate")}>{artist_name}</div>
                                                                     <div class="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                                                                        <span class="text-[10px] px-1.5 py-px rounded bg-zinc-500/[.08] text-zinc-500 dark:text-zinc-400">{at}</span>
-                                                                        {if album.acquired {
-                                                                            view! { <span class="text-[10px] px-1.5 py-px rounded bg-green-500/[.12] text-green-600 dark:text-green-400">"Acquired"</span> }.into_any()
-                                                                        } else if album.wanted || album.partially_wanted {
-                                                                            view! { <span class="text-[10px] px-1.5 py-px rounded bg-amber-500/[.12] text-amber-600 dark:text-amber-300">"Wanted"</span> }.into_any()
+                                                                        <span class=TAG_NEUTRAL>{at}</span>
+                                                                         {if album.acquired {
+                                                                             view! { <span class=TAG_SUCCESS>"Acquired"</span> }.into_any()
+                                                                         } else if album.wanted || album.partially_wanted {
+                                                                             view! { <span class=TAG_WARNING>"Wanted"</span> }.into_any()
                                                                         } else {
                                                                             view! { <span></span> }.into_any()
                                                                         }}
@@ -243,7 +240,7 @@ pub fn LibraryAlbumsTab() -> impl IntoView {
                                                         <div class=GLASS_HEADER>
                                                             <h2 class=GLASS_TITLE>"Add Albums From Providers"</h2>
                                                         </div>
-                                                        <div class={cls(GLASS_BODY, "p-0!")}>
+                                                        <div class={cls!(GLASS_BODY, "p-0!")}>
                                                             <div class="divide-y divide-black/[.04] dark:divide-white/[.04]">
                                                                 {sr.results.into_iter().map(|r| {
                                                                     let loading = RwSignal::new(false);
@@ -255,12 +252,9 @@ pub fn LibraryAlbumsTab() -> impl IntoView {
                                                                         <div class="px-4 py-3 flex items-center gap-3">
                                                                             <div class="flex-1 min-w-0">
                                                                                 <div class="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">{r.title}</div>
-                                                                                <div class={cls(MUTED, "text-xs truncate")}>{format!("{} · {}", r.artist_name, r.provider)}</div>
+                                                                                <div class={cls!(MUTED, "text-xs truncate")}>{format!("{} · {}", r.artist_name, r.provider)}</div>
                                                                             </div>
-                                                                            <button
-                                                                                type="button"
-                                                                                class=move || btn_cls(BTN_PRIMARY, "px-2.5 py-1 text-xs", loading.get())
-                                                                                disabled=move || loading.get()
+                                                                            <Button variant=ButtonVariant::Primary class="py-1" loading=loading
                                                                                 on:click=move |_| {
                                                                                     dispatch_with_toast_loading(
                                                                                         ServerAction::AddAlbum {
@@ -276,7 +270,7 @@ pub fn LibraryAlbumsTab() -> impl IntoView {
                                                                                 }
                                                                             >
                                                                                 "Add"
-                                                                            </button>
+                                                                            </Button>
                                                                         </div>
                                                                     }
                                                                 }).collect_view()}
@@ -302,18 +296,12 @@ pub fn LibraryAlbumsTab() -> impl IntoView {
 pub fn LibraryAlbumsPage() -> impl IntoView {
     set_page_title("Library - Albums");
     view! {
-        <div class="flex min-h-screen">
-            <Sidebar active="library-albums" />
-            <div class="ml-[220px] max-md:ml-0 flex-1 min-h-screen overflow-x-hidden">
-                <div class=HEADER_BAR>
-                    <nav class=BREADCRUMB_NAV aria-label="Breadcrumb"><MobileMenuButton />
-                        <a href="/library/artists" class=BREADCRUMB_LINK>"Library"</a>
-                        <span class=BREADCRUMB_SEP><lucide_leptos::ChevronRight /></span>
-                        <span class=BREADCRUMB_CURRENT>"Albums"</span>
-                    </nav>
-                </div>
+        <PageShell active="library-albums">
+                <Breadcrumb items=vec![
+                    BreadcrumbItem::link("Library", "/library/artists"),
+                    BreadcrumbItem::current("Albums"),
+                ] />
                 <LibraryAlbumsTab />
-            </div>
-        </div>
+        </PageShell>
     }
 }

@@ -4,8 +4,10 @@ use lucide_leptos::X;
 
 use yoink_shared::{SearchArtistResult, ServerAction, provider_display_name};
 
+use super::{Button, ButtonSize, ButtonVariant, fallback_initial};
 use crate::actions::dispatch_action;
 use crate::pages::provider_icon_svg;
+use crate::styles::{SEARCH_INPUT, TAG_BORDERED_NEUTRAL};
 use leptoaster::{ToastBuilder, ToastLevel, ToastPosition, expect_toaster};
 
 // ── Tailwind class constants ────────────────────────────────
@@ -13,12 +15,9 @@ use leptoaster::{ToastBuilder, ToastLevel, ToastPosition, expect_toaster};
 const BACKDROP: &str = "fixed inset-0 z-[9999] bg-black/40 dark:bg-black/60 backdrop-blur-sm flex items-center justify-center";
 const CARD: &str = "bg-white/80 dark:bg-zinc-800/80 backdrop-blur-[16px] border border-black/[.08] dark:border-white/[.1] rounded-xl shadow-xl max-w-lg w-full mx-4 max-h-[85vh] flex flex-col overflow-hidden";
 const TITLE: &str = "text-[15px] font-semibold text-zinc-900 dark:text-zinc-100 m-0";
-const SEARCH_INPUT: &str = "py-2 px-3.5 border border-black/[.08] dark:border-white/10 rounded-lg font-inherit text-sm bg-white/60 dark:bg-zinc-800/60 backdrop-blur-[8px] text-zinc-900 dark:text-zinc-100 outline-none w-full transition-[border-color,box-shadow] duration-150 focus:border-blue-500 focus:shadow-[0_0_0_3px_rgba(59,130,246,.15)] dark:focus:shadow-[0_0_0_3px_rgba(59,130,246,.2)] placeholder:text-zinc-400 dark:placeholder:text-zinc-600";
 const RESULT_ROW: &str = "flex items-center gap-3 px-4 py-2.5 border-b border-black/[.04] dark:border-white/[.04] transition-[background] duration-[120ms] last:border-b-0 hover:bg-blue-500/[.04] dark:hover:bg-blue-500/[.06]";
 const AVATAR: &str = "size-9 rounded-full object-cover border border-blue-500/20 dark:border-blue-500/30 shrink-0 bg-zinc-200 dark:bg-zinc-800";
 const FALLBACK_AVATAR: &str = "size-9 rounded-full inline-flex items-center justify-center bg-zinc-200 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 font-bold text-sm border border-blue-500/20 dark:border-blue-500/30 shrink-0";
-const BTN_CANCEL: &str = "inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 bg-white/60 dark:bg-zinc-800/60 backdrop-blur-[8px] border border-black/[.08] dark:border-white/10 rounded-lg font-inherit text-[13px] font-medium cursor-pointer text-zinc-600 dark:text-zinc-300 no-underline transition-all duration-150 whitespace-nowrap hover:bg-white/85 hover:border-zinc-400 dark:hover:bg-zinc-800/85 dark:hover:border-zinc-500";
-const BTN_LINK: &str = "inline-flex items-center justify-center gap-1.5 px-2.5 py-1 bg-blue-500 border border-blue-500 rounded-lg text-[12px] font-medium cursor-pointer text-white transition-all duration-150 whitespace-nowrap shadow-[0_2px_8px_rgba(59,130,246,.2)] hover:bg-blue-400 hover:border-blue-400 disabled:opacity-50 disabled:pointer-events-none";
 
 const FILTER_ACTIVE: &str = "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold cursor-pointer transition-all duration-150 border bg-blue-500/10 border-blue-500/30 text-blue-600 dark:text-blue-400 dark:bg-blue-500/15 dark:border-blue-500/40";
 const FILTER_INACTIVE: &str = "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold cursor-pointer transition-all duration-150 border bg-white/40 dark:bg-zinc-800/40 border-black/[.06] dark:border-white/[.06] text-zinc-500 dark:text-zinc-400 hover:border-black/10 dark:hover:border-white/10";
@@ -314,9 +313,9 @@ pub fn LinkProviderDialog(
 
                         // Footer
                         <div class="px-5 py-3 border-t border-black/[.06] dark:border-white/[.06] flex justify-end shrink-0">
-                            <button type="button" class=BTN_CANCEL on:click=move |_| open.set(false)>
+                            <Button size=ButtonSize::Lg on:click=move |_| open.set(false)>
                                 "Close"
-                            </button>
+                            </Button>
                         </div>
                     </div>
                 </div>
@@ -333,12 +332,7 @@ fn LinkResultRow(
     session_linked: RwSignal<Vec<(String, String)>>,
 ) -> impl IntoView {
     let image_url = result.image_url.clone();
-    let fallback_initial = result
-        .name
-        .chars()
-        .next()
-        .map(|c| c.to_uppercase().to_string())
-        .unwrap_or_else(|| "?".to_string());
+    let fallback_initial = fallback_initial(&result.name);
 
     let linking = RwSignal::new(false);
 
@@ -401,16 +395,17 @@ fn LinkResultRow(
                 {(!tags.is_empty()).then(|| view! {
                     <div class="flex flex-wrap gap-1 mt-0.5">
                         {tags.into_iter().take(3).map(|tag| view! {
-                            <span class="inline-flex items-center px-1.5 py-px text-[10px] font-medium text-zinc-500 dark:text-zinc-400 bg-zinc-500/[.06] border border-zinc-500/10 rounded">
+                            <span class=TAG_BORDERED_NEUTRAL>
                                 {tag}
                             </span>
                         }).collect_view()}
                     </div>
                 })}
             </div>
-            <button type="button"
-                class=BTN_LINK
-                disabled=move || linking.get()
+            <Button
+                variant=ButtonVariant::Primary
+                size=ButtonSize::Sm
+                loading=linking
                 on:click={
                     let provider = provider.clone();
                     let external_id = external_id.clone();
@@ -461,7 +456,7 @@ fn LinkResultRow(
                     }
                 }>
                 {move || if linking.get() { "Linking\u{2026}" } else { "Link" }}
-            </button>
+            </Button>
         </div>
     }
 }

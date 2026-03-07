@@ -1,3 +1,4 @@
+use crate::cls;
 use std::collections::{HashMap, HashSet};
 
 use leptos::prelude::*;
@@ -10,12 +11,11 @@ use yoink_shared::{
 };
 
 use crate::components::toast::dispatch_with_toast;
-use crate::components::{ErrorPanel, MobileMenuButton, Sidebar};
-use crate::hooks::{set_page_title, use_sse_version};
-use crate::styles::{
-    BTN, BTN_DANGER, BTN_PRIMARY, EMPTY, GLASS, GLASS_HEADER, GLASS_TITLE, HEADER_BAR, MUTED,
-    btn_cls, cls,
+use crate::components::{
+    Button, ButtonVariant, ErrorPanel, MobileMenuButton, PageShell, fallback_initial,
 };
+use crate::hooks::{set_page_title, use_sse_version};
+use crate::styles::{EMPTY, GLASS, GLASS_HEADER, GLASS_TITLE, HEADER_BAR, MUTED};
 
 #[cfg(feature = "hydrate")]
 use leptoaster::{ToastBuilder, ToastLevel, ToastPosition, expect_toaster};
@@ -80,9 +80,7 @@ pub fn WantedPage() -> impl IntoView {
     let wanted_data = Resource::new(move || version.get(), |_| get_wanted_data());
 
     view! {
-        <div class="flex min-h-screen">
-            <Sidebar active="wanted" />
-            <div class="ml-[220px] max-md:ml-0 flex-1 min-h-screen overflow-x-hidden">
+        <PageShell active="wanted">
                 <Transition fallback=move || view! {
                     <div>
                         <div class=HEADER_BAR>
@@ -107,8 +105,7 @@ pub fn WantedPage() -> impl IntoView {
                         })
                     }}
                 </Transition>
-            </div>
-        </div>
+        </PageShell>
     }
 }
 
@@ -185,7 +182,7 @@ fn WantedContent(data: WantedData) -> impl IntoView {
     view! {
         <div class=HEADER_BAR>
             <div class="flex items-center gap-2"><MobileMenuButton /><h1 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 m-0">"Wanted"</h1></div>
-            <span class={cls(MUTED, "text-[13px]")}>{summary.clone()}</span>
+            <span class={cls!(MUTED, "text-[13px]")}>{summary.clone()}</span>
         </div>
 
         <div class="p-6 max-md:p-4">
@@ -197,9 +194,7 @@ fn WantedContent(data: WantedData) -> impl IntoView {
                             let ids = queueable_album_ids.clone();
                             let count = ids.len();
                             view! {
-                                <button type="button"
-                                    class=move || btn_cls(BTN_PRIMARY, "px-2.5 py-0.5 text-xs", queue_all_loading.get())
-                                    disabled=move || queue_all_loading.get()
+                                <Button variant=ButtonVariant::Primary loading=queue_all_loading
                                     on:click=move |_| {
                                         queue_all_loading.set(true);
                                         let ids = ids.clone();
@@ -234,7 +229,7 @@ fn WantedContent(data: WantedData) -> impl IntoView {
                                         });
                                     }>
                                     {move || if queue_all_loading.get() { "Queueing...".to_string() } else { format!("Download All ({count})") }}
-                                </button>
+                                </Button>
                             }
                                 .into_any()
                         } else {
@@ -244,9 +239,7 @@ fn WantedContent(data: WantedData) -> impl IntoView {
                             let ids = failed_album_ids.clone();
                             let count = ids.len();
                             view! {
-                                <button type="button"
-                                    class=move || btn_cls(BTN_DANGER, "px-2.5 py-0.5 text-xs", retry_all_loading.get())
-                                    disabled=move || retry_all_loading.get()
+                                <Button variant=ButtonVariant::Danger loading=retry_all_loading
                                     on:click=move |_| {
                                         retry_all_loading.set(true);
                                         let ids = ids.clone();
@@ -281,13 +274,13 @@ fn WantedContent(data: WantedData) -> impl IntoView {
                                         });
                                     }>
                                     {move || if retry_all_loading.get() { "Retrying...".to_string() } else { format!("Retry Failed ({count})") }}
-                                </button>
+                                </Button>
                             }
                                 .into_any()
                         } else {
                             view! { <span></span> }.into_any()
                         }}
-                        <span class={cls(MUTED, "text-xs")}>{summary}</span>
+                        <span class={cls!(MUTED, "text-xs")}>{summary}</span>
                     </div>
                 </div>
 
@@ -322,7 +315,7 @@ fn WantedContent(data: WantedData) -> impl IntoView {
                                                 view! { <ChevronRight size=14 /> }.into_any()
                                             }}
                                             <span class="text-[13px] font-bold text-blue-500 dark:text-blue-400 uppercase tracking-wide">{artist_group.artist_name}</span>
-                                            <span class={cls(MUTED, "text-xs")}>{format!("{artist_count} albums")}</span>
+                                            <span class={cls!(MUTED, "text-xs")}>{format!("{artist_count} albums")}</span>
                                         </button>
 
                                         {move || {
@@ -421,11 +414,7 @@ fn AlbumWantedRow(
         .clone()
         .unwrap_or_else(|| "—".to_string());
     let cover_url = album_cover_url(&album, 120);
-    let fallback_initial = album_title
-        .chars()
-        .next()
-        .map(|c| c.to_uppercase().to_string())
-        .unwrap_or_else(|| "?".to_string());
+    let fallback_initial = fallback_initial(&album_title);
 
     let latest_job = latest_jobs.get(&album.id).cloned();
     let job_status = latest_job.as_ref().map(|j| j.status.clone());
@@ -477,21 +466,20 @@ fn AlbumWantedRow(
             <div class="flex gap-1.5 shrink-0 items-center">
                 {if is_failed {
                     view! {
-                        <button type="button" class={cls(BTN_DANGER, "px-2.5 py-0.5 text-xs")}
+                        <Button variant=ButtonVariant::Danger
                             on:click=move |_| {
                                 dispatch_with_toast(ServerAction::RetryDownload { album_id }, "Download queued for retry");
                             }>
                             "Retry"
-                        </button>
+                        </Button>
                     }.into_any()
                 } else if is_queueable {
                     view! {
-                        <button type="button" class={cls(BTN, "px-2.5 py-0.5 text-xs")}
-                            on:click=move |_| {
+                        <Button on:click=move |_| {
                                 dispatch_with_toast(ServerAction::RetryDownload { album_id }, "Download queued");
                             }>
                             "Download"
-                        </button>
+                        </Button>
                     }.into_any()
                 } else {
                     view! { <span></span> }.into_any()

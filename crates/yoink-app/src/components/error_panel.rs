@@ -1,7 +1,7 @@
 use leptos::prelude::*;
 use lucide_leptos::{ChevronDown, ChevronUp, RefreshCw, TriangleAlert};
 
-use crate::styles::{BTN, cls};
+use super::Button;
 
 /// A user-friendly error panel with optional details toggle and retry.
 ///
@@ -33,10 +33,10 @@ pub fn ErrorPanel(
                     <p class="text-sm font-medium text-red-700 dark:text-red-300 m-0 mb-2">{message}</p>
                     <div class="flex flex-wrap items-center gap-2">
                         {retry_href.map(|href| view! {
-                            <a href=href class={cls(BTN, "px-2.5 py-0.5 text-xs inline-flex items-center gap-1.5 no-underline")}>
+                            <Button href=href>
                                 <RefreshCw size=12 />
                                 "Retry"
-                            </a>
+                            </Button>
                         })}
                         {if has_details {
                             view! {

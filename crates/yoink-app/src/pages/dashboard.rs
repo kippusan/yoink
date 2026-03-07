@@ -1,3 +1,4 @@
+use crate::cls;
 use std::collections::HashMap;
 
 use leptos::prelude::*;
@@ -8,11 +9,11 @@ use yoink_shared::{
 };
 
 use crate::components::toast::{dispatch_with_toast, dispatch_with_toast_loading};
-use crate::components::{ConfirmDialog, ErrorPanel, MobileMenuButton, Sidebar};
-use crate::hooks::{set_page_title, use_sse_version};
-use crate::styles::{
-    BTN, BTN_DANGER, EMPTY, GLASS, GLASS_HEADER, GLASS_TITLE, HEADER_BAR, MUTED, btn_cls, cls,
+use crate::components::{
+    Button, ButtonVariant, ConfirmDialog, ErrorPanel, MobileMenuButton, PageShell,
 };
+use crate::hooks::{set_page_title, use_sse_version};
+use crate::styles::{EMPTY, GLASS, GLASS_HEADER, GLASS_TITLE, HEADER_BAR, MUTED};
 
 // ── Page-specific Tailwind class constants ──────────────────
 
@@ -59,9 +60,7 @@ pub fn DashboardPage() -> impl IntoView {
     let data = Resource::new(move || version.get(), |_| get_dashboard_data());
 
     view! {
-        <div class="flex min-h-screen">
-            <Sidebar active="dashboard" />
-            <div class="ml-[220px] max-md:ml-0 flex-1 min-h-screen overflow-x-hidden">
+        <PageShell active="dashboard">
                 <Transition fallback=move || view! {
                     <div>
                         <div class=HEADER_BAR>
@@ -113,8 +112,7 @@ pub fn DashboardPage() -> impl IntoView {
                         })
                     }}
                 </Transition>
-            </div>
-        </div>
+        </PageShell>
     }
 }
 
@@ -204,20 +202,17 @@ fn DashboardContent(data: DashboardData) -> impl IntoView {
                 <div class=GLASS_HEADER>
                     <h2 class=GLASS_TITLE>"Recent Activity"</h2>
                     <div class="flex flex-wrap items-center gap-2">
-                        <button type="button"
-                            class=move || btn_cls(BTN, "px-2.5 py-0.5 text-xs", retag_loading.get())
-                            disabled=move || retag_loading.get()
+                        <Button loading=retag_loading
                             on:click=move |_| {
                                 dispatch_with_toast_loading(ServerAction::RetagLibrary, "Retagging started", Some(retag_loading));
                             }>
                             {move || if retag_loading.get() { "Retagging\u{2026}" } else { "Retag Existing Files" }}
-                        </button>
+                        </Button>
                         {if has_completed {
                             view! {
-                                <button type="button" class={cls(BTN, "px-2.5 py-0.5 text-xs")}
-                                    on:click=move |_| {
+                                <Button on:click=move |_| {
                                         show_clear_completed.set(true);
-                                    }>"Clear Completed"</button>
+                                    }>"Clear Completed"</Button>
                             }.into_any()
                         } else {
                             view! { <span></span> }.into_any()
@@ -257,20 +252,18 @@ fn DashboardContent(data: DashboardData) -> impl IntoView {
                         </div>
                         // Show more / pagination footer
                         <div class="px-5 py-3 border-t border-black/[.04] dark:border-white/[.04] flex items-center justify-between">
-                            <span class={cls(MUTED, "text-xs")}>
+                            <span class={cls!(MUTED, "text-xs")}>
                                 {move || {
                                     let shown = visible_count.get().min(total_jobs);
                                     format!("Showing {shown} of {total_jobs}")
                                 }}
                             </span>
                             <Show when=move || visible_count.get() < total_jobs>
-                                <button type="button"
-                                    class={cls(BTN, "px-2.5 py-0.5 text-xs")}
-                                    on:click=move |_| {
+                                <Button on:click=move |_| {
                                         set_visible_count.update(|c| *c += 25);
                                     }>
                                     "Show More"
-                                </button>
+                                </Button>
                             </Show>
                         </div>
                     }.into_any()
@@ -313,17 +306,16 @@ fn JobRow(
             <td>
                 {if is_queued {
                     view! {
-                        <button type="button" class={cls(BTN_DANGER, "px-2.5 py-0.5 text-xs")}
+                        <Button variant=ButtonVariant::Danger
                             on:click=move |_| {
                                 dispatch_with_toast(ServerAction::CancelDownload { job_id: job.id }, "Download cancelled");
-                            }>"Cancel"</button>
+                            }>"Cancel"</Button>
                     }.into_any()
                 } else if is_failed {
                     view! {
-                        <button type="button" class={cls(BTN, "px-2.5 py-0.5 text-xs")}
-                            on:click=move |_| {
+                        <Button on:click=move |_| {
                                 dispatch_with_toast(ServerAction::RetryDownload { album_id: job.album_id }, "Download queued for retry");
-                            }>"Retry"</button>
+                            }>"Retry"</Button>
                     }.into_any()
                 } else {
                     view! { <span class=MUTED>{"\u{2014}"}</span> }.into_any()

@@ -1,6 +1,8 @@
 use leptos::portal::Portal;
 use leptos::prelude::*;
 
+use super::{Button, ButtonSize, ButtonVariant};
+
 // ── Tailwind class constants ────────────────────────────────
 
 const BACKDROP: &str = "fixed inset-0 z-[9999] bg-black/40 dark:bg-black/60 backdrop-blur-sm flex items-center justify-center";
@@ -11,9 +13,6 @@ const CHECKBOX_WRAP: &str = "flex items-center gap-2 mb-6 -mt-3";
 const CHECKBOX: &str =
     "size-4 rounded border border-black/15 dark:border-white/15 accent-blue-500 cursor-pointer";
 const CHECKBOX_LABEL: &str = "text-sm text-zinc-600 dark:text-zinc-400 cursor-pointer select-none";
-const BTN_CANCEL: &str = "inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 bg-white/60 dark:bg-zinc-800/60 backdrop-blur-[8px] border border-black/[.08] dark:border-white/10 rounded-lg font-inherit text-[13px] font-medium cursor-pointer text-zinc-600 dark:text-zinc-300 no-underline transition-all duration-150 whitespace-nowrap hover:bg-white/85 hover:border-zinc-400 dark:hover:bg-zinc-800/85 dark:hover:border-zinc-500";
-const BTN_CONFIRM: &str = "inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 bg-blue-500 backdrop-blur-[8px] border border-blue-500 rounded-lg font-inherit text-[13px] font-medium cursor-pointer text-white no-underline transition-all duration-150 whitespace-nowrap shadow-[0_2px_12px_rgba(59,130,246,.25)] hover:bg-blue-400 hover:border-blue-400 hover:shadow-[0_4px_20px_rgba(59,130,246,.35)]";
-const BTN_CONFIRM_DANGER: &str = "inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 bg-red-500 backdrop-blur-[8px] border border-red-500 rounded-lg font-inherit text-[13px] font-medium cursor-pointer text-white no-underline transition-all duration-150 whitespace-nowrap shadow-[0_2px_12px_rgba(239,68,68,.25)] hover:bg-red-400 hover:border-red-400 hover:shadow-[0_4px_20px_rgba(239,68,68,.35)]";
 
 /// Generate a unique ID for each ConfirmDialog instance, so multiple dialogs
 /// on the same page don't collide on `id` or `aria-labelledby`.
@@ -57,10 +56,10 @@ pub fn ConfirmDialog(
     #[prop(optional, into)] checkbox_label: Option<String>,
     on_confirm: impl Fn(bool) + 'static + Clone + Send + Sync,
 ) -> impl IntoView {
-    let confirm_class = if danger {
-        BTN_CONFIRM_DANGER
+    let confirm_variant = if danger {
+        ButtonVariant::DangerSolid
     } else {
-        BTN_CONFIRM
+        ButtonVariant::Primary
     };
 
     // Unique ID for this dialog instance, avoiding collisions when multiple
@@ -224,12 +223,12 @@ pub fn ConfirmDialog(
                             </label>
                         })}
                         <div class="flex justify-end gap-2">
-                            <button type="button" class=BTN_CANCEL on:click=on_cancel_click>
+                            <Button size=ButtonSize::Lg on:click=on_cancel_click>
                                 "Cancel"
-                            </button>
-                            <button type="button" class=confirm_class on:click=on_confirm_click>
+                            </Button>
+                            <Button variant=confirm_variant size=ButtonSize::Lg on:click=on_confirm_click>
                                 {confirm_label.with_value(|c| c.clone())}
-                            </button>
+                            </Button>
                         </div>
                     </div>
                 </div>

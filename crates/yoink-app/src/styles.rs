@@ -9,12 +9,26 @@ pub const GLASS_TITLE: &str = "text-[15px] font-semibold text-zinc-900 dark:text
 pub const GLASS_BODY: &str = "px-5 max-md:px-3.5 py-4";
 pub const MUTED: &str = "text-zinc-500 dark:text-zinc-400";
 pub const EMPTY: &str = "text-center py-10 px-4 text-zinc-400 dark:text-zinc-600 text-sm";
-pub const BTN: &str = "inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 bg-white/60 dark:bg-zinc-800/60 backdrop-blur-[8px] border border-black/[.08] dark:border-white/10 rounded-lg font-inherit text-[13px] font-medium cursor-pointer text-zinc-600 dark:text-zinc-300 no-underline transition-all duration-150 whitespace-nowrap hover:bg-white/85 hover:border-blue-500/20 dark:hover:bg-zinc-800/85 dark:hover:border-blue-500/30";
-pub const BTN_PRIMARY: &str = "inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 bg-blue-500 dark:bg-blue-500 backdrop-blur-[8px] border border-blue-500 rounded-lg font-inherit text-[13px] font-medium cursor-pointer text-white no-underline transition-all duration-150 whitespace-nowrap shadow-[0_2px_12px_rgba(59,130,246,.25)] hover:bg-blue-400 hover:border-blue-400 hover:shadow-[0_4px_20px_rgba(59,130,246,.35)]";
-pub const BTN_DANGER: &str = "inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 bg-red-500/[.08] dark:bg-red-500/10 backdrop-blur-[8px] border border-red-500/30 dark:border-red-400/30 rounded-lg font-inherit text-[13px] font-medium cursor-pointer text-red-600 dark:text-red-400 no-underline transition-all duration-150 whitespace-nowrap hover:bg-red-500/15 hover:border-red-600 dark:hover:bg-red-500/20 dark:hover:border-red-400";
-
-pub const BTN_LOADING: &str = "opacity-60 pointer-events-none cursor-not-allowed";
 pub const SELECT: &str = "py-1 px-2 border border-black/[.06] dark:border-white/[.08] rounded-lg text-xs bg-white/40 dark:bg-zinc-800/40 text-zinc-900 dark:text-zinc-100 outline-none cursor-pointer transition-[border-color,box-shadow] duration-150 focus:border-blue-500 focus:shadow-[0_0_0_2px_rgba(59,130,246,.12)]";
+pub const SEARCH_INPUT: &str = "py-2 px-3.5 border border-black/[.08] dark:border-white/10 rounded-lg font-inherit text-sm bg-white/60 dark:bg-zinc-800/60 backdrop-blur-[8px] text-zinc-900 dark:text-zinc-100 outline-none w-full transition-[border-color,box-shadow] duration-150 focus:border-blue-500 focus:shadow-[0_0_0_3px_rgba(59,130,246,.15)] dark:focus:shadow-[0_0_0_3px_rgba(59,130,246,.2)] placeholder:text-zinc-400 dark:placeholder:text-zinc-600";
+
+// ── Micro-badge / tag constants ─────────────────────────────
+// Simple (no border) inline tags — 10px, pill-rounded
+pub const TAG_NEUTRAL: &str =
+    "text-[10px] px-1.5 py-px rounded bg-zinc-500/[.08] text-zinc-500 dark:text-zinc-400";
+pub const TAG_NEUTRAL_MONO: &str =
+    "text-[10px] px-1.5 py-px rounded bg-zinc-500/[.08] text-zinc-500 dark:text-zinc-400 font-mono";
+pub const TAG_SUCCESS: &str =
+    "text-[10px] px-1.5 py-px rounded bg-green-500/[.12] text-green-600 dark:text-green-400";
+pub const TAG_WARNING: &str =
+    "text-[10px] px-1.5 py-px rounded bg-amber-500/[.12] text-amber-600 dark:text-amber-300";
+pub const TAG_INFO: &str =
+    "text-[10px] px-1.5 py-px rounded bg-blue-500/[.10] text-blue-600 dark:text-blue-400";
+pub const TAG_EXPLICIT: &str = "text-[10px] px-1.5 py-px rounded bg-zinc-200 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300";
+// Bordered variant — with border + inline-flex
+pub const TAG_BORDERED_NEUTRAL: &str = "inline-flex items-center px-1.5 py-px text-[10px] font-medium text-zinc-500 dark:text-zinc-400 bg-zinc-500/[.06] border border-zinc-500/10 rounded";
+pub const TAG_BORDERED_INFO: &str = "inline-flex items-center px-1.5 py-px text-[10px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-500/[.08] border border-blue-500/20 rounded";
+pub const TAG_BORDERED_WARNING: &str = "inline-flex items-center px-1.5 py-px text-[10px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-500/[.08] border border-amber-500/20 rounded";
 
 // ── Sticky header bar ───────────────────────────────────────
 pub const HEADER_BAR: &str = "bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[16px] border-b border-black/[.06] dark:border-white/[.06] px-6 max-md:px-4 py-3.5 flex items-center justify-between sticky top-0 z-40";
@@ -25,15 +39,18 @@ pub const BREADCRUMB_LINK: &str = "text-zinc-500 dark:text-zinc-400 hover:text-b
 pub const BREADCRUMB_SEP: &str = "text-zinc-300 dark:text-zinc-600 shrink-0 [&_svg]:size-3.5";
 pub const BREADCRUMB_CURRENT: &str = "text-zinc-900 dark:text-zinc-100 font-semibold truncate";
 
-pub fn cls(a: &str, b: &str) -> String {
-    format!("{a} {b}")
-}
-
-/// Combine a button class with `BTN_LOADING` when loading is true.
-pub fn btn_cls(base: &str, extra: &str, loading: bool) -> String {
-    if loading {
-        format!("{base} {extra} {BTN_LOADING}")
-    } else {
-        format!("{base} {extra}")
-    }
+/// Variadic class-name joiner. Filters empty segments.
+///
+/// ```ignore
+/// cls!(GLASS, "px-2 py-1", if active { "ring" } else { "" })
+/// ```
+#[macro_export]
+macro_rules! cls {
+    ($($segment:expr),* $(,)?) => {{
+        [$($segment),*]
+            .into_iter()
+            .filter(|s: &&str| !s.is_empty())
+            .collect::<Vec<&str>>()
+            .join(" ")
+    }};
 }

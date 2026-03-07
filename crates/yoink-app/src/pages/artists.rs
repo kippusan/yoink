@@ -1,7 +1,8 @@
+use crate::cls;
 use std::collections::HashSet;
 
 use leptos::prelude::*;
-use lucide_leptos::{ChevronRight, X};
+use lucide_leptos::X;
 
 use yoink_shared::{
     MonitoredAlbum, MonitoredArtist, SearchArtistResult, ServerAction, build_albums_by_artist,
@@ -12,16 +13,17 @@ use leptoaster::{ToastBuilder, ToastLevel, ToastPosition, expect_toaster};
 
 use crate::actions::dispatch_action;
 use crate::components::toast::dispatch_with_toast;
-use crate::components::{ErrorPanel, MobileMenuButton, Sidebar};
+use crate::components::{
+    Breadcrumb, BreadcrumbItem, Button, ButtonVariant, ErrorPanel, PageShell, fallback_initial,
+};
 use crate::hooks::{set_page_title, use_sse_version};
 use crate::styles::{
-    BREADCRUMB_CURRENT, BREADCRUMB_LINK, BREADCRUMB_NAV, BREADCRUMB_SEP, BTN_PRIMARY, EMPTY, GLASS,
-    GLASS_BODY, GLASS_HEADER, GLASS_TITLE, HEADER_BAR, MUTED, SELECT, btn_cls, cls,
+    EMPTY, GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, SEARCH_INPUT, SELECT, TAG_BORDERED_INFO,
+    TAG_BORDERED_NEUTRAL, TAG_BORDERED_WARNING,
 };
 
 // ── Page-specific Tailwind class constants ──────────────────
 
-const SEARCH_INPUT: &str = "py-2 px-3.5 border border-black/[.08] dark:border-white/10 rounded-lg font-inherit text-sm bg-white/60 dark:bg-zinc-800/60 backdrop-blur-[8px] text-zinc-900 dark:text-zinc-100 outline-none w-full max-w-[360px] transition-[border-color,box-shadow] duration-150 focus:border-blue-500 focus:shadow-[0_0_0_3px_rgba(59,130,246,.15)] dark:focus:shadow-[0_0_0_3px_rgba(59,130,246,.2)] placeholder:text-zinc-400 dark:placeholder:text-zinc-600";
 const SEARCH_RESULT: &str = "flex items-center gap-3.5 px-4 py-3 border-b border-black/[.04] dark:border-white/[.04] transition-[background] duration-[120ms] last:border-b-0 hover:bg-blue-500/[.04] dark:hover:bg-blue-500/[.06]";
 const ARTIST_CARD: &str = "bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[12px] border border-black/[.06] dark:border-white/[.08] rounded-xl p-4 flex items-center gap-3.5 transition-[transform,box-shadow,border-color] duration-200 relative overflow-hidden no-underline cursor-pointer hover:-translate-y-0.5 hover:shadow-[0_8px_32px_rgba(59,130,246,.1)] hover:border-blue-500/20 dark:hover:shadow-[0_8px_32px_rgba(59,130,246,.15)] dark:hover:border-blue-500/30";
 const ARTIST_AVATAR: &str = "size-12 rounded-full object-cover border-2 border-blue-500/20 dark:border-blue-500/30 shrink-0 bg-zinc-200 dark:bg-zinc-800";
@@ -151,18 +153,13 @@ pub fn ArtistsPage() -> impl IntoView {
     );
 
     view! {
-        <div class="flex min-h-screen">
-            <Sidebar active="library-artists" />
-            <div class="ml-[220px] max-md:ml-0 flex-1 min-h-screen overflow-x-hidden">
+        <PageShell active="library-artists">
                 <Transition fallback=move || view! {
                     <div>
-                        <div class=HEADER_BAR>
-                            <nav class=BREADCRUMB_NAV aria-label="Breadcrumb"><MobileMenuButton />
-                                <a href="/library" class=BREADCRUMB_LINK>"Library"</a>
-                                <span class=BREADCRUMB_SEP><ChevronRight /></span>
-                                <span class=BREADCRUMB_CURRENT>"Artists"</span>
-                            </nav>
-                        </div>
+                        <Breadcrumb items=vec![
+                            BreadcrumbItem::link("Library", "/library"),
+                            BreadcrumbItem::current("Artists"),
+                        ] />
                         <div class="p-6 max-md:p-4">
                             // Skeleton search bar
                             <div class="mb-5 bg-white/70 dark:bg-zinc-800/60 rounded-xl border border-black/[.06] dark:border-white/[.08] p-4">
@@ -213,8 +210,7 @@ pub fn ArtistsPage() -> impl IntoView {
                         })
                     }}
                 </Transition>
-            </div>
-        </div>
+        </PageShell>
     }
 }
 
@@ -368,25 +364,21 @@ fn ArtistsContent(
 
     view! {
         <Show when=move || show_header>
-            <div class=HEADER_BAR>
-                <nav class=BREADCRUMB_NAV aria-label="Breadcrumb"><MobileMenuButton />
-                    <a href="/library" class=BREADCRUMB_LINK>"Library"</a>
-                    <span class=BREADCRUMB_SEP><ChevronRight /></span>
-                    <span class=BREADCRUMB_CURRENT>"Artists"</span>
-                </nav>
-                <span class={cls(MUTED, "text-[13px]")}>{format!("{monitored_count} monitored")}</span>
-            </div>
+            <Breadcrumb items=vec![
+                BreadcrumbItem::link("Library", "/library"),
+                BreadcrumbItem::current("Artists"),
+            ] />
         </Show>
 
         <div class="p-6 max-md:p-4">
             // Search panel with clear button (#13)
-            <div class={cls(GLASS, "mb-5 !overflow-visible relative z-50")}>
-                <div class={cls(GLASS_BODY, "!overflow-visible")}>
+            <div class={cls!(GLASS, "mb-5 !overflow-visible relative z-50")}>
+                <div class={cls!(GLASS_BODY, "!overflow-visible")}>
                     <div class="flex flex-wrap items-center gap-2">
                         <div class="relative w-full max-w-[360px]">
                             <input
                                 type="text"
-                                class={cls(SEARCH_INPUT, "max-w-full pr-8")}
+                                class={cls!(SEARCH_INPUT, "max-w-full pr-8")}
                                 placeholder="Search artist name..."
                                 autocomplete="off"
                                 aria-label="Search artists"
@@ -438,7 +430,7 @@ fn ArtistsContent(
                     view! { <div class=EMPTY>"No monitored artists yet. Search and add one above."</div> }.into_any()
                 } else {
                     view! {
-                        <div class={cls(GLASS_BODY, "p-4")}>
+                        <div class={cls!(GLASS_BODY, "p-4")}>
                             <div class="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
                                 {move || {
                                     let filter = query.get().trim().to_lowercase();
@@ -559,12 +551,7 @@ fn SearchResultRow(artist: SearchArtistResult, set_query: WriteSignal<String>) -
     let navigate = leptos_router::hooks::use_navigate();
     let image_url = artist.image_url.clone();
     let profile_url = artist.url.clone().unwrap_or_default();
-    let fallback_initial = artist
-        .name
-        .chars()
-        .next()
-        .map(|c| c.to_uppercase().to_string())
-        .unwrap_or_else(|| "?".to_string());
+    let fallback_initial = fallback_initial(&artist.name);
     let artist_external_id = artist.external_id.clone();
     let artist_name = artist.name.clone();
     let artist_image_url = artist.image_url.clone();
@@ -639,16 +626,14 @@ fn SearchResultRow(artist: SearchArtistResult, set_query: WriteSignal<String>) -
                 {(!tags.is_empty()).then(|| view! {
                     <div class="flex flex-wrap gap-1 mt-1">
                         {tags.into_iter().map(|tag| view! {
-                            <span class="inline-flex items-center px-1.5 py-px text-[10px] font-medium text-zinc-500 dark:text-zinc-400 bg-zinc-500/[.06] border border-zinc-500/10 rounded">
+                            <span class=TAG_BORDERED_NEUTRAL>
                                 {tag}
                             </span>
                         }).collect_view()}
                     </div>
                 })}
             </div>
-            <button type="button"
-                class=move || btn_cls(BTN_PRIMARY, "px-2.5 py-0.5 text-xs", adding.get())
-                disabled=move || adding.get()
+            <Button variant=ButtonVariant::Primary loading=adding
                 on:click=move |_| {
                     adding.set(true);
                     let name = artist_name.clone();
@@ -689,7 +674,7 @@ fn SearchResultRow(artist: SearchArtistResult, set_query: WriteSignal<String>) -
                     });
                 }>
                 {move || if adding.get() { "Adding\u{2026}" } else { "+ Add" }}
-            </button>
+            </Button>
         </div>
     }
 }
@@ -702,12 +687,7 @@ fn ArtistCard(artist: MonitoredArtist, albums: Vec<MonitoredAlbum>) -> impl Into
     let acquired = albums.iter().filter(|a| a.acquired).count();
     let album_count_text =
         format!("{album_count} albums \u{00b7} {acquired} acquired \u{00b7} {wanted} wanted");
-    let fallback_initial = artist
-        .name
-        .chars()
-        .next()
-        .map(|c| c.to_uppercase().to_string())
-        .unwrap_or_else(|| "?".to_string());
+    let fallback_initial = fallback_initial(&artist.name);
     let artist_img = artist.image_url.clone();
     let detail_href = format!("/artists/{}", artist.id);
     let is_monitored = artist.monitored;
@@ -729,13 +709,13 @@ fn ArtistCard(artist: MonitoredArtist, albums: Vec<MonitoredAlbum>) -> impl Into
                         <div class="text-[15px] font-bold text-zinc-900 dark:text-zinc-100 whitespace-nowrap overflow-hidden text-ellipsis">{artist.name}</div>
                         {if is_monitored {
                             view! {
-                                <span class="inline-flex items-center px-1.5 py-px text-[10px] font-semibold text-blue-600 dark:text-blue-400 bg-blue-500/[.08] border border-blue-500/20 rounded">
+                                <span class=TAG_BORDERED_INFO>
                                     "Monitored"
                                 </span>
                             }.into_any()
                         } else {
                             view! {
-                                <span class="inline-flex items-center px-1.5 py-px text-[10px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-500/[.08] border border-amber-500/20 rounded">
+                                <span class=TAG_BORDERED_WARNING>
                                     "Lightweight"
                                 </span>
                             }.into_any()

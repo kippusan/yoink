@@ -1,16 +1,18 @@
+use crate::cls;
 use leptos::prelude::*;
-use lucide_leptos::{ChevronRight, GitMerge, X};
+use lucide_leptos::{GitMerge, X};
 
 use yoink_shared::{
     MonitoredAlbum, MonitoredArtist, ProviderLink, ServerAction, TrackInfo, provider_display_name,
 };
 
 use crate::components::toast::dispatch_with_toast;
-use crate::components::{ErrorPanel, MobileMenuButton, Sidebar};
+use crate::components::{
+    Breadcrumb, BreadcrumbItem, Button, ButtonSize, ButtonVariant, ErrorPanel, PageShell,
+};
 use crate::hooks::{set_page_title, use_sse_version};
 use crate::styles::{
-    BREADCRUMB_CURRENT, BREADCRUMB_LINK, BREADCRUMB_NAV, BREADCRUMB_SEP, BTN_DANGER, BTN_PRIMARY,
-    GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, HEADER_BAR, MUTED, SELECT, cls,
+    GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, MUTED, SELECT, TAG_BORDERED_NEUTRAL,
 };
 
 // ── Data structures ─────────────────────────────────────────
@@ -290,7 +292,7 @@ fn ProviderBadge(link: ProviderLink) -> impl IntoView {
             </a>
         }.into_any(),
         None => view! {
-            <span class="inline-flex items-center px-1.5 py-px text-[10px] font-medium text-zinc-500 dark:text-zinc-400 bg-zinc-500/[.06] border border-zinc-500/10 rounded" title=link.external_id>
+            <span class=TAG_BORDERED_NEUTRAL title=link.external_id>
                 {label}
             </span>
         }.into_any(),
@@ -358,7 +360,7 @@ fn MergeCandidateCard(candidate: MergeCandidate) -> impl IntoView {
     let merged_track_count = candidate.merged_tracks.len();
 
     view! {
-        <div class={cls(GLASS, "overflow-hidden")}>
+        <div class={cls!(GLASS, "overflow-hidden")}>
             // ── Header: confidence + match kind ────────────────
             <div class=GLASS_HEADER>
                 <div class="flex items-center gap-2">
@@ -374,7 +376,7 @@ fn MergeCandidateCard(candidate: MergeCandidate) -> impl IntoView {
                 </div>
             </div>
 
-            <div class={cls(GLASS_BODY, "space-y-4")}>
+            <div class={cls!(GLASS_BODY, "space-y-4")}>
                 // ── Side-by-side album cards ───────────────────
                 <div class="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-3 items-stretch">
                     <div class="p-3 rounded-lg border border-black/[.04] dark:border-white/[.04] bg-zinc-50/50 dark:bg-zinc-900/30">
@@ -489,9 +491,7 @@ fn MergeCandidateCard(candidate: MergeCandidate) -> impl IntoView {
                     {
                         let sids = suggestion_ids.clone();
                         view! {
-                            <button
-                                type="button"
-                                class={cls(BTN_DANGER, "px-3 py-1 text-xs")}
+                            <Button variant=ButtonVariant::Danger size=ButtonSize::Md
                                 on:click=move |_| {
                                     for &sid in &sids {
                                         dispatch_with_toast(
@@ -503,7 +503,7 @@ fn MergeCandidateCard(candidate: MergeCandidate) -> impl IntoView {
                             >
                                 <X size=12 />
                                 "Not a match"
-                            </button>
+                            </Button>
                         }
                     }
                     // Merge
@@ -511,9 +511,7 @@ fn MergeCandidateCard(candidate: MergeCandidate) -> impl IntoView {
                         let target_id = merge_target_id;
                         let source_id = merge_source_id;
                         view! {
-                            <button
-                                type="button"
-                                class={cls(BTN_PRIMARY, "px-3 py-1 text-xs")}
+                            <Button variant=ButtonVariant::Primary size=ButtonSize::Md
                                 on:click=move |_| {
                                     let title = selected_title.get();
                                     let cover = selected_cover.get();
@@ -530,7 +528,7 @@ fn MergeCandidateCard(candidate: MergeCandidate) -> impl IntoView {
                             >
                                 <GitMerge size=12 />
                                 "Merge"
-                            </button>
+                            </Button>
                         }
                     }
                 </div>
@@ -558,20 +556,14 @@ pub fn MergeAlbumsPage() -> impl IntoView {
     );
 
     view! {
-        <div class="flex min-h-screen">
-            <Sidebar active="library-artists" />
-            <div class="ml-[220px] max-md:ml-0 flex-1 min-h-screen overflow-x-hidden">
+        <PageShell active="library-artists">
                 <Transition fallback=move || view! {
                     <div>
-                        <div class=HEADER_BAR>
-                            <nav class=BREADCRUMB_NAV aria-label="Breadcrumb"><MobileMenuButton />
-                                <a href="/library" class=BREADCRUMB_LINK>"Library"</a>
-                                <span class=BREADCRUMB_SEP><ChevronRight /></span>
-                                <div class="h-4 w-20 bg-zinc-200 dark:bg-zinc-700 rounded animate-pulse"></div>
-                                <span class=BREADCRUMB_SEP><ChevronRight /></span>
-                                <span class=BREADCRUMB_CURRENT>"Merge Albums"</span>
-                            </nav>
-                        </div>
+                        <Breadcrumb items=vec![
+                            BreadcrumbItem::link("Library", "/library"),
+                            BreadcrumbItem::link("\u{2026}", "#"),
+                            BreadcrumbItem::current("Merge Albums"),
+                        ] />
                         <div class="p-6 max-md:p-4">
                             // Skeleton intro card
                             <div class="mb-5 bg-white/70 dark:bg-zinc-800/60 rounded-xl border border-black/[.06] dark:border-white/[.08] overflow-hidden">
@@ -620,13 +612,10 @@ pub fn MergeAlbumsPage() -> impl IntoView {
                     {move || data.get().map(|result| match result {
                         Err(e) => view! {
                             <div>
-                                <div class=HEADER_BAR>
-                                    <nav class=BREADCRUMB_NAV aria-label="Breadcrumb"><MobileMenuButton />
-                                        <a href="/library" class=BREADCRUMB_LINK>"Library"</a>
-                                        <span class=BREADCRUMB_SEP><ChevronRight /></span>
-                                        <span class=BREADCRUMB_CURRENT>"Merge Albums"</span>
-                                    </nav>
-                                </div>
+                                <Breadcrumb items=vec![
+                                    BreadcrumbItem::link("Library", "/library"),
+                                    BreadcrumbItem::current("Merge Albums"),
+                                ] />
                                 <div class="p-6 max-md:p-4">
                                     <ErrorPanel message="Failed to load merge candidates." details=e.to_string() />
                                 </div>
@@ -651,24 +640,20 @@ pub fn MergeAlbumsPage() -> impl IntoView {
 
                             view! {
                                 // Sticky header with breadcrumb
-                                <div class=HEADER_BAR>
-                                    <nav class=BREADCRUMB_NAV aria-label="Breadcrumb"><MobileMenuButton />
-                                        <a href="/library" class=BREADCRUMB_LINK>"Library"</a>
-                                        <span class=BREADCRUMB_SEP><ChevronRight /></span>
-                                        <a href=artist_link class=BREADCRUMB_LINK>{artist_name.clone()}</a>
-                                        <span class=BREADCRUMB_SEP><ChevronRight /></span>
-                                        <span class=BREADCRUMB_CURRENT>"Merge Albums"</span>
-                                    </nav>
-                                </div>
+                                <Breadcrumb items=vec![
+                                    BreadcrumbItem::link("Library", "/library"),
+                                    BreadcrumbItem::link(artist_name.clone(), artist_link),
+                                    BreadcrumbItem::current("Merge Albums"),
+                                ] />
 
                                 <div class="p-6 max-md:p-4">
                                     // Intro card
-                                    <div class={cls(GLASS, "mb-5")}>
+                                    <div class={cls!(GLASS, "mb-5")}>
                                         <div class=GLASS_HEADER>
                                             <h2 class=GLASS_TITLE>"Merge Albums"</h2>
                                             {if count > 0 {
                                                 view! {
-                                                    <span class={cls(MUTED, "text-xs")}>
+                                                    <span class={cls!(MUTED, "text-xs")}>
                                                         {format!("{} candidate{}", count, if count == 1 { "" } else { "s" })}
                                                     </span>
                                                 }.into_any()
@@ -677,7 +662,7 @@ pub fn MergeAlbumsPage() -> impl IntoView {
                                             }}
                                         </div>
                                         <div class=GLASS_BODY>
-                                            <p class={cls(MUTED, "text-sm m-0")}>
+                                            <p class={cls!(MUTED, "text-sm m-0")}>
                                                 "Albums that appear to be the same release across different providers. Review and merge them into a single entry, or dismiss false matches."
                                             </p>
                                         </div>
@@ -685,7 +670,7 @@ pub fn MergeAlbumsPage() -> impl IntoView {
 
                                     {if data.candidates.is_empty() {
                                         view! {
-                                            <div class={cls(GLASS, "p-8 text-center text-sm text-zinc-400 dark:text-zinc-500")}>
+                                            <div class={cls!(GLASS, "p-8 text-center text-sm text-zinc-400 dark:text-zinc-500")}>
                                                 "No duplicate albums detected \u{2014} nothing to merge."
                                             </div>
                                         }.into_any()
@@ -703,7 +688,6 @@ pub fn MergeAlbumsPage() -> impl IntoView {
                         }
                     })}
                 </Transition>
-            </div>
-        </div>
+        </PageShell>
     }
 }

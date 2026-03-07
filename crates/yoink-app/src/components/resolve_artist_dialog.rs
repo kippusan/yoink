@@ -6,9 +6,11 @@ use yoink_shared::{MonitoredArtist, SearchArtistResult, ServerAction, provider_d
 
 use crate::actions::dispatch_action;
 use crate::pages::provider_icon_svg;
+use crate::styles::SEARCH_INPUT;
 use leptoaster::{ToastBuilder, ToastLevel, ToastPosition, expect_toaster};
 
 use super::link_provider_dialog::search_all_providers;
+use super::{Button, ButtonSize, ButtonVariant, fallback_initial};
 
 // ── Tailwind class constants ────────────────────────────────
 
@@ -16,13 +18,10 @@ const BACKDROP: &str = "fixed inset-0 z-[9999] bg-black/40 dark:bg-black/60 back
 const CARD: &str = "bg-white/80 dark:bg-zinc-800/80 backdrop-blur-[16px] border border-black/[.08] dark:border-white/[.1] rounded-xl shadow-xl max-w-lg w-full mx-4 max-h-[85vh] flex flex-col overflow-hidden";
 const TITLE: &str = "text-[15px] font-semibold text-zinc-900 dark:text-zinc-100 m-0";
 const SUBTITLE: &str = "text-[13px] text-zinc-500 dark:text-zinc-400 mt-0.5";
-const SEARCH_INPUT: &str = "py-2 px-3.5 border border-black/[.08] dark:border-white/10 rounded-lg font-inherit text-sm bg-white/60 dark:bg-zinc-800/60 backdrop-blur-[8px] text-zinc-900 dark:text-zinc-100 outline-none w-full transition-[border-color,box-shadow] duration-150 focus:border-blue-500 focus:shadow-[0_0_0_3px_rgba(59,130,246,.15)] dark:focus:shadow-[0_0_0_3px_rgba(59,130,246,.2)] placeholder:text-zinc-400 dark:placeholder:text-zinc-600";
 const RESULT_ROW: &str = "flex items-center gap-3 px-4 py-2.5 border-b border-black/[.04] dark:border-white/[.04] transition-[background] duration-[120ms] last:border-b-0 hover:bg-blue-500/[.04] dark:hover:bg-blue-500/[.06]";
 const AVATAR: &str = "size-9 rounded-full object-cover border border-blue-500/20 dark:border-blue-500/30 shrink-0 bg-zinc-200 dark:bg-zinc-800";
 const FALLBACK_AVATAR: &str = "size-9 rounded-full inline-flex items-center justify-center bg-zinc-200 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 font-bold text-sm border border-blue-500/20 dark:border-blue-500/30 shrink-0";
-const BTN_CANCEL: &str = "inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 bg-white/60 dark:bg-zinc-800/60 backdrop-blur-[8px] border border-black/[.08] dark:border-white/10 rounded-lg font-inherit text-[13px] font-medium cursor-pointer text-zinc-600 dark:text-zinc-300 no-underline transition-all duration-150 whitespace-nowrap hover:bg-white/85 hover:border-zinc-400 dark:hover:bg-zinc-800/85 dark:hover:border-zinc-500";
-const BTN_PRIMARY: &str = "inline-flex items-center justify-center gap-1.5 px-3 py-1.5 bg-blue-500 border border-blue-500 rounded-lg text-[13px] font-medium cursor-pointer text-white transition-all duration-150 whitespace-nowrap shadow-[0_2px_8px_rgba(59,130,246,.2)] hover:bg-blue-400 hover:border-blue-400 disabled:opacity-50 disabled:pointer-events-none";
-const BTN_OUTLINE: &str = "inline-flex items-center justify-center gap-1.5 px-2.5 py-1 bg-white/60 dark:bg-zinc-800/60 backdrop-blur-[8px] border border-black/[.08] dark:border-white/10 rounded-lg text-[12px] font-medium cursor-pointer text-zinc-600 dark:text-zinc-300 transition-all duration-150 whitespace-nowrap hover:bg-white/85 hover:border-zinc-400 dark:hover:bg-zinc-800/85 dark:hover:border-zinc-500 disabled:opacity-50 disabled:pointer-events-none";
+
 const SECTION_DIVIDER: &str = "px-5 py-2 text-[11px] uppercase tracking-wider font-semibold text-zinc-400 dark:text-zinc-500 border-b border-black/[.04] dark:border-white/[.04] bg-zinc-50/50 dark:bg-zinc-900/30";
 
 // ── Server function: get monitored artists ──────────────────
@@ -425,9 +424,9 @@ pub fn ResolveArtistDialog(
 
                         // Footer
                         <div class="px-5 py-3 border-t border-black/[.06] dark:border-white/[.06] flex justify-end shrink-0">
-                            <button type="button" class=BTN_CANCEL on:click=move |_| open.set(false)>
+                            <Button size=ButtonSize::Lg on:click=move |_| open.set(false)>
                                 "Cancel"
-                            </button>
+                            </Button>
                         </div>
                     </div>
                 </div>
@@ -449,11 +448,7 @@ fn ExistingArtistRow(
     let linking = RwSignal::new(false);
     let artist_name = artist.name.clone();
     let image_url = artist.image_url.clone();
-    let fallback_initial = artist_name
-        .chars()
-        .next()
-        .map(|c| c.to_uppercase().to_string())
-        .unwrap_or_else(|| "?".to_string());
+    let fallback_initial = fallback_initial(&artist_name);
     let artist_id = artist.id;
 
     view! {
@@ -469,9 +464,8 @@ fn ExistingArtistRow(
             <div class="flex-1 min-w-0">
                 <span class="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate">{artist_name.clone()}</span>
             </div>
-            <button type="button"
-                class=BTN_OUTLINE
-                disabled=move || linking.get()
+            <Button
+                loading=linking
                 on:click={
                     let credit_provider = credit_provider.clone();
                     let credit_external_id = credit_external_id.clone();
@@ -532,7 +526,7 @@ fn ExistingArtistRow(
                 }
             >
                 {move || if linking.get() { "Linking\u{2026}" } else { "Link" }}
-            </button>
+            </Button>
         </div>
     }
 }
@@ -547,12 +541,7 @@ fn ProviderSearchRow(
 ) -> impl IntoView {
     let adding = RwSignal::new(false);
     let image_url = result.image_url.clone();
-    let fallback_initial = result
-        .name
-        .chars()
-        .next()
-        .map(|c| c.to_uppercase().to_string())
-        .unwrap_or_else(|| "?".to_string());
+    let fallback_initial = fallback_initial(&result.name);
 
     let provider_display = provider_display_name(&result.provider);
     let provider_icon = provider_icon_svg(&result.provider);
@@ -598,9 +587,10 @@ fn ProviderSearchRow(
                     <div class="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5 truncate">{s}</div>
                 })}
             </div>
-            <button type="button"
-                class=BTN_PRIMARY
-                disabled=move || adding.get()
+            <Button
+                variant=ButtonVariant::Primary
+                size=ButtonSize::Md
+                loading=adding
                 on:click={
                     let provider = provider.clone();
                     let external_id = external_id.clone();
@@ -647,7 +637,7 @@ fn ProviderSearchRow(
                 }
             >
                 {move || if adding.get() { "Adding\u{2026}" } else { label }}
-            </button>
+            </Button>
         </div>
     }
 }

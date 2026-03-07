@@ -3,7 +3,7 @@
   yoink
 </h1>
 
-<p align="center">yoink is a self-hosted music library manager that lets you search, download, tag, and organize your collection from multiple sources — all from a single, clean web interface. Think of it as your personal command center for building the music library you've always wanted.</p>
+<p align="center">yoink is a self-hosted music library manager that lets you search, download, tag, and organize your collection from multiple sources all from a single, clean web interface</p>
 
 > [!WARNING]
 > yoink is under active development and is **not production ready**. Expect breaking changes, incomplete features, and rough edges. **Do not point yoink at your main music library** — use a separate copy or a fresh directory until the project stabilizes.
@@ -12,20 +12,18 @@
 
 ## What Is Yoink?
 
-Managing a music library across different sources is painful. You search on one platform, download from another, manually tag files, move them into folders, and hope the metadata is correct. Multiply that by hundreds of albums and it becomes a chore.
+I ran my Lidarr instance for years, but it was really, thightly coupled to its metadata source. (MusicBrainz if I remember correctly?)
+Some of the stuff I like to listen to is not well represented there, as well as new stuff that artists just drop without any announcement.
+I also had issues finding good quality downloads for some of the less mainstream music on larger indexers.
 
-yoink solves this by bringing everything together. It connects to multiple music providers — **Tidal**, **Deezer**, **MusicBrainz**, and **SoulSeek** — letting you search across all of them at once. When you find what you want, yoink handles the downloading, tagging, lyrics fetching, and file organization automatically. Your library stays clean, consistent, and well-organized without the manual work.
-
-Whether you're filling gaps in your collection or building one from scratch, yoink gives you a **wanted list** to track albums you're looking for, a **dashboard** to monitor active downloads in real time, and a full **library view** to browse and manage what you already have.
+yoink was created to solve these issues by leveraging a multi-provider architecture, where you can pull in metadata from multiple sources (currently Tidal, Deezer and MB are supported) and download them via hifi-api and SoulSeek.
+This way (just like in IT security) you can use multiple metadata sources to cover each other's gaps.
 
 ## Key Features
 
-- **Unified multi-provider search** — Search for artists, albums, and tracks across Tidal, Deezer and MusicBrainz simultaneously
-- **Automated downloads** — Queue albums for download with configurable quality up to lossless; yoink handles the rest
-- **Smart tagging & metadata** — Automatic ID3/metadata tagging, cover art embedding, and lyrics fetching via LRCLib
-- **Library management** — Import existing music, merge duplicate albums, reconcile metadata across providers
-- **Artist profiles** — Rich artist pages with bios, images, and linked provider identities
-- **Wanted list** — Mark albums as wanted and keep track of what's missing from your collection
+- **Unified multi-provider search**: you search artists/albums/songs across all providers at once
+- **Hi-res downloads**: You can download the highest quality stuff directly from hifi instances. No need for indexers and external DL clients
+- **Artist profiles**: Unified artist pages combine a single artist from all of your providers (you still have to manually add them)
 - **Lightweight & fast** — Built with Rust for minimal resource usage; runs happily on a Raspberry Pi or a [BEEFY COMPUTER](https://www.youtube.com/watch?v=ZMGEO4URQqQ)
 
 ### Supported Providers
@@ -63,7 +61,7 @@ See the [compose.yaml](compose.yaml) for all available environment variables and
 ```bash
 git clone https://github.com/FlyinPancake/yoink.git
 cd yoink
-mise install
+mise install # this installs cargo-leptos and sqlx-cli, which are required for development and running the app from source
 ```
 
 Copy the example environment file and configure your providers:
@@ -113,11 +111,11 @@ All configuration is done via environment variables. See [`.env.example`](.env.e
 
 ## Built With
 
-yoink is built with **Rust** end-to-end — [Leptos](https://leptos.dev/) for the full-stack web UI with WebAssembly hydration, [Axum](https://github.com/tokio-rs/axum) for the server, [SQLite](https://www.sqlite.org/) via [SQLx](https://github.com/launchbadge/sqlx) for storage, and [Tailwind CSS](https://tailwindcss.com/) for styling. No Electron, no Node.js runtime — just a single binary and a database file.
+yoink is built with **Rust** end-to-end — [Leptos](https://leptos.dev/) for the full-stack web UI with WebAssembly hydration, [Axum](https://github.com/tokio-rs/axum) for the server, [SQLite](https://www.sqlite.org/) via [SQLx](https://github.com/launchbadge/sqlx) for storage, and [Tailwind CSS](https://tailwindcss.com/) for styling. No Node.js runtime just a single binary and a database file.
 
 ## Contributing
 
-Contributions are welcome! Whether it's a bug fix, new feature, or documentation improvement:
+Contributions are welcome! Whether it's a filing an issue, bug fix, new feature, or documentation improvement:
 
 1. Fork the repository
 2. Create a feature branch

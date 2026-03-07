@@ -10,19 +10,12 @@ use crate::styles::SEARCH_INPUT;
 use leptoaster::{ToastBuilder, ToastLevel, ToastPosition, expect_toaster};
 
 use super::link_provider_dialog::search_all_providers;
-use super::{Button, ButtonSize, ButtonVariant, fallback_initial};
+use super::{
+    ArtistAvatar, Button, ButtonSize, ButtonVariant, DialogResultRow, DialogSectionLabel,
+    DialogShell, DialogSize, dialog_shell::DIALOG_BACKDROP_CLASS,
+};
 
 // ── Tailwind class constants ────────────────────────────────
-
-const BACKDROP: &str = "fixed inset-0 z-[9999] bg-black/40 dark:bg-black/60 backdrop-blur-sm flex items-center justify-center";
-const CARD: &str = "bg-white/80 dark:bg-zinc-800/80 backdrop-blur-[16px] border border-black/[.08] dark:border-white/[.1] rounded-xl shadow-xl max-w-lg w-full mx-4 max-h-[85vh] flex flex-col overflow-hidden";
-const TITLE: &str = "text-[15px] font-semibold text-zinc-900 dark:text-zinc-100 m-0";
-const SUBTITLE: &str = "text-[13px] text-zinc-500 dark:text-zinc-400 mt-0.5";
-const RESULT_ROW: &str = "flex items-center gap-3 px-4 py-2.5 border-b border-black/[.04] dark:border-white/[.04] transition-[background] duration-[120ms] last:border-b-0 hover:bg-blue-500/[.04] dark:hover:bg-blue-500/[.06]";
-const AVATAR: &str = "size-9 rounded-full object-cover border border-blue-500/20 dark:border-blue-500/30 shrink-0 bg-zinc-200 dark:bg-zinc-800";
-const FALLBACK_AVATAR: &str = "size-9 rounded-full inline-flex items-center justify-center bg-zinc-200 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 font-bold text-sm border border-blue-500/20 dark:border-blue-500/30 shrink-0";
-
-const SECTION_DIVIDER: &str = "px-5 py-2 text-[11px] uppercase tracking-wider font-semibold text-zinc-400 dark:text-zinc-500 border-b border-black/[.04] dark:border-white/[.04] bg-zinc-50/50 dark:bg-zinc-900/30";
 
 // ── Server function: get monitored artists ──────────────────
 
@@ -160,30 +153,18 @@ pub fn ResolveArtistDialog(
             open.set(false);
         }
     };
-    let close_on_backdrop = move |_: leptos::ev::MouseEvent| {
-        open.set(false);
-    };
 
     view! {
         <Portal>
             <Show when=move || open.get()>
-                <div class=BACKDROP on:click=close_on_backdrop on:keydown=close_on_escape tabindex="-1">
-                    <div class=CARD on:click=|ev: leptos::ev::MouseEvent| ev.stop_propagation() role="dialog" aria-modal="true">
-                        // Header
-                        <div class="px-5 py-4 border-b border-black/[.06] dark:border-white/[.06] flex items-center justify-between shrink-0">
-                            <div>
-                                <h3 class=TITLE>{move || credit_name_stored.with_value(|n| n.clone())}</h3>
-                                <p class=SUBTITLE>"This artist isn\u{2019}t linked to a local artist yet."</p>
-                            </div>
-                            <button type="button"
-                                class="inline-flex items-center justify-center size-7 rounded-md text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 cursor-pointer bg-transparent border-none p-0 [&_svg]:size-4"
-                                on:click=move |_| open.set(false)
-                                title="Close"
-                            >
-                                <X />
-                            </button>
-                        </div>
-
+                <div class=DIALOG_BACKDROP_CLASS on:click=move |_: leptos::ev::MouseEvent| open.set(false) on:keydown=close_on_escape tabindex="-1">
+                    <DialogShell
+                        open=open
+                        title=credit_name_stored.with_value(|n| n.clone())
+                        subtitle="This artist isn\u{2019}t linked to a local artist yet."
+                        size=DialogSize::Lg
+                        class="max-h-[85vh] flex flex-col overflow-hidden"
+                    >
                         // Body — mode-dependent content
                         <div class="flex-1 overflow-y-auto min-h-0">
                             // ── Choose mode ─────────────────────
@@ -300,7 +281,7 @@ pub fn ResolveArtistDialog(
 
                             // ── Link to existing artist ─────────
                             <Show when=move || mode.get() == "link_existing">
-                                <div class=SECTION_DIVIDER>
+                                <DialogSectionLabel>
                                     <button type="button"
                                         class="text-blue-500 dark:text-blue-400 hover:text-blue-400 dark:hover:text-blue-300 bg-transparent border-none cursor-pointer p-0 font-inherit text-[11px] uppercase tracking-wider font-semibold"
                                         on:click=move |_| mode.set("choose".to_string())
@@ -308,7 +289,7 @@ pub fn ResolveArtistDialog(
                                         "\u{2190} Back"
                                     </button>
                                     " \u{00b7} Link to existing artist"
-                                </div>
+                                </DialogSectionLabel>
                                 <Suspense fallback=move || view! {
                                     <div class="p-4 text-sm text-zinc-500 dark:text-zinc-400">"Loading artists\u{2026}"</div>
                                 }>
@@ -355,7 +336,7 @@ pub fn ResolveArtistDialog(
 
                             // ── Search providers ────────────────
                             <Show when=move || mode.get() == "search_new">
-                                <div class=SECTION_DIVIDER>
+                                <DialogSectionLabel>
                                     <button type="button"
                                         class="text-blue-500 dark:text-blue-400 hover:text-blue-400 dark:hover:text-blue-300 bg-transparent border-none cursor-pointer p-0 font-inherit text-[11px] uppercase tracking-wider font-semibold"
                                         on:click=move |_| mode.set("choose".to_string())
@@ -363,7 +344,7 @@ pub fn ResolveArtistDialog(
                                         "\u{2190} Back"
                                     </button>
                                     " \u{00b7} Search providers"
-                                </div>
+                                </DialogSectionLabel>
                                 <div class="px-4 py-3 border-b border-black/[.04] dark:border-white/[.04] shrink-0">
                                     <div class="relative">
                                         <input
@@ -428,7 +409,7 @@ pub fn ResolveArtistDialog(
                                 "Cancel"
                             </Button>
                         </div>
-                    </div>
+                    </DialogShell>
                 </div>
             </Show>
         </Portal>
@@ -447,20 +428,11 @@ fn ExistingArtistRow(
 ) -> impl IntoView {
     let linking = RwSignal::new(false);
     let artist_name = artist.name.clone();
-    let image_url = artist.image_url.clone();
-    let fallback_initial = fallback_initial(&artist_name);
     let artist_id = artist.id;
 
     view! {
-        <div class=RESULT_ROW>
-            {match image_url {
-                Some(url) => view! {
-                    <img class=AVATAR src=url alt="" />
-                }.into_any(),
-                None => view! {
-                    <div class=FALLBACK_AVATAR>{fallback_initial}</div>
-                }.into_any(),
-            }}
+        <DialogResultRow>
+            <ArtistAvatar name=artist_name.clone() image_url=artist.image_url.clone() />
             <div class="flex-1 min-w-0">
                 <span class="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate">{artist_name.clone()}</span>
             </div>
@@ -527,7 +499,7 @@ fn ExistingArtistRow(
             >
                 {move || if linking.get() { "Linking\u{2026}" } else { "Link" }}
             </Button>
-        </div>
+        </DialogResultRow>
     }
 }
 
@@ -540,8 +512,6 @@ fn ProviderSearchRow(
     open: RwSignal<bool>,
 ) -> impl IntoView {
     let adding = RwSignal::new(false);
-    let image_url = result.image_url.clone();
-    let fallback_initial = fallback_initial(&result.name);
 
     let provider_display = provider_display_name(&result.provider);
     let provider_icon = provider_icon_svg(&result.provider);
@@ -565,15 +535,8 @@ fn ProviderSearchRow(
     let label = "Add & Link";
 
     view! {
-        <div class=RESULT_ROW>
-            {match image_url {
-                Some(url) => view! {
-                    <img class=AVATAR src=url alt="" />
-                }.into_any(),
-                None => view! {
-                    <div class=FALLBACK_AVATAR>{fallback_initial}</div>
-                }.into_any(),
-            }}
+        <DialogResultRow>
+            <ArtistAvatar name=result.name.clone() image_url=result.image_url.clone() />
             <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-1.5">
                     <span class="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate">{result.name.clone()}</span>
@@ -638,6 +601,6 @@ fn ProviderSearchRow(
             >
                 {move || if adding.get() { "Adding\u{2026}" } else { label }}
             </Button>
-        </div>
+        </DialogResultRow>
     }
 }

@@ -15,10 +15,11 @@ use crate::actions::dispatch_action;
 use crate::components::toast::dispatch_with_toast;
 use crate::components::{
     Badge, BadgeSize, BadgeSurface, BadgeVariant, Breadcrumb, BreadcrumbItem, Button,
-    ButtonVariant, ErrorPanel, PageShell, fallback_initial,
+    ButtonVariant, ErrorPanel, PageShell, Panel, PanelBody, PanelHeader, PanelTitle,
+    fallback_initial,
 };
 use crate::hooks::{set_page_title, use_sse_version};
-use crate::styles::{EMPTY, GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, SEARCH_INPUT, SELECT};
+use crate::styles::{EMPTY, GLASS, GLASS_BODY, SEARCH_INPUT, SELECT};
 
 // ── Page-specific Tailwind class constants ──────────────────
 
@@ -402,9 +403,9 @@ fn ArtistsContent(
             </div>
 
             // Monitored artists collection (shown first, filtered by search query)
-            <div class=GLASS>
-                <div class=GLASS_HEADER>
-                    <h2 class=GLASS_TITLE>"Your Collection"</h2>
+            <Panel>
+                <PanelHeader>
+                    <PanelTitle>"Your Collection"</PanelTitle>
                     {if monitored_count > 0 {
                         view! {
                             <select
@@ -423,12 +424,12 @@ fn ArtistsContent(
                     } else {
                         view! { <span></span> }.into_any()
                     }}
-                </div>
+                </PanelHeader>
                 {if monitored_count == 0 {
                     view! { <div class=EMPTY>"No monitored artists yet. Search and add one above."</div> }.into_any()
                 } else {
                     view! {
-                        <div class={cls!(GLASS_BODY, "p-4")}>
+                        <PanelBody class="p-4">
                             <div class="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
                                 {move || {
                                     let filter = query.get().trim().to_lowercase();
@@ -466,10 +467,10 @@ fn ArtistsContent(
                                     })
                                 }}
                             </div>
-                        </div>
+                        </PanelBody>
                     }.into_any()
                 }}
-            </div>
+            </Panel>
 
             // Search results — only non-monitored artists, shown below collection
             <Suspense fallback=move || view! {
@@ -507,16 +508,16 @@ fn ArtistsContent(
 
                                 let results_view = if !new_results.is_empty() {
                                     Some(view! {
-                                        <div class=GLASS>
-                                            <div class=GLASS_HEADER>
-                                                <h2 class=GLASS_TITLE>"Add from Search"</h2>
-                                            </div>
+                                        <Panel>
+                                            <PanelHeader>
+                                                <PanelTitle>"Add from Search"</PanelTitle>
+                                            </PanelHeader>
                                             <div>
                                                 {new_results.into_iter().map(|artist| {
                                                     view! { <SearchResultRow artist=artist set_query=set_query /> }
                                                 }).collect_view()}
                                             </div>
-                                        </div>
+                                        </Panel>
                                     }.into_any())
                                 } else if has_query && !has_error {
                                     Some(view! {

@@ -10,11 +10,11 @@ use yoink_shared::{
 
 use crate::components::toast::{dispatch_with_toast, dispatch_with_toast_loading};
 use crate::components::{
-    Badge, BadgeSize, Button, ButtonVariant, ConfirmDialog, ErrorPanel, MobileMenuButton,
-    PageShell, download_status_badge_variant,
+    Badge, BadgeSize, Button, ButtonVariant, ConfirmDialog, ErrorPanel, PageHeader, PageShell,
+    Panel, PanelHeader, PanelTitle, download_status_badge_variant,
 };
 use crate::hooks::{set_page_title, use_sse_version};
-use crate::styles::{EMPTY, GLASS, GLASS_HEADER, GLASS_TITLE, HEADER_BAR, MUTED};
+use crate::styles::{EMPTY, MUTED};
 
 // ── Page-specific Tailwind class constants ──────────────────
 
@@ -64,9 +64,7 @@ pub fn DashboardPage() -> impl IntoView {
         <PageShell active="dashboard">
                 <Transition fallback=move || view! {
                     <div>
-                        <div class=HEADER_BAR>
-                            <div class="flex items-center gap-2"><MobileMenuButton /><h1 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 m-0">"Dashboard"</h1></div>
-                        </div>
+                        <PageHeader title="Dashboard"></PageHeader>
                         // Skeleton stat cards
                         <div class="p-6 max-md:p-4">
                             <div class="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-4 mb-6">
@@ -157,9 +155,7 @@ fn DashboardContent(data: DashboardData) -> impl IntoView {
 
     view! {
         // Header bar
-        <div class=HEADER_BAR>
-            <div class="flex items-center gap-2"><MobileMenuButton /><h1 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 m-0">"Dashboard"</h1></div>
-        </div>
+        <PageHeader title="Dashboard"></PageHeader>
 
         // Content
         <div class="p-6 max-md:p-4">
@@ -199,9 +195,9 @@ fn DashboardContent(data: DashboardData) -> impl IntoView {
             />
 
             // Recent activity panel
-            <div class=GLASS>
-                <div class=GLASS_HEADER>
-                    <h2 class=GLASS_TITLE>"Recent Activity"</h2>
+            <Panel>
+                <PanelHeader>
+                    <PanelTitle>"Recent Activity"</PanelTitle>
                     <div class="flex flex-wrap items-center gap-2">
                         <Button loading=retag_loading
                             on:click=move |_| {
@@ -219,7 +215,7 @@ fn DashboardContent(data: DashboardData) -> impl IntoView {
                             view! { <span></span> }.into_any()
                         }}
                     </div>
-                </div>
+                </PanelHeader>
                 {if total_jobs == 0 {
                     view! { <div class=EMPTY>"No download jobs yet."</div> }.into_any()
                 } else {
@@ -269,7 +265,7 @@ fn DashboardContent(data: DashboardData) -> impl IntoView {
                         </div>
                     }.into_any()
                 }}
-            </div>
+            </Panel>
         </div>
     }
 }

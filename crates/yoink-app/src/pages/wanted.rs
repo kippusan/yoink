@@ -11,11 +11,11 @@ use yoink_shared::{
 
 use crate::components::toast::dispatch_with_toast;
 use crate::components::{
-    Badge, BadgeSize, Button, ButtonVariant, ErrorPanel, MobileMenuButton, PageShell,
-    download_status_badge_variant, fallback_initial,
+    Badge, BadgeSize, Button, ButtonVariant, ErrorPanel, PageHeader, PageShell, Panel, PanelHeader,
+    PanelTitle, download_status_badge_variant, fallback_initial,
 };
 use crate::hooks::{set_page_title, use_sse_version};
-use crate::styles::{EMPTY, GLASS, GLASS_HEADER, GLASS_TITLE, HEADER_BAR, MUTED};
+use crate::styles::{EMPTY, MUTED};
 
 #[cfg(feature = "hydrate")]
 use leptoaster::{ToastBuilder, ToastLevel, ToastPosition, expect_toaster};
@@ -83,9 +83,7 @@ pub fn WantedPage() -> impl IntoView {
         <PageShell active="wanted">
                 <Transition fallback=move || view! {
                     <div>
-                        <div class=HEADER_BAR>
-                            <div class="flex items-center gap-2"><MobileMenuButton /><h1 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 m-0">"Wanted"</h1></div>
-                        </div>
+                        <PageHeader title="Wanted"></PageHeader>
                         <div class="p-6 max-md:p-4"><div class=EMPTY>"Loading wanted tree..."</div></div>
                     </div>
                 }>
@@ -180,15 +178,12 @@ fn WantedContent(data: WantedData) -> impl IntoView {
     let latest_jobs_sv = StoredValue::new(latest_jobs);
 
     view! {
-        <div class=HEADER_BAR>
-            <div class="flex items-center gap-2"><MobileMenuButton /><h1 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 m-0">"Wanted"</h1></div>
-            <span class={cls!(MUTED, "text-[13px]")}>{summary.clone()}</span>
-        </div>
+        <PageHeader title="Wanted" subtitle=summary.clone()></PageHeader>
 
         <div class="p-6 max-md:p-4">
-            <div class=GLASS>
-                <div class=GLASS_HEADER>
-                    <h2 class=GLASS_TITLE>"Wanted Tree"</h2>
+            <Panel>
+                <PanelHeader>
+                    <PanelTitle>"Wanted Tree"</PanelTitle>
                     <div class="flex flex-wrap items-center gap-2">
                         {if !queueable_album_ids.is_empty() {
                             let ids = queueable_album_ids.clone();
@@ -282,7 +277,7 @@ fn WantedContent(data: WantedData) -> impl IntoView {
                         }}
                         <span class={cls!(MUTED, "text-xs")}>{summary}</span>
                     </div>
-                </div>
+                </PanelHeader>
 
                 {if tree.is_empty() {
                     view! { <div class=EMPTY>"All wanted items are acquired."</div> }.into_any()
@@ -397,7 +392,7 @@ fn WantedContent(data: WantedData) -> impl IntoView {
                         </div>
                     }.into_any()
                 }}
-            </div>
+            </Panel>
         </div>
     }
 }

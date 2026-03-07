@@ -12,11 +12,11 @@ use super::provider_icon_svg;
 use crate::components::toast::{dispatch_with_toast, dispatch_with_toast_loading};
 use crate::components::{
     Badge, BadgeSize, BadgeSurface, BadgeVariant, Breadcrumb, BreadcrumbItem, Button, ButtonSize,
-    ButtonVariant, ConfirmDialog, ErrorPanel, PageShell, ResolveArtistDialog,
-    download_status_badge_variant, fallback_initial,
+    ButtonVariant, ConfirmDialog, ErrorPanel, PageShell, Panel, PanelBody, PanelHeader, PanelTitle,
+    ResolveArtistDialog, download_status_badge_variant, fallback_initial,
 };
 use crate::hooks::{set_page_title, use_sse_version};
-use crate::styles::{GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, MUTED};
+use crate::styles::MUTED;
 
 // ── DTO ─────────────────────────────────────────────────────
 
@@ -348,6 +348,10 @@ fn AlbumDetailContent(
     } else {
         format!("{total_mins} min {total_secs:02} sec")
     };
+    let album_title_remove = album_title.clone();
+    let duration_display_tracklist = duration_display.clone();
+    let artist_name_tracklist = artist_name.clone();
+    let album_artists_tracklist = album_artists.clone();
 
     // Confirmation dialog signals
     let show_remove_files = RwSignal::new(false);
@@ -379,9 +383,9 @@ fn AlbumDetailContent(
 
         <div class="p-6 max-md:p-4">
             // ── Hero card ───────────────────────────────────
-            <div class={cls!(GLASS, "mb-5")}>
+            <Panel class="mb-5">
                 // ── Header bar: status pills (left) + action buttons (right) ──
-                <div class=GLASS_HEADER>
+                <PanelHeader>
                     <div class="flex flex-wrap items-center gap-2">
                         {if is_acquired {
                             view! { <Badge size=BadgeSize::Pill variant=BadgeVariant::Success>"Acquired"</Badge> }.into_any()
@@ -498,7 +502,7 @@ fn AlbumDetailContent(
                             view! { <span></span> }.into_any()
                         }}
                     </div>
-                </div>
+                </PanelHeader>
 
                 // ── Error banner (between header and body) ──
                 {match &job_error {
@@ -511,7 +515,7 @@ fn AlbumDetailContent(
                 }}
 
                 // ── Body: cover art + identity info ──
-                <div class={cls!(GLASS_BODY, "p-5 md:p-6")}>
+                <PanelBody class="p-5 md:p-6">
                     <div class="flex gap-5">
                         // Cover art — compact square, no glow effects
                         <div class="shrink-0 w-28 h-28 md:w-40 md:h-40 rounded-lg overflow-hidden bg-zinc-200 dark:bg-zinc-800">
@@ -631,20 +635,20 @@ fn AlbumDetailContent(
                             }}
                         </div>
                     </div>
-                </div>
-            </div>
+                </PanelBody>
+            </Panel>
 
             // ── Potential matches (own card, only if pending) ─
             {if match_suggestions.iter().any(|m| m.status == "pending") {
                 view! {
-                    <div class={cls!(GLASS, "mb-5")}>
-                        <div class=GLASS_HEADER>
-                            <h2 class={cls!(GLASS_TITLE, "inline-flex items-center gap-2")}>
+                    <Panel class="mb-5">
+                        <PanelHeader>
+                            <PanelTitle class="inline-flex items-center gap-2">
                                 <GitCompareArrows size=16 />
                                 "Potential Matches"
-                            </h2>
-                        </div>
-                        <div class={cls!(GLASS_BODY, "px-5 py-3")}>
+                            </PanelTitle>
+                        </PanelHeader>
+                        <PanelBody class="px-5 py-3">
                             <div class="flex flex-col gap-2">
                                 {match_suggestions.iter().filter(|m| m.status == "pending").map(|m| {
                                     let suggestion_id = m.id;
@@ -697,21 +701,21 @@ fn AlbumDetailContent(
                                     }
                                 }).collect_view()}
                             </div>
-                        </div>
-                    </div>
+                        </PanelBody>
+                    </Panel>
                 }.into_any()
             } else {
                 view! { <span></span> }.into_any()
             }}
 
             // ── Tracklist card ───────────────────────────────
-            <div class=GLASS>
-                <div class=GLASS_HEADER>
+            <Panel>
+                <PanelHeader>
                     <div class="flex items-center gap-3">
-                        <h2 class=GLASS_TITLE>"Tracklist"</h2>
-                        <span class={cls!(MUTED, "text-xs")}>{format!("{track_count} tracks \u{00b7} {duration_display}")}</span>
+                        <PanelTitle>"Tracklist"</PanelTitle>
+                        <span class={cls!(MUTED, "text-xs")}>{format!("{track_count} tracks \u{00b7} {duration_display_tracklist}")}</span>
                     </div>
-                </div>
+                </PanelHeader>
                 {if tracks.is_empty() {
                     view! {
                         <div class="text-center py-10 px-4 text-zinc-400 dark:text-zinc-600 text-sm">"No tracks available."</div>
@@ -721,12 +725,12 @@ fn AlbumDetailContent(
                     let has_any_path = tracks.iter().any(|t| t.file_path.is_some());
                     // Build a set of all album-level artist names to suppress in track rows
                     let album_artist_names: std::collections::HashSet<String> = {
-                        let mut set: std::collections::HashSet<String> = album_artists.iter().map(|c| c.name.clone()).collect();
-                        set.insert(artist_name.clone());
+                        let mut set: std::collections::HashSet<String> = album_artists_tracklist.iter().map(|c| c.name.clone()).collect();
+                        set.insert(artist_name_tracklist.clone());
                         set
                     };
                     view! {
-                        <div class={cls!(GLASS_BODY, "p-0!")}>
+                        <PanelBody class="p-0!">
                             <div class="divide-y divide-black/[.04] dark:divide-white/[.04]">
                                 {
                                     let has_multiple_discs = tracks.iter().any(|t| t.disc_number > 1);
@@ -832,17 +836,17 @@ fn AlbumDetailContent(
                                     }).collect_view()
                                 }
                             </div>
-                        </div>
+                        </PanelBody>
                     }.into_any()
                 }}
-            </div>
+            </Panel>
         </div>
 
         // ── Confirmation dialog for removing album files ────
         <ConfirmDialog
             open=show_remove_files
             title="Remove Files"
-            message=format!("This will delete all downloaded files for \u{201c}{album_title}\u{201d} from disk.")
+            message=format!("This will delete all downloaded files for \u{201c}{album_title_remove}\u{201d} from disk.")
             confirm_label="Remove Files"
             danger=true
             checkbox_label="Also unmonitor this album"

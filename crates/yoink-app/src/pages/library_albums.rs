@@ -7,12 +7,11 @@ use yoink_shared::{MonitoredAlbum, MonitoredArtist, SearchAlbumResult, ServerAct
 
 use crate::components::toast::dispatch_with_toast_loading;
 use crate::components::{
-    AlbumCard, Breadcrumb, BreadcrumbItem, Button, ButtonVariant, PageShell, SleeveBadge,
+    AlbumCard, Breadcrumb, BreadcrumbItem, Button, ButtonVariant, PageShell, Panel, PanelBody,
+    PanelHeader, PanelTitle, SleeveBadge,
 };
 use crate::hooks::set_page_title;
-use crate::styles::{
-    EMPTY, GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, MUTED, SEARCH_INPUT, SELECT,
-};
+use crate::styles::{EMPTY, MUTED, SEARCH_INPUT, SELECT};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct LibraryAlbumsData {
@@ -107,8 +106,8 @@ pub fn LibraryAlbumsTab() -> impl IntoView {
 
                         view! {
                             <div class="p-6 max-md:p-4 space-y-5">
-                                <div class=GLASS>
-                                    <div class=GLASS_BODY>
+                                <Panel>
+                                    <PanelBody>
                                         <div class="flex flex-wrap items-center gap-2">
                                             <input
                                                 type="text"
@@ -131,14 +130,14 @@ pub fn LibraryAlbumsTab() -> impl IntoView {
                                                 <option value="artist">"By Artist"</option>
                                             </select>
                                         </div>
-                                    </div>
-                                </div>
+                                    </PanelBody>
+                                </Panel>
 
-                                <div class=GLASS>
-                                    <div class=GLASS_HEADER>
-                                        <h2 class=GLASS_TITLE>"Albums"</h2>
-                                    </div>
-                                    <div class={cls!(GLASS_BODY, "p-4")}>
+                                <Panel>
+                                    <PanelHeader>
+                                        <PanelTitle>"Albums"</PanelTitle>
+                                    </PanelHeader>
+                                    <PanelBody class="p-4">
                                         <div class="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-5 max-md:grid-cols-[repeat(auto-fill,minmax(140px,1fr))] max-md:gap-3">
                                             {move || {
                                                 let q = query.get().trim().to_lowercase();
@@ -214,8 +213,8 @@ pub fn LibraryAlbumsTab() -> impl IntoView {
                                                 })
                                             }}
                                         </div>
-                                    </div>
-                                </div>
+                                    </PanelBody>
+                                </Panel>
 
                                 <Suspense>
                                     {move || {
@@ -229,11 +228,11 @@ pub fn LibraryAlbumsTab() -> impl IntoView {
                                                     return view! { <span></span> }.into_any();
                                                 }
                                                 view! {
-                                                    <div class=GLASS>
-                                                        <div class=GLASS_HEADER>
-                                                            <h2 class=GLASS_TITLE>"Add Albums From Providers"</h2>
-                                                        </div>
-                                                        <div class={cls!(GLASS_BODY, "p-0!")}>
+                                                    <Panel>
+                                                        <PanelHeader>
+                                                            <PanelTitle>"Add Albums From Providers"</PanelTitle>
+                                                        </PanelHeader>
+                                                        <PanelBody class="p-0!">
                                                             <div class="divide-y divide-black/[.04] dark:divide-white/[.04]">
                                                                 {sr.results.into_iter().map(|r| {
                                                                     let loading = RwSignal::new(false);
@@ -268,8 +267,8 @@ pub fn LibraryAlbumsTab() -> impl IntoView {
                                                                     }
                                                                 }).collect_view()}
                                                             </div>
-                                                        </div>
-                                                    </div>
+                                                        </PanelBody>
+                                                    </Panel>
                                                 }.into_any()
                                             }
                                         })

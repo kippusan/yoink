@@ -1,4 +1,3 @@
-use crate::cls;
 use leptos::prelude::*;
 use lucide_leptos::{Check, FolderOpen, Music, Search};
 
@@ -8,11 +7,11 @@ use yoink_shared::{
 };
 
 use crate::components::{
-    Badge, BadgeSize, BadgeVariant, Button, ButtonSize, ButtonVariant, ErrorPanel,
-    MobileMenuButton, PageShell,
+    Badge, BadgeSize, BadgeVariant, Button, ButtonSize, ButtonVariant, ErrorPanel, PageHeader,
+    PageShell, Panel, PanelHeader, PanelTitle,
 };
 use crate::hooks::{set_page_title, use_sse_version};
-use crate::styles::{EMPTY, GLASS, GLASS_HEADER, GLASS_TITLE, HEADER_BAR, MUTED};
+use crate::styles::EMPTY;
 
 #[cfg(feature = "hydrate")]
 use leptoaster::{ToastBuilder, ToastLevel, ToastPosition, expect_toaster};
@@ -74,14 +73,12 @@ pub fn ImportPage() -> impl IntoView {
         <PageShell active="import">
                 <Transition fallback=move || view! {
                     <div>
-                        <div class=HEADER_BAR>
-                            <div class="flex items-center gap-2"><MobileMenuButton /><h1 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 m-0">"Manual Import"</h1></div>
-                        </div>
+                        <PageHeader title="Manual Import"></PageHeader>
                         <div class="p-6 max-md:p-4">
-                            <div class=GLASS>
-                                <div class=GLASS_HEADER>
+                            <Panel>
+                                <PanelHeader>
                                     <div class="h-4 w-32 bg-zinc-200 dark:bg-zinc-700 rounded animate-pulse"></div>
-                                </div>
+                                </PanelHeader>
                                 {(0..6).map(|_| view! {
                                     <div class="flex items-center gap-3.5 px-5 py-3.5 border-b border-black/[.04] dark:border-white/[.04] animate-pulse">
                                         <div class="size-12 rounded-lg bg-zinc-200 dark:bg-zinc-700 shrink-0"></div>
@@ -92,7 +89,7 @@ pub fn ImportPage() -> impl IntoView {
                                         <div class="h-5 w-16 bg-zinc-200 dark:bg-zinc-700 rounded-full"></div>
                                     </div>
                                 }).collect_view()}
-                            </div>
+                            </Panel>
                         </div>
                     </div>
                 }>
@@ -244,13 +241,7 @@ fn ImportContent(items: Vec<ImportPreviewItem>) -> impl IntoView {
 
     view! {
         // Header bar
-        <div class=HEADER_BAR>
-            <div class="flex items-center gap-3">
-                <MobileMenuButton />
-                <h1 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 m-0">"Manual Import"</h1>
-                <span class={cls!(MUTED, "text-[13px]")}>{format!("{total} folders found")}</span>
-            </div>
-        </div>
+        <PageHeader title="Manual Import" subtitle=format!("{total} folders found")></PageHeader>
 
         // Content
         <div class="p-6 max-md:p-4">
@@ -323,9 +314,9 @@ fn ImportContent(items: Vec<ImportPreviewItem>) -> impl IntoView {
             </Show>
 
             // Main table
-            <div class=GLASS>
-                <div class=GLASS_HEADER>
-                    <h2 class=GLASS_TITLE>"Discovered Albums"</h2>
+            <Panel>
+                <PanelHeader>
+                    <PanelTitle>"Discovered Albums"</PanelTitle>
                     <div class="flex flex-wrap items-center gap-2">
                         <Button on:click=select_all_matched>
                             "Select All"
@@ -342,7 +333,7 @@ fn ImportContent(items: Vec<ImportPreviewItem>) -> impl IntoView {
                             }}
                         </Button>
                     </div>
-                </div>
+                </PanelHeader>
 
                 {if total == 0 {
                     view! {
@@ -369,7 +360,7 @@ fn ImportContent(items: Vec<ImportPreviewItem>) -> impl IntoView {
                         </div>
                     }.into_any()
                 }}
-            </div>
+            </Panel>
         </div>
     }
 }

@@ -4,20 +4,16 @@ use lucide_leptos::X;
 
 use yoink_shared::{SearchArtistResult, ServerAction, provider_display_name};
 
-use super::{Badge, BadgeSurface, Button, ButtonSize, ButtonVariant, fallback_initial};
+use super::{
+    ArtistAvatar, Badge, BadgeSurface, Button, ButtonSize, ButtonVariant, DialogResultRow,
+    DialogShell, DialogSize, dialog_shell::DIALOG_BACKDROP_CLASS,
+};
 use crate::actions::dispatch_action;
 use crate::pages::provider_icon_svg;
 use crate::styles::SEARCH_INPUT;
 use leptoaster::{ToastBuilder, ToastLevel, ToastPosition, expect_toaster};
 
 // ── Tailwind class constants ────────────────────────────────
-
-const BACKDROP: &str = "fixed inset-0 z-[9999] bg-black/40 dark:bg-black/60 backdrop-blur-sm flex items-center justify-center";
-const CARD: &str = "bg-white/80 dark:bg-zinc-800/80 backdrop-blur-[16px] border border-black/[.08] dark:border-white/[.1] rounded-xl shadow-xl max-w-lg w-full mx-4 max-h-[85vh] flex flex-col overflow-hidden";
-const TITLE: &str = "text-[15px] font-semibold text-zinc-900 dark:text-zinc-100 m-0";
-const RESULT_ROW: &str = "flex items-center gap-3 px-4 py-2.5 border-b border-black/[.04] dark:border-white/[.04] transition-[background] duration-[120ms] last:border-b-0 hover:bg-blue-500/[.04] dark:hover:bg-blue-500/[.06]";
-const AVATAR: &str = "size-9 rounded-full object-cover border border-blue-500/20 dark:border-blue-500/30 shrink-0 bg-zinc-200 dark:bg-zinc-800";
-const FALLBACK_AVATAR: &str = "size-9 rounded-full inline-flex items-center justify-center bg-zinc-200 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-400 font-bold text-sm border border-blue-500/20 dark:border-blue-500/30 shrink-0";
 
 const FILTER_ACTIVE: &str = "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold cursor-pointer transition-all duration-150 border bg-blue-500/10 border-blue-500/30 text-blue-600 dark:text-blue-400 dark:bg-blue-500/15 dark:border-blue-500/40";
 const FILTER_INACTIVE: &str = "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold cursor-pointer transition-all duration-150 border bg-white/40 dark:bg-zinc-800/40 border-black/[.06] dark:border-white/[.06] text-zinc-500 dark:text-zinc-400 hover:border-black/10 dark:hover:border-white/10";
@@ -64,8 +60,6 @@ pub fn LinkProviderDialog(
     #[prop(into)] artist_name: String,
     #[prop(into)] already_linked: Vec<(String, String)>,
 ) -> impl IntoView {
-    let card_ref = NodeRef::<leptos::html::Div>::new();
-
     // Fetch available providers once (for filter badges)
     let providers = Resource::new(|| (), |_| list_providers());
 
@@ -150,36 +144,19 @@ pub fn LinkProviderDialog(
         }
     });
 
-    // Close handlers
+    let artist_id = StoredValue::new(artist_id);
+    let already_linked = StoredValue::new(already_linked);
     let close_on_escape = move |ev: leptos::ev::KeyboardEvent| {
         if ev.key() == "Escape" {
             open.set(false);
         }
     };
-    let close_on_backdrop = move |_: leptos::ev::MouseEvent| {
-        open.set(false);
-    };
-
-    let artist_id = StoredValue::new(artist_id);
-    let already_linked = StoredValue::new(already_linked);
 
     view! {
         <Portal>
             <Show when=move || open.get()>
-                <div class=BACKDROP on:click=close_on_backdrop on:keydown=close_on_escape tabindex="-1">
-                    <div class=CARD on:click=|ev: leptos::ev::MouseEvent| ev.stop_propagation() node_ref=card_ref role="dialog" aria-modal="true">
-                        // Header
-                        <div class="px-5 py-4 border-b border-black/[.06] dark:border-white/[.06] flex items-center justify-between shrink-0">
-                            <h3 class=TITLE>"Link Provider"</h3>
-                            <button type="button"
-                                class="inline-flex items-center justify-center size-7 rounded-md text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 cursor-pointer bg-transparent border-none p-0 [&_svg]:size-4"
-                                on:click=move |_| open.set(false)
-                                title="Close"
-                            >
-                                <X />
-                            </button>
-                        </div>
-
+                <div class=DIALOG_BACKDROP_CLASS on:click=move |_: leptos::ev::MouseEvent| open.set(false) on:keydown=close_on_escape tabindex="-1">
+                    <DialogShell open=open title="Link Provider" size=DialogSize::Lg class="max-h-[85vh] flex flex-col overflow-hidden">
                         // Search input + provider filter badges
                         <div class="px-5 py-3 border-b border-black/[.04] dark:border-white/[.04] flex flex-col gap-2.5 shrink-0">
                             <div class="relative">
@@ -317,7 +294,7 @@ pub fn LinkProviderDialog(
                                 "Close"
                             </Button>
                         </div>
-                    </div>
+                    </DialogShell>
                 </div>
             </Show>
         </Portal>
@@ -331,9 +308,6 @@ fn LinkResultRow(
     artist_id: yoink_shared::Uuid,
     session_linked: RwSignal<Vec<(String, String)>>,
 ) -> impl IntoView {
-    let image_url = result.image_url.clone();
-    let fallback_initial = fallback_initial(&result.name);
-
     let linking = RwSignal::new(false);
 
     let provider_display = provider_display_name(&result.provider);
@@ -369,15 +343,8 @@ fn LinkResultRow(
     let image_ref_val = result.image_url.clone();
 
     view! {
-        <div class=RESULT_ROW>
-            {match image_url {
-                Some(url) => view! {
-                    <img class=AVATAR src=url alt="" />
-                }.into_any(),
-                None => view! {
-                    <div class=FALLBACK_AVATAR>{fallback_initial}</div>
-                }.into_any(),
-            }}
+        <DialogResultRow>
+            <ArtistAvatar name=result.name.clone() image_url=result.image_url.clone() />
             <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-1.5">
                     <span class="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate">{result.name.clone()}</span>
@@ -455,6 +422,6 @@ fn LinkResultRow(
                 }>
                 {move || if linking.get() { "Linking\u{2026}" } else { "Link" }}
             </Button>
-        </div>
+        </DialogResultRow>
     }
 }

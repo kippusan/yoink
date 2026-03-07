@@ -2,9 +2,9 @@ use crate::cls;
 use leptos::prelude::*;
 use lucide_leptos::{House, SearchX};
 
-use crate::components::{Button, ButtonSize, ButtonVariant, MobileMenuButton, PageShell};
+use crate::components::{Button, ButtonSize, ButtonVariant, PageHeader, PageShell};
 use crate::hooks::set_page_title;
-use crate::styles::{HEADER_BAR, MUTED};
+use crate::styles::MUTED;
 
 #[component]
 pub fn NotFoundPage() -> impl IntoView {
@@ -12,9 +12,7 @@ pub fn NotFoundPage() -> impl IntoView {
     view! {
         <PageShell active="">
                 // Header
-                <div class=HEADER_BAR>
-                    <div class="flex items-center gap-2"><MobileMenuButton /><h1 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 m-0">"Not Found"</h1></div>
-                </div>
+                <PageHeader title="Not Found"></PageHeader>
 
                 // Content
                 <div class="flex flex-col items-center justify-center px-6 py-20 text-center">

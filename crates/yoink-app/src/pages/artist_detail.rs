@@ -20,10 +20,11 @@ use crate::components::toast::{
 use crate::components::{
     AlbumCard, Badge, BadgeSize, BadgeSurface, BadgeVariant, Breadcrumb, BreadcrumbItem, Button,
     ButtonSize, ButtonVariant, ConfirmDialog, EditArtistDialog, ErrorPanel, LinkProviderDialog,
-    MonitorToggle, PageShell, SleeveBadge, fallback_initial,
+    MonitorToggle, PageShell, Panel, PanelBody, PanelHeader, PanelTitle, SleeveBadge,
+    fallback_initial,
 };
 use crate::hooks::{set_page_title, use_sse_version};
-use crate::styles::{EMPTY, GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, MUTED, SELECT};
+use crate::styles::{EMPTY, GLASS, GLASS_BODY, MUTED, SELECT};
 
 // ── DTO ─────────────────────────────────────────────────────
 
@@ -482,15 +483,16 @@ fn ArtistDetailContent(
                     .into_iter()
                     .filter(|m| m.status == "pending")
                     .collect::<Vec<_>>();
+                let pending_count = pending.len();
                 let a = a();
 
                 if pending.is_empty() {
                     view! { <span></span> }.into_any()
                 } else {
                     view! {
-                        <div class={cls!(GLASS, "mb-5")}>
-                            <div class=GLASS_HEADER>
-                                <h2 class=GLASS_TITLE>{format!("Potential Matches ({})", pending.len())}</h2>
+                        <Panel class="mb-5">
+                            <PanelHeader>
+                                <PanelTitle>{format!("Potential Matches ({pending_count})")}</PanelTitle>
                                 <Button
                                     on:click={
 
@@ -504,8 +506,8 @@ fn ArtistDetailContent(
                                 >
                                     "Refresh"
                                 </Button>
-                            </div>
-                            <div class=GLASS_BODY>
+                            </PanelHeader>
+                            <PanelBody>
                                 <div class="flex flex-col gap-2">
                                     {pending.into_iter().map(|m| {
                                         let suggestion_id = m.id;
@@ -628,8 +630,8 @@ fn ArtistDetailContent(
                                         }
                                     }).collect_view()}
                                 </div>
-                            </div>
-                        </div>
+                            </PanelBody>
+                        </Panel>
                     }.into_any()
                 }
             }}
@@ -736,10 +738,10 @@ fn ArtistDetailContent(
             />
 
             // Albums grid with sort — reactive
-            <div class=GLASS>
-                <div class=GLASS_HEADER>
+            <Panel>
+                <PanelHeader>
                     <div class="flex items-center gap-3">
-                        <h2 class=GLASS_TITLE>"Discography"</h2>
+                        <PanelTitle>"Discography"</PanelTitle>
                         <span class={cls!(MUTED, "text-xs")}>{move || format!("{} albums", albums.get().len())}</span>
                     </div>
                     <div class="flex flex-wrap items-center gap-2">
@@ -796,7 +798,7 @@ fn ArtistDetailContent(
                             }
                         }}
                     </div>
-                </div>
+                </PanelHeader>
                 // Derive a sorted album list that only recomputes when albums or sort order change.
                 {
                     let sorted_albums = Memo::new(move |_| {
@@ -888,7 +890,7 @@ fn ArtistDetailContent(
                         </Show>
                     }
                 }
-            </div>
+            </Panel>
         </div>
     }
 }

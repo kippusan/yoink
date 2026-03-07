@@ -6,12 +6,11 @@ use yoink_shared::{LibraryTrack, SearchTrackResult, ServerAction};
 
 use crate::components::toast::dispatch_with_toast_loading;
 use crate::components::{
-    Badge, BadgeVariant, Breadcrumb, BreadcrumbItem, Button, ButtonVariant, PageShell,
+    Badge, BadgeVariant, Breadcrumb, BreadcrumbItem, Button, ButtonVariant, PageShell, Panel,
+    PanelBody, PanelHeader, PanelTitle,
 };
 use crate::hooks::set_page_title;
-use crate::styles::{
-    EMPTY, GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, MUTED, SEARCH_INPUT, SELECT,
-};
+use crate::styles::{EMPTY, MUTED, SEARCH_INPUT, SELECT};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SearchTracksResult {
@@ -224,20 +223,20 @@ pub fn LibraryTracksTab() -> impl IntoView {
         <Transition fallback=move || view! {
             <div class="p-6 max-md:p-4 space-y-5">
                 // Skeleton stat bar
-                <div class=GLASS>
-                    <div class=GLASS_BODY>
+                <Panel>
+                    <PanelBody>
                         <div class="flex flex-wrap gap-2 animate-pulse">
                             {(0..4).map(|_| view! {
                                 <div class="h-12 w-28 rounded-lg bg-zinc-200 dark:bg-zinc-700"></div>
                             }).collect_view()}
                         </div>
-                    </div>
-                </div>
+                    </PanelBody>
+                </Panel>
                 // Skeleton table
-                <div class=GLASS>
-                    <div class=GLASS_HEADER>
+                <Panel>
+                    <PanelHeader>
                         <div class="h-4 w-20 bg-zinc-200 dark:bg-zinc-700 rounded animate-pulse"></div>
-                    </div>
+                    </PanelHeader>
                     <div class="px-5 py-4">
                         {(0..8).map(|_| view! {
                             <div class="flex items-center gap-3 mb-3 animate-pulse">
@@ -251,7 +250,7 @@ pub fn LibraryTracksTab() -> impl IntoView {
                             </div>
                         }).collect_view()}
                     </div>
-                </div>
+                </Panel>
             </div>
         }>
             {move || {
@@ -296,23 +295,23 @@ pub fn LibraryTracksTab() -> impl IntoView {
                                         };
 
                                         view! {
-                                            <div class=GLASS>
-                                                <div class=GLASS_BODY>
+                                            <Panel>
+                                                <PanelBody>
                                                     <div class="flex flex-wrap gap-2">
                                                         {stat("Total", total, FilterKey::All, "bg-blue-500")}
                                                         {stat("Acquired", acquired, FilterKey::Acquired, "bg-green-500")}
                                                         {stat("Wanted", wanted, FilterKey::Wanted, "bg-amber-500")}
                                                         {stat("Idle", idle, FilterKey::Idle, "bg-zinc-400 dark:bg-zinc-600")}
                                                     </div>
-                                                </div>
-                                            </div>
+                                                </PanelBody>
+                                            </Panel>
                                         }
                                     })
                                 }}
 
                                 // ── Filter / sort / group toolbar ───────
-                                <div class=GLASS>
-                                    <div class=GLASS_BODY>
+                                <Panel>
+                                    <PanelBody>
                                         <div class="flex flex-wrap items-center gap-2">
                                             <input
                                                 type="text"
@@ -357,13 +356,13 @@ pub fn LibraryTracksTab() -> impl IntoView {
                                                 <option value="album">"Group by Album"</option>
                                             </select>
                                         </div>
-                                    </div>
-                                </div>
+                                    </PanelBody>
+                                </Panel>
 
                                 // ── Tracks table ────────────────────────
-                                <div class=GLASS>
-                                    <div class=GLASS_HEADER>
-                                        <h2 class=GLASS_TITLE>"Tracks"</h2>
+                                <Panel>
+                                    <PanelHeader>
+                                        <PanelTitle>"Tracks"</PanelTitle>
                                         <span class={cls!(MUTED, "text-xs tabular-nums")}>
                                             {move || {
                                                 let q = query.get().trim().to_lowercase();
@@ -384,8 +383,8 @@ pub fn LibraryTracksTab() -> impl IntoView {
                                                 })
                                             }}
                                         </span>
-                                    </div>
-                                    <div class={cls!(GLASS_BODY, "p-0!")}>
+                                    </PanelHeader>
+                                    <PanelBody class="p-0!">
                                         // ── Table header row (hidden on mobile) ──
                                         <div class={cls!(
                                             "max-md:hidden grid gap-3 px-5 py-2.5 border-b border-black/[.06] dark:border-white/[.06] items-center",
@@ -520,8 +519,8 @@ pub fn LibraryTracksTab() -> impl IntoView {
                                                 }
                                             })
                                         }}
-                                    </div>
-                                </div>
+                                    </PanelBody>
+                                </Panel>
 
                                 // ── Provider search results ─────────────
                                 <Suspense>
@@ -536,11 +535,11 @@ pub fn LibraryTracksTab() -> impl IntoView {
                                                     return view! { <span></span> }.into_any();
                                                 }
                                                 view! {
-                                                    <div class=GLASS>
-                                                        <div class=GLASS_HEADER>
-                                                            <h2 class=GLASS_TITLE>"Add Tracks From Providers"</h2>
-                                                        </div>
-                                                        <div class={cls!(GLASS_BODY, "p-0!")}>
+                                                    <Panel>
+                                                        <PanelHeader>
+                                                            <PanelTitle>"Add Tracks From Providers"</PanelTitle>
+                                                        </PanelHeader>
+                                                        <PanelBody class="p-0!">
                                                             <div class="divide-y divide-black/[.04] dark:divide-white/[.04]">
                                                                 {sr.results.into_iter().map(|r| {
                                                                     let loading = RwSignal::new(false);
@@ -590,8 +589,8 @@ pub fn LibraryTracksTab() -> impl IntoView {
                                                                     }
                                                                 }).collect_view()}
                                                             </div>
-                                                        </div>
-                                                    </div>
+                                                        </PanelBody>
+                                                    </Panel>
                                                 }.into_any()
                                             }
                                         })

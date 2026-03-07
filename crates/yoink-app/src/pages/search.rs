@@ -6,10 +6,11 @@ use yoink_shared::{SearchAlbumResult, SearchArtistResult, SearchTrackResult, Ser
 
 use crate::components::toast::dispatch_with_toast_loading;
 use crate::components::{
-    Badge, BadgeVariant, Breadcrumb, BreadcrumbItem, Button, ButtonVariant, PageShell,
+    Badge, BadgeVariant, Breadcrumb, BreadcrumbItem, Button, ButtonVariant, PageShell, Panel,
+    PanelBody, PanelHeader, PanelTitle,
 };
 use crate::hooks::set_page_title;
-use crate::styles::{EMPTY, GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, MUTED, SEARCH_INPUT};
+use crate::styles::{EMPTY, MUTED, SEARCH_INPUT};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SearchAllResult {
@@ -64,8 +65,8 @@ pub fn SearchPage() -> impl IntoView {
                 ] />
 
                 <div class="p-6 max-md:p-4 space-y-5">
-                    <div class=GLASS>
-                        <div class=GLASS_BODY>
+                    <Panel>
+                        <PanelBody>
                             <div class="flex flex-wrap items-center gap-3">
                                 <input
                                     type="text"
@@ -83,8 +84,8 @@ pub fn SearchPage() -> impl IntoView {
                                     "Deduplicate"
                                 </label>
                             </div>
-                        </div>
-                    </div>
+                        </PanelBody>
+                    </Panel>
 
                     <Transition fallback=move || view! { <div class=EMPTY>"Searching..."</div> }>
                         {move || {
@@ -123,13 +124,14 @@ fn SearchArtistsSection(items: Vec<SearchArtistResult>, dedupe: bool) -> impl In
     } else {
         items
     };
+    let count = items.len();
 
     view! {
-        <div class=GLASS>
-            <div class=GLASS_HEADER>
-                <h2 class=GLASS_TITLE>{format!("Artists ({})", items.len())}</h2>
-            </div>
-            <div class={cls!(GLASS_BODY, "p-0!")}>
+        <Panel>
+            <PanelHeader>
+                <PanelTitle>{format!("Artists ({count})")}</PanelTitle>
+            </PanelHeader>
+            <PanelBody class="p-0!">
                 {if items.is_empty() {
                     view! { <div class=EMPTY>"No artists found"</div> }.into_any()
                 } else {
@@ -220,8 +222,8 @@ fn SearchArtistsSection(items: Vec<SearchArtistResult>, dedupe: bool) -> impl In
                         </div>
                     }.into_any()
                 }}
-            </div>
-        </div>
+            </PanelBody>
+        </Panel>
     }
 }
 
@@ -244,13 +246,14 @@ fn SearchAlbumsSection(items: Vec<SearchAlbumResult>, dedupe: bool) -> impl Into
     } else {
         items
     };
+    let count = items.len();
 
     view! {
-        <div class=GLASS>
-            <div class=GLASS_HEADER>
-                <h2 class=GLASS_TITLE>{format!("Albums ({})", items.len())}</h2>
-            </div>
-            <div class={cls!(GLASS_BODY, "p-0!")}>
+        <Panel>
+            <PanelHeader>
+                <PanelTitle>{format!("Albums ({count})")}</PanelTitle>
+            </PanelHeader>
+            <PanelBody class="p-0!">
                 {if items.is_empty() {
                     view! { <div class=EMPTY>"No albums found"</div> }.into_any()
                 } else {
@@ -320,8 +323,8 @@ fn SearchAlbumsSection(items: Vec<SearchAlbumResult>, dedupe: bool) -> impl Into
                         </div>
                     }.into_any()
                 }}
-            </div>
-        </div>
+            </PanelBody>
+        </Panel>
     }
 }
 
@@ -345,13 +348,14 @@ fn SearchTracksSection(items: Vec<SearchTrackResult>, dedupe: bool) -> impl Into
     } else {
         items
     };
+    let count = items.len();
 
     view! {
-        <div class=GLASS>
-            <div class=GLASS_HEADER>
-                <h2 class=GLASS_TITLE>{format!("Tracks ({})", items.len())}</h2>
-            </div>
-            <div class={cls!(GLASS_BODY, "p-0!")}>
+        <Panel>
+            <PanelHeader>
+                <PanelTitle>{format!("Tracks ({count})")}</PanelTitle>
+            </PanelHeader>
+            <PanelBody class="p-0!">
                 {if items.is_empty() {
                     view! { <div class=EMPTY>"No tracks found"</div> }.into_any()
                 } else {
@@ -424,7 +428,7 @@ fn SearchTracksSection(items: Vec<SearchTrackResult>, dedupe: bool) -> impl Into
                         </div>
                     }.into_any()
                 }}
-            </div>
-        </div>
+            </PanelBody>
+        </Panel>
     }
 }

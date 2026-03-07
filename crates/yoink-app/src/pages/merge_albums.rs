@@ -9,10 +9,10 @@ use yoink_shared::{
 use crate::components::toast::dispatch_with_toast;
 use crate::components::{
     Badge, BadgeSize, BadgeSurface, BadgeVariant, Breadcrumb, BreadcrumbItem, Button, ButtonSize,
-    ButtonVariant, ErrorPanel, PageShell,
+    ButtonVariant, ErrorPanel, PageShell, Panel, PanelBody, PanelHeader, PanelTitle,
 };
 use crate::hooks::{set_page_title, use_sse_version};
-use crate::styles::{GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, MUTED, SELECT};
+use crate::styles::{MUTED, SELECT};
 
 // ── Data structures ─────────────────────────────────────────
 
@@ -361,9 +361,9 @@ fn MergeCandidateCard(candidate: MergeCandidate) -> impl IntoView {
     let merged_track_count = candidate.merged_tracks.len();
 
     view! {
-        <div class={cls!(GLASS, "overflow-hidden")}>
+        <Panel class="overflow-hidden">
             // ── Header: confidence + match kind ────────────────
-            <div class=GLASS_HEADER>
+            <PanelHeader>
                 <div class="flex items-center gap-2">
                     <Badge
                         variant=conf_variant
@@ -379,9 +379,9 @@ fn MergeCandidateCard(candidate: MergeCandidate) -> impl IntoView {
                         <span class="text-xs text-zinc-500 dark:text-zinc-400">{format!("— {}", e)}</span>
                     })}
                 </div>
-            </div>
+            </PanelHeader>
 
-            <div class={cls!(GLASS_BODY, "space-y-4")}>
+            <PanelBody class="space-y-4">
                 // ── Side-by-side album cards ───────────────────
                 <div class="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-3 items-stretch">
                     <div class="p-3 rounded-lg border border-black/[.04] dark:border-white/[.04] bg-zinc-50/50 dark:bg-zinc-900/30">
@@ -537,8 +537,8 @@ fn MergeCandidateCard(candidate: MergeCandidate) -> impl IntoView {
                         }
                     }
                 </div>
-            </div>
-        </div>
+            </PanelBody>
+        </Panel>
     }
 }
 
@@ -653,9 +653,9 @@ pub fn MergeAlbumsPage() -> impl IntoView {
 
                                 <div class="p-6 max-md:p-4">
                                     // Intro card
-                                    <div class={cls!(GLASS, "mb-5")}>
-                                        <div class=GLASS_HEADER>
-                                            <h2 class=GLASS_TITLE>"Merge Albums"</h2>
+                                    <Panel class="mb-5">
+                                        <PanelHeader>
+                                            <PanelTitle>"Merge Albums"</PanelTitle>
                                             {if count > 0 {
                                                 view! {
                                                     <span class={cls!(MUTED, "text-xs")}>
@@ -665,19 +665,19 @@ pub fn MergeAlbumsPage() -> impl IntoView {
                                             } else {
                                                 view! { <span></span> }.into_any()
                                             }}
-                                        </div>
-                                        <div class=GLASS_BODY>
+                                        </PanelHeader>
+                                        <PanelBody>
                                             <p class={cls!(MUTED, "text-sm m-0")}>
                                                 "Albums that appear to be the same release across different providers. Review and merge them into a single entry, or dismiss false matches."
                                             </p>
-                                        </div>
-                                    </div>
+                                        </PanelBody>
+                                    </Panel>
 
                                     {if data.candidates.is_empty() {
                                         view! {
-                                            <div class={cls!(GLASS, "p-8 text-center text-sm text-zinc-400 dark:text-zinc-500")}>
+                                            <Panel class="p-8 text-center text-sm text-zinc-400 dark:text-zinc-500">
                                                 "No duplicate albums detected \u{2014} nothing to merge."
-                                            </div>
+                                            </Panel>
                                         }.into_any()
                                     } else {
                                         view! {

@@ -1,10 +1,13 @@
 use leptos::prelude::*;
-use lucide_leptos::{ArrowLeft, ChevronRight};
+use lucide_leptos::{
+    ArrowLeft, Bookmark, BookmarkCheck, BookmarkX, ChevronRight, GitMerge, Pencil, Plus, RefreshCw,
+    Trash2, X,
+};
 
 use yoink_shared::{
-    ArtistImageOption, DownloadJob, MatchSuggestion, MonitoredAlbum, MonitoredArtist, ProviderLink,
-    ServerAction, album_cover_url, album_type_label, album_type_rank, build_latest_jobs,
-    provider_display_name, status_class, status_label_text,
+    ArtistImageOption, DownloadJob, DownloadStatus, MatchSuggestion, MonitoredAlbum,
+    MonitoredArtist, ProviderLink, ServerAction, album_cover_url, album_type_label,
+    album_type_rank, build_latest_jobs, provider_display_name,
 };
 
 use leptoaster::{ToastBuilder, ToastLevel, ToastPosition, expect_toaster};
@@ -16,6 +19,7 @@ use crate::components::toast::{
 };
 use crate::components::{
     ConfirmDialog, EditArtistDialog, ErrorPanel, LinkProviderDialog, MobileMenuButton, Sidebar,
+    SleeveBadge, SleeveBadgeView,
 };
 use crate::hooks::{set_page_title, use_sse_version};
 use crate::styles::{
@@ -191,7 +195,7 @@ pub fn ArtistDetailPage() -> impl IntoView {
                                     <div class="h-4 w-24 bg-zinc-200 dark:bg-zinc-700 rounded animate-pulse"></div>
                                 </div>
                                 <div class="p-4">
-                                    <div class="d7-album-grid">
+                                    <div class="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-5 max-md:grid-cols-[repeat(auto-fill,minmax(140px,1fr))] max-md:gap-3">
                                         {(0..6).map(|_| view! {
                                             <div class="rounded-xl overflow-hidden border border-black/[.04] dark:border-white/[.04] animate-pulse">
                                                 <div class="w-full" style="padding-top:100%;background:var(--tw-color-zinc-200,.oklch(.923 0 0))">
@@ -403,7 +407,7 @@ fn ArtistDetailContent(
                                                                     );
                                                                 }
                                                             }>
-                                                            "\u{2715}"
+                                                            <X size=12 />
                                                         </button>
                                                     </div>
                                                 }
@@ -413,7 +417,8 @@ fn ArtistDetailContent(
                                                 on:click=move |_| {
                                                     show_link_provider.set(true);
                                                 }>
-                                                "+ Link"
+                                                <Plus size=12 />
+                                                "Link"
                                             </button>
                                         </div>
                                     }
@@ -421,29 +426,31 @@ fn ArtistDetailContent(
 
                                 <div class="flex flex-wrap gap-1.5">
                                     <button type="button"
-                                        class={cls(BTN, "px-2.5 py-0.5 text-xs")}
+                                        class={cls(BTN, "px-2.5 py-0.5 text-xs inline-flex items-center gap-1.5")}
                                         on:click=move |_| {
                                             show_edit_artist.set(true);
                                         }>
+                                        <Pencil size=14 />
                                         "Edit"
                                     </button>
                                     {if artist_monitored {
                                         view! {
                                             <button type="button"
-                                                class=move || btn_cls(BTN, "px-2.5 py-0.5 text-xs", sync_loading.get())
+                                                class=move || btn_cls(BTN, "px-2.5 py-0.5 text-xs inline-flex items-center gap-1.5", sync_loading.get())
                                                 disabled=move || sync_loading.get()
                                                 on:click={
                                                     move |_| {
                                                         dispatch_with_toast_loading(ServerAction::SyncArtistAlbums { artist_id }, "Album sync started", Some(sync_loading));
                                                     }
                                                 }>
+                                                <span class=move || if sync_loading.get() { "animate-spin flex" } else { "flex" }><RefreshCw size=14 /></span>
                                                 {move || if sync_loading.get() { "Syncing\u{2026}" } else { "Sync Albums" }}
                                             </button>
                                         }.into_any()
                                     } else {
                                         view! {
                                             <button type="button"
-                                                class=move || btn_cls(BTN_PRIMARY, "px-2.5 py-0.5 text-xs", promote_loading.get())
+                                                class=move || btn_cls(BTN_PRIMARY, "px-2.5 py-0.5 text-xs inline-flex items-center gap-1.5", promote_loading.get())
                                                 disabled=move || promote_loading.get()
                                                 on:click={
                                                     move |_| {
@@ -454,36 +461,18 @@ fn ArtistDetailContent(
                                                         );
                                                     }
                                                 }>
+                                                <Bookmark size=14 />
                                                 {move || if promote_loading.get() { "Promoting\u{2026}" } else { "Monitor Artist" }}
                                             </button>
                                         }.into_any()
                                     }}
-                                    <a
-                                        href={
-                                            format!("/artists/{}/merge-albums", artist_id)
-                                        }
-                                        class={cls(BTN, "px-2.5 py-0.5 text-xs no-underline inline-flex items-center")}
-                                    >
-                                        "Merge Albums"
-                                    </a>
-                                    <button type="button"
-                                        class=move || btn_cls(BTN_PRIMARY, "px-2.5 py-0.5 text-xs", monitor_all_loading.get())
-                                        disabled=move || monitor_all_loading.get()
-                                        on:click={
-                                            move |_| {
-                                                dispatch_with_toast_loading(ServerAction::BulkMonitor { artist_id, monitored: true }, "All albums monitored", Some(monitor_all_loading));
-                                            }
-                                        }>
-                                        {move || if monitor_all_loading.get() { "Monitoring\u{2026}" } else { "Monitor All" }}
-                                    </button>
-                                    <button type="button" class={cls(BTN, "px-2.5 py-0.5 text-xs")}
-                                        on:click=move |_| {
-                                            show_unmonitor_all.set(true);
-                                        }>"Unmonitor All"</button>
-                                    <button type="button" class={cls(BTN_DANGER, "px-2.5 py-0.5 text-xs")}
+                                    <button type="button" class={cls(BTN_DANGER, "px-2.5 py-0.5 text-xs inline-flex items-center gap-1.5 ml-auto")}
                                         on:click=move |_| {
                                             show_remove_artist.set(true);
-                                        }>"Remove Artist"</button>
+                                        }>
+                                        <Trash2 size=14 />
+                                        "Remove Artist"
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -591,7 +580,7 @@ fn ArtistDetailContent(
                                                                 </span>
                                                             }.into_any()
                                                         }}
-                                                        <span class="pill d7-pill-muted">{kind}</span>
+                                                        <span class="pill bg-black/5 text-zinc-500 dark:bg-white/[.06] dark:text-zinc-400">{kind}</span>
                                                         <span class="pill">{format!("{}%", m.confidence)}</span>
                                                     </div>
 
@@ -753,8 +742,45 @@ fn ArtistDetailContent(
             // Albums grid with sort — reactive
             <div class=GLASS>
                 <div class=GLASS_HEADER>
-                    <h2 class=GLASS_TITLE>"Discography"</h2>
-                    <div class="flex items-center gap-2">
+                    <div class="flex items-center gap-3">
+                        <h2 class=GLASS_TITLE>"Discography"</h2>
+                        <span class={cls(MUTED, "text-xs")}>{move || format!("{} albums", albums.get().len())}</span>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        {move || {
+                            let a = a();
+                            let artist_id = a.id;
+                            view! {
+                                <a
+                                    href={
+                                        format!("/artists/{}/merge-albums", artist_id)
+                                    }
+                                    class={cls(BTN, "px-2.5 py-0.5 text-xs no-underline inline-flex items-center gap-1.5")}
+                                >
+                                    <GitMerge size=14 />
+                                    "Merge Albums"
+                                </a>
+                                <button type="button"
+                                    class=move || btn_cls(BTN_PRIMARY, "px-2.5 py-0.5 text-xs inline-flex items-center gap-1.5", monitor_all_loading.get())
+                                    disabled=move || monitor_all_loading.get()
+                                    on:click={
+                                        move |_| {
+                                            dispatch_with_toast_loading(ServerAction::BulkMonitor { artist_id, monitored: true }, "All albums monitored", Some(monitor_all_loading));
+                                        }
+                                    }>
+                                    <BookmarkCheck size=14 />
+                                    {move || if monitor_all_loading.get() { "Monitoring\u{2026}" } else { "Monitor All" }}
+                                </button>
+                                <button type="button" class={cls(BTN, "px-2.5 py-0.5 text-xs inline-flex items-center gap-1.5")}
+                                    on:click=move |_| {
+                                        show_unmonitor_all.set(true);
+                                    }>
+                                    <BookmarkX size=14 />
+                                    "Unmonitor All"
+                                </button>
+                            }
+                        }}
+                        <div class="w-px h-4 bg-black/10 dark:bg-white/10 mx-1"></div>
                         {move || {
                             let album_count = albums.get().len();
                             if album_count > 0 {
@@ -776,7 +802,6 @@ fn ArtistDetailContent(
                                 view! { <span></span> }.into_any()
                             }
                         }}
-                        <span class={cls(MUTED, "text-xs")}>{move || format!("{} albums", albums.get().len())}</span>
                     </div>
                 </div>
                 // Derive a sorted album list that only recomputes when albums or sort order change.
@@ -804,7 +829,7 @@ fn ArtistDetailContent(
                         </Show>
                         <Show when=move || !sorted_albums.get().is_empty()>
                             <div class={cls(GLASS_BODY, "p-4")}>
-                                <div class="d7-album-grid">
+                                <div class="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-5 max-md:grid-cols-[repeat(auto-fill,minmax(140px,1fr))] max-md:gap-3">
                                     <For
                                         each=move || sorted_albums.get()
                                         key=|album| album.id
@@ -884,8 +909,6 @@ fn AlbumSleeve(
     let at = album_type_label(album.album_type.as_deref(), &album.title);
     let is_explicit = album.explicit;
 
-    let show_remove_files = RwSignal::new(false);
-
     let cover_url = album_cover_url(&album, 640);
     let detail_url = artist_id
         .get_untracked()
@@ -924,111 +947,86 @@ fn AlbumSleeve(
 
     view! {
         // ── Album card (grid cell) ──────────────────────────
-        <div class="d7-sleeve" data-album-row data-album-id=album_id_str.clone()>
+        <div class="sleeve" data-album-row data-album-id=album_id_str.clone()>
             <a href=detail_url.clone() class="contents">
-                <div class="d7-sleeve-cover-wrap">
+                <div class="relative w-full pt-[100%] bg-zinc-200 dark:bg-zinc-800 overflow-hidden">
                     {match cover_url {
                         Some(url) => view! {
-                            <img class="d7-sleeve-cover" src=url alt="" loading="lazy" />
+                            <img class="sleeve-cover" src=url alt="" loading="lazy" />
                         }.into_any(),
                         None => view! {
-                            <div class="d7-sleeve-fallback">{fallback_initial}</div>
+                            <div class="absolute inset-0 flex items-center justify-center text-4xl font-extrabold text-zinc-400 dark:text-zinc-600">{fallback_initial}</div>
                         }.into_any(),
                     }}
-                    // Badges — reactive
+                    // Status badge — reactive
                     {move || {
-                        let wanted = is_wanted();
+                        let ji = job_info();
                         let acquired = is_acquired();
-                        if wanted && !acquired {
-                            view! { <span class="d7-badge d7-badge-wanted">"Wanted"</span> }.into_any()
-                        } else if acquired {
-                            view! { <span class="d7-badge d7-badge-acquired">"Acquired"</span> }.into_any()
-                        } else {
-                            view! { <span></span> }.into_any()
-                        }
+                        let wanted = is_wanted();
+
+                        let badge = match ji.as_ref().map(|j| &j.status) {
+                            Some(DownloadStatus::Downloading) => {
+                                let j = ji.as_ref().unwrap();
+                                SleeveBadge::Downloading { completed: j.completed_tracks, total: j.total_tracks }
+                            }
+                            Some(DownloadStatus::Resolving) => SleeveBadge::Downloading { completed: 0, total: 0 },
+                            Some(DownloadStatus::Queued) => SleeveBadge::Queued,
+                            Some(DownloadStatus::Failed) => SleeveBadge::Failed,
+                            Some(DownloadStatus::Completed) | None => {
+                                if acquired { SleeveBadge::Acquired }
+                                else if wanted { SleeveBadge::Wanted }
+                                else { SleeveBadge::None }
+                            }
+                        };
+                        view! { <SleeveBadgeView badge=badge /> }
                     }}
                     {if is_explicit {
-                        view! { <span class="d7-badge d7-badge-explicit">"E"</span> }.into_any()
+                        view! { <span class="absolute z-3 top-2 left-2 text-[8px] font-bold uppercase tracking-wide px-[5px] py-[2px] rounded-md whitespace-nowrap backdrop-blur-[8px] bg-zinc-700/85 text-zinc-200 dark:bg-zinc-400/85 dark:text-zinc-900">"E"</span> }.into_any()
                     } else {
                         view! { <span></span> }.into_any()
                     }}
                 </div>
             </a>
 
-            <div class="d7-sleeve-info">
-                <div class="d7-sleeve-title">
-                    <a href=detail_url>{album_title.clone()}</a>
-                </div>
-                <div class="d7-sleeve-sub">{format!("{release_date} \u{00b7} {at}")}</div>
-
-                <div class="d7-sleeve-status">
-                    {move || {
-                        let ji = job_info();
-                        let status_pill_class = match ji.as_ref().map(|j| &j.status) {
-                            Some(s) => status_class(s).to_string(),
-                            None => "pill".to_string(),
-                        };
-                        let status_pill_text = match ji.as_ref() {
-                            Some(j) => status_label_text(&j.status, j.completed_tracks, j.total_tracks),
-                            None => "\u{2014}".to_string(),
-                        };
-                        view! { <span class=status_pill_class data-job-status>{status_pill_text}</span> }
-                    }}
-                    {move || {
-                        let pill = if is_wanted() { "Wanted" } else { "Not Wanted" };
-                        view! { <span class={cls(MUTED, "text-[10px]")} data-wanted-pill>{pill}</span> }
-                    }}
+            <div class="px-3 py-2.5 flex items-center gap-1.5">
+                <div class="flex-1 min-w-0">
+                    <div class="text-[13px] font-semibold text-zinc-900 dark:text-zinc-100 whitespace-nowrap overflow-hidden text-ellipsis">
+                        <a href=detail_url title=album_title.clone() class="text-inherit no-underline hover:text-blue-500">{album_title.clone()}</a>
+                    </div>
+                    <div class="text-[11px] text-zinc-500 dark:text-zinc-400 whitespace-nowrap overflow-hidden text-ellipsis">{format!("{release_date} \u{00b7} {at}")}</div>
                 </div>
 
-                // Actions — reactive monitor/remove buttons
+                // Monitor toggle — bookmark icon
                 {move || {
                     let monitored = is_monitored();
-                    let acquired = is_acquired();
-                    let monitor_title = if monitored { "Unmonitor album" } else { "Monitor album" };
-                    let monitor_label = if monitored { "Unmonitor" } else { "Monitor" };
-
-                    view! {
-                        <div class="d7-sleeve-actions">
-                            <button type="button" class={cls(BTN, "d7-sleeve-action-btn")} title=monitor_title
+                    if monitored {
+                        view! {
+                            <button type="button"
+                                class="shrink-0 flex items-center justify-center w-5 h-5 text-amber-500 dark:text-amber-400 bg-transparent border-none cursor-pointer p-0 transition-colors duration-150 hover:text-amber-600 dark:hover:text-amber-300"
+                                title="Monitored \u{2014} click to unmonitor"
                                 on:click=move |_| {
-                                    let next = !monitored;
-                                    let msg = if next { "Album monitored" } else { "Album unmonitored" };
-                                    dispatch_with_toast(ServerAction::ToggleAlbumMonitor { album_id, monitored: next }, msg);
-                                }>{monitor_label}</button>
-                            {if acquired {
-                                view! {
-                                    <button type="button" class={cls(BTN_DANGER, "d7-sleeve-action-btn")} title="Delete downloaded files"
-                                        on:click={
-                                            move |_| {
-                                                show_remove_files.set(true);
-                                            }
-                                        }>
-                                        "Remove Files"
-                                    </button>
-                                }.into_any()
-                            } else {
-                                view! { <span></span> }.into_any()
-                            }}
-                        </div>
+                                    dispatch_with_toast(ServerAction::ToggleAlbumMonitor { album_id, monitored: false }, "Album unmonitored");
+                                }
+                            >
+                                <Bookmark size=18 fill="currentColor" />
+                            </button>
+                        }.into_any()
+                    } else {
+                        view! {
+                            <button type="button"
+                                class="shrink-0 flex items-center justify-center w-5 h-5 text-zinc-300 dark:text-zinc-600 bg-transparent border-none cursor-pointer p-0 transition-colors duration-150 hover:text-amber-500 dark:hover:text-amber-400"
+                                title="Not monitored \u{2014} click to monitor"
+                                on:click=move |_| {
+                                    dispatch_with_toast(ServerAction::ToggleAlbumMonitor { album_id, monitored: true }, "Album monitored");
+                                }
+                            >
+                                <Bookmark size=18 />
+                            </button>
+                        }.into_any()
                     }
                 }}
             </div>
         </div>
 
-        // ── Confirmation dialog for removing album files ────
-        <ConfirmDialog
-            open=show_remove_files
-            title="Remove Files"
-            message=format!("This will delete all downloaded files for \u{201c}{album_title}\u{201d} from disk.")
-            confirm_label="Remove Files"
-            danger=true
-            checkbox_label="Also unmonitor this album"
-            on_confirm={
-                move |unmonitor: bool| {
-                    let msg = if unmonitor { "Album files removed and unmonitored" } else { "Album files removed" };
-                    dispatch_with_toast(ServerAction::RemoveAlbumFiles { album_id, unmonitor }, msg);
-                }
-            }
-        />
     }
 }

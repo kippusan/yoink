@@ -16,7 +16,7 @@ use crate::styles::{
 
 // ── Page-specific Tailwind class constants ──────────────────
 
-const STAT_CARD: &str = "d7-stat-card bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[12px] border border-black/[.06] dark:border-white/[.08] rounded-xl p-4 relative overflow-hidden";
+const STAT_CARD: &str = "stat-card bg-white/70 dark:bg-zinc-800/60 backdrop-blur-[12px] border border-black/[.06] dark:border-white/[.08] rounded-xl p-4 relative overflow-hidden";
 const STAT_LABEL: &str =
     "text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400 m-0 mb-1";
 const STAT_VALUE: &str = "text-[28px] font-bold text-zinc-900 dark:text-zinc-100 m-0";
@@ -306,7 +306,7 @@ fn JobRow(
                 }}
             </td>
             <td>{artist_name}</td>
-            <td><span class="pill d7-pill-muted">{job.quality.to_string()}</span></td>
+            <td><span class="pill bg-black/5 text-zinc-500 dark:bg-white/[.06] dark:text-zinc-400">{job.quality.to_string()}</span></td>
             <td>{progress}</td>
             <td><span class=sc>{st_label}</span></td>
             <td class=MUTED>{updated}</td>

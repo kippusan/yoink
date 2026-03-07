@@ -92,33 +92,21 @@
 .dark .pill.status-completed   { background: rgba(34,197,94,.15); color: #4ade80; }
 .dark .pill.status-failed      { background: rgba(239,68,68,.15); color: #f87171; }
 
-.d7-pill-muted {
-  background: rgba(0,0,0,.05);
-  color: #71717a;
-}
-.dark .d7-pill-muted {
-  background: rgba(255,255,255,.06);
-  color: #a1a1aa;
-}
-
 /* ── Components that must stay in CSS ────────────────────── */
-/* These are either JS-injected, use ::pseudo-elements, or   */
-/* reference the --d7-glow-rgb CSS variable for dynamic glow */
+/* These use ::pseudo-elements or reference the --glow-rgb   */
+/* CSS variable set dynamically per-sleeve by JS.            */
 
 @layer components {
   /* stat-card ::before gradient bar */
-  .d7-stat-card::before {
+  .stat-card::before {
     content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
     background: linear-gradient(90deg, #3b82f6, #60a5fa);
     box-shadow: 0 0 12px rgba(59,130,246,.4);
   }
 
-  /* album grid */
-  .d7-album-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 20px; }
-
-  /* album sleeve cards (glow script targets .d7-sleeve, .d7-sleeve-cover) */
-  .d7-sleeve {
-    --d7-glow-rgb: 59, 130, 246;
+  /* album sleeve cards (glow script targets .sleeve, .sleeve-cover) */
+  .sleeve {
+    --glow-rgb: 59, 130, 246;
     position: relative;
     background: rgba(255,255,255,.7);
     backdrop-filter: blur(12px);
@@ -129,152 +117,11 @@
     transition: transform .2s, box-shadow .2s, border-color .2s;
     cursor: default;
   }
-  .d7-sleeve:hover { transform: translateY(-4px); box-shadow: 0 12px 40px rgba(var(--d7-glow-rgb),.18); border-color: rgba(var(--d7-glow-rgb),.38); }
-  .dark .d7-sleeve { background: rgba(24,24,27,.6); border-color: rgba(255,255,255,.08); }
-  .dark .d7-sleeve:hover { box-shadow: 0 12px 40px rgba(var(--d7-glow-rgb),.3); border-color: rgba(var(--d7-glow-rgb),.5); }
+  .sleeve:hover { transform: translateY(-4px); box-shadow: 0 12px 40px rgba(var(--glow-rgb),.18); border-color: rgba(var(--glow-rgb),.38); }
+  .dark .sleeve { background: rgba(24,24,27,.6); border-color: rgba(255,255,255,.08); }
+  .dark .sleeve:hover { box-shadow: 0 12px 40px rgba(var(--glow-rgb),.3); border-color: rgba(var(--glow-rgb),.5); }
 
-  .d7-sleeve-cover-wrap { position: relative; width: 100%; padding-top: 100%; background: #e4e4e7; overflow: hidden; }
-  .dark .d7-sleeve-cover-wrap { background: #27272a; }
-
-
-  .d7-sleeve-cover { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-
-  .d7-sleeve-fallback {
-    position: absolute; inset: 0;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 36px; font-weight: 800; color: #a1a1aa;
-  }
-  .dark .d7-sleeve-fallback { color: #52525b; }
-
-  /* badge stickers */
-  .d7-badge {
-    position: absolute; z-index: 3;
-    font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
-    padding: 3px 8px; border-radius: 6px; white-space: nowrap;
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-  }
-  .d7-badge-wanted { top: 8px; right: 8px; background: rgba(var(--d7-glow-rgb),.9); color: #fff; box-shadow: 0 2px 10px rgba(var(--d7-glow-rgb),.35); }
-  .d7-badge-acquired { top: 8px; right: 8px; background: rgba(var(--d7-glow-rgb),.72); color: #fff; box-shadow: 0 2px 10px rgba(var(--d7-glow-rgb),.28); }
-  .d7-badge-explicit { top: 8px; left: 8px; background: rgba(63,63,70,.85); color: #e4e4e7; font-size: 8px; padding: 2px 5px; }
-  .dark .d7-badge-explicit { background: rgba(161,161,170,.85); color: #18181b; }
-
-  /* sleeve info */
-  .d7-sleeve-info { padding: 10px 12px; }
-  .d7-sleeve-title { font-size: 13px; font-weight: 600; color: #18181b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .dark .d7-sleeve-title { color: #f4f4f5; }
-  .d7-sleeve-title a { color: inherit; text-decoration: none; }
-  .d7-sleeve-title a:hover { color: #3b82f6; }
-  .d7-sleeve-sub { font-size: 11px; color: #71717a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .dark .d7-sleeve-sub { color: #a1a1aa; }
-  .d7-sleeve-status { margin-top: 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-  .d7-sleeve-actions { margin-top: 8px; display: flex; gap: 4px; flex-wrap: wrap; }
-  .d7-sleeve-action-btn { padding: 3px 8px; font-size: 11px; min-height: 26px; }
-
-  /* tracklist (JS-injected content) */
-  .d7-tracklist-btn {
-    display: inline-flex; align-items: center; justify-content: center;
-    width: 28px; height: 28px;
-    border: 1px solid rgba(0,0,0,.08); border-radius: 8px;
-    background: rgba(255,255,255,.5);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    color: #71717a; cursor: pointer;
-    transition: all .15s; padding: 0;
-    font-family: inherit; font-size: 11px; font-weight: 700;
-  }
-  .d7-tracklist-btn:hover { background: #3b82f6; border-color: #3b82f6; color: #fff; box-shadow: 0 2px 8px rgba(59,130,246,.3); }
-  .dark .d7-tracklist-btn { border-color: rgba(255,255,255,.1); background: rgba(39,39,42,.5); color: #a1a1aa; }
-  .dark .d7-tracklist-btn:hover { background: #3b82f6; border-color: #3b82f6; color: #fff; }
-  .d7-tracklist-btn.active { background: #3b82f6; border-color: #3b82f6; color: #fff; }
-
-  .d7-tracklist { border-top: 1px solid rgba(0,0,0,.06); max-height: 0; overflow: hidden; transition: max-height .3s ease; }
-  .dark .d7-tracklist { border-top-color: rgba(255,255,255,.06); }
-  .d7-tracklist.open { max-height: 600px; overflow-y: auto; }
-
-  .d7-track-row { display: flex; align-items: center; padding: 5px 12px; gap: 8px; font-size: 12px; border-bottom: 1px solid rgba(0,0,0,.03); }
-  .d7-track-row:last-child { border-bottom: none; }
-  .dark .d7-track-row { border-bottom-color: rgba(255,255,255,.03); }
-  .d7-track-num { color: #a1a1aa; width: 22px; text-align: right; flex-shrink: 0; font-variant-numeric: tabular-nums; }
-  .dark .d7-track-num { color: #52525b; }
-  .d7-track-title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #3f3f46; }
-  .dark .d7-track-title { color: #d4d4d8; }
-  .d7-track-dur { color: #a1a1aa; flex-shrink: 0; font-variant-numeric: tabular-nums; }
-  .dark .d7-track-dur { color: #52525b; }
-  .d7-tracklist-loading { padding: 12px; text-align: center; font-size: 12px; color: #a1a1aa; }
-  .dark .d7-tracklist-loading { color: #52525b; }
-
-  /* buttons (also used by JS-injected search dropdown) */
-  .d7-btn {
-    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-    padding: 6px 14px;
-    background: rgba(255,255,255,.6);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-    border: 1px solid rgba(0,0,0,.08);
-    border-radius: 8px;
-    font-family: inherit; font-size: 13px; font-weight: 500;
-    cursor: pointer; color: #3f3f46;
-    text-decoration: none;
-    transition: all .15s; white-space: nowrap;
-  }
-  .d7-btn:hover { background: rgba(255,255,255,.85); border-color: rgba(59,130,246,.2); }
-  .dark .d7-btn { background: rgba(39,39,42,.6); border-color: rgba(255,255,255,.1); color: #d4d4d8; }
-  .dark .d7-btn:hover { background: rgba(39,39,42,.85); border-color: rgba(59,130,246,.3); }
-
-  .d7-btn-primary { background: #3b82f6; border-color: #3b82f6; color: #fff; box-shadow: 0 2px 12px rgba(59,130,246,.25); }
-  .d7-btn-primary:hover { background: #60a5fa; border-color: #60a5fa; box-shadow: 0 4px 20px rgba(59,130,246,.35); }
-  .dark .d7-btn-primary { background: #3b82f6; border-color: #3b82f6; color: #fff; }
-  .dark .d7-btn-primary:hover { background: #60a5fa; border-color: #60a5fa; }
-
-  .d7-btn-sm { padding: 3px 10px; font-size: 12px; }
-
-  /* search dropdown (JS-injected content) */
-  .d7-search-wrapper { position: relative; flex: 1; max-width: 360px; z-index: 2000; isolation: isolate; }
-  .d7-search-dropdown {
-    position: absolute; top: calc(100% + 4px); left: 0; right: 0;
-    background: rgba(255,255,255,.95);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(0,0,0,.08);
-    border-radius: 10px;
-    box-shadow: 0 8px 32px rgba(0,0,0,.12);
-    z-index: 2100; max-height: 400px; overflow-y: auto;
-    display: none;
-  }
-  .d7-search-dropdown.visible { display: block; }
-  .dark .d7-search-dropdown { background: rgba(24,24,27,.95); border-color: rgba(255,255,255,.1); box-shadow: 0 8px 32px rgba(0,0,0,.4); }
-
-  .d7-search-dropdown-item {
-    display: flex; align-items: center; gap: 10px;
-    padding: 10px 14px;
-    border-bottom: 1px solid rgba(0,0,0,.04);
-    cursor: default; transition: background .1s;
-  }
-  .d7-search-dropdown-item:last-child { border-bottom: none; }
-  .d7-search-dropdown-item:hover { background: rgba(59,130,246,.05); }
-  .dark .d7-search-dropdown-item { border-bottom-color: rgba(255,255,255,.04); }
-  .dark .d7-search-dropdown-item:hover { background: rgba(59,130,246,.08); }
-  .d7-search-dropdown-avatar { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; flex-shrink: 0; background: #e4e4e7; }
-  .dark .d7-search-dropdown-avatar { background: #27272a; }
-  .d7-search-dropdown-fallback {
-    width: 36px; height: 36px; border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    background: #e4e4e7; color: #71717a; font-weight: 700; font-size: 14px; flex-shrink: 0;
-  }
-  .dark .d7-search-dropdown-fallback { background: #27272a; color: #52525b; }
-  .d7-search-dropdown-info { flex: 1; min-width: 0; }
-  .d7-search-dropdown-name { font-size: 14px; font-weight: 600; color: #18181b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .dark .d7-search-dropdown-name { color: #f4f4f5; }
-  .d7-search-dropdown-hint { font-size: 11px; color: #a1a1aa; }
-  .dark .d7-search-dropdown-hint { color: #52525b; }
-  .d7-search-dropdown-loading { padding: 16px; text-align: center; font-size: 13px; color: #a1a1aa; }
-  .dark .d7-search-dropdown-loading { color: #52525b; }
-
-  /* responsive */
-  @media (max-width: 768px) {
-    .d7-album-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
-  }
+  .sleeve-cover { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 }
 
 /* ── Mobile sidebar slide-in animation ────────────────────── */

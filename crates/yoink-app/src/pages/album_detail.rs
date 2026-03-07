@@ -1,5 +1,7 @@
 use leptos::prelude::*;
-use lucide_leptos::{ArrowLeft, Bookmark, Check, ChevronRight};
+use lucide_leptos::{
+    ArrowLeft, Bookmark, Check, ChevronRight, Download, GitCompareArrows, RefreshCw, Trash2, X,
+};
 
 use yoink_shared::{
     DownloadJob, DownloadStatus, MatchSuggestion, MonitoredAlbum, MonitoredArtist, ProviderLink,
@@ -134,15 +136,11 @@ pub async fn get_album_detail(album_id: String) -> Result<AlbumDetailData, Serve
             .map_err(|e| ServerFnError::new(format!("failed to load album tracks: {e}")))?;
         let provider_links = links_res
             .map_err(|e| ServerFnError::new(format!("failed to load album provider links: {e}")))?;
-        let match_suggestions = suggestions_res
-            .map_err(|e| ServerFnError::new(format!("failed to load album match suggestions: {e}")))?;
+        let match_suggestions = suggestions_res.map_err(|e| {
+            ServerFnError::new(format!("failed to load album match suggestions: {e}"))
+        })?;
 
-        (
-            tracks,
-            jobs,
-            provider_links,
-            match_suggestions,
-        )
+        (tracks, jobs, provider_links, match_suggestions)
     } else {
         let jobs = ctx.download_jobs.read().await.clone();
         (Vec::new(), jobs, Vec::new(), Vec::new())
@@ -332,18 +330,14 @@ fn AlbumDetailContent(
     let job_error = latest_job.as_ref().and_then(|j| j.error.clone());
     let job_quality = latest_job.as_ref().map(|j| j.quality);
 
-    let status_pill_class = match &job_status {
-        Some(s) => status_class(s).to_string(),
-        None => "pill".to_string(),
-    };
-    let status_pill_text = match &job_status {
-        Some(s) => status_label_text(
+    let status_pill_class = job_status.as_ref().map(|s| status_class(s).to_string());
+    let status_pill_text = job_status.as_ref().map(|s| {
+        status_label_text(
             s,
             job_progress.map(|(c, _)| c).unwrap_or(0),
             job_progress.map(|(_, t)| t).unwrap_or(0),
-        ),
-        None => "\u{2014}".to_string(),
-    };
+        )
+    });
 
     let artist_name = artist
         .as_ref()
@@ -385,15 +379,12 @@ fn AlbumDetailContent(
     let download_loading = RwSignal::new(false);
 
     // Can we show a download / retry button?
-    let can_download = is_wanted && !is_acquired;
+    let has_active_job = matches!(
+        job_status,
+        Some(DownloadStatus::Queued | DownloadStatus::Resolving | DownloadStatus::Downloading)
+    );
+    let can_download = is_wanted && !is_acquired && !has_active_job;
     let can_retry = matches!(job_status, Some(DownloadStatus::Failed));
-
-    let monitor_title = if is_monitored {
-        "Unmonitor album"
-    } else {
-        "Monitor album"
-    };
-    let monitor_label = if is_monitored { "Unmonitor" } else { "Monitor" };
 
     view! {
         // ── Sticky header with breadcrumb ───────────────────
@@ -412,9 +403,117 @@ fn AlbumDetailContent(
         <div class="p-6 max-md:p-4">
             // ── Hero card ───────────────────────────────────
             <div class={cls(GLASS, "mb-5")}>
+                // ── Header bar: status pills (left) + action buttons (right) ──
+                <div class=GLASS_HEADER>
+                    <div class="flex flex-wrap items-center gap-2">
+                        {if is_acquired {
+                            view! { <span class="pill" style="background:rgba(34,197,94,.12);color:#22c55e">"Acquired"</span> }.into_any()
+                        } else if is_wanted {
+                            view! { <span class="pill" style="background:rgba(245,158,11,.12);color:#f59e0b">"Wanted"</span> }.into_any()
+                        } else if is_partially_wanted {
+                            view! { <span class="pill" style="background:rgba(245,158,11,.08);color:#d97706">"Partially Wanted"</span> }.into_any()
+                        } else {
+                            view! { <span></span> }.into_any()
+                        }}
+                        {match (&status_pill_class, &status_pill_text) {
+                            (Some(cls), Some(text)) => view! { <span class=cls.clone()>{text.clone()}</span> }.into_any(),
+                            _ => view! { <span></span> }.into_any(),
+                        }}
+                        {match (&job_status, &job_quality) {
+                            (Some(_), Some(q)) => view! { <span class="pill bg-black/5 text-zinc-500 dark:bg-white/[.06] dark:text-zinc-400">{q.to_string()}</span> }.into_any(),
+                            _ => view! { <span></span> }.into_any(),
+                        }}
+                    </div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        {if can_retry {
+                            view! {
+                                <button type="button"
+                                    class=move || btn_cls(BTN_PRIMARY, "px-3 py-1.5 text-xs inline-flex items-center gap-1.5", download_loading.get())
+                                    disabled=move || download_loading.get()
+                                    on:click={
+                                        move |_| {
+                                            dispatch_with_toast_loading(ServerAction::RetryDownload { album_id }, "Download requeued", Some(download_loading));
+                                        }
+                                    }>
+                                    <RefreshCw size=14 />
+                                    {move || if download_loading.get() { "Retrying\u{2026}" } else { "Retry" }}
+                                </button>
+                            }.into_any()
+                        } else if can_download {
+                            view! {
+                                <button type="button"
+                                    class=move || btn_cls(BTN_PRIMARY, "px-3 py-1.5 text-xs inline-flex items-center gap-1.5", download_loading.get())
+                                    disabled=move || download_loading.get()
+                                    on:click={
+                                        move |_| {
+                                            dispatch_with_toast_loading(ServerAction::RetryDownload { album_id }, "Download started", Some(download_loading));
+                                        }
+                                    }>
+                                    <Download size=14 />
+                                    {move || if download_loading.get() { "Starting\u{2026}" } else { "Download" }}
+                                </button>
+                            }.into_any()
+                        } else {
+                            view! { <span></span> }.into_any()
+                        }}
+
+                        {if is_monitored {
+                            view! {
+                                <button type="button" class={cls(BTN, "px-3 py-1.5 text-xs inline-flex items-center gap-1.5")}
+                                    title="Monitored \u{2014} click to unmonitor"
+                                    on:click={
+                                        move |_| {
+                                            dispatch_with_toast(ServerAction::ToggleAlbumMonitor { album_id, monitored: false }, "Album unmonitored");
+                                        }
+                                    }>
+                                    <Bookmark size=14 fill="currentColor" />
+                                    "Unmonitor"
+                                </button>
+                            }.into_any()
+                        } else {
+                            view! {
+                                <button type="button" class={cls(BTN, "px-3 py-1.5 text-xs inline-flex items-center gap-1.5")}
+                                    title="Not monitored \u{2014} click to monitor"
+                                    on:click={
+                                        move |_| {
+                                            dispatch_with_toast(ServerAction::ToggleAlbumMonitor { album_id, monitored: true }, "Album monitored");
+                                        }
+                                    }>
+                                    <Bookmark size=14 />
+                                    "Monitor"
+                                </button>
+                            }.into_any()
+                        }}
+
+                        {if is_acquired {
+                            view! {
+                                <button type="button" class={cls(BTN_DANGER, "px-3 py-1.5 text-xs inline-flex items-center gap-1.5")} title="Delete downloaded files"
+                                    on:click=move |_| {
+                                        show_remove_files.set(true);
+                                    }>
+                                    <Trash2 size=14 />
+                                    "Remove Files"
+                                </button>
+                            }.into_any()
+                        } else {
+                            view! { <span></span> }.into_any()
+                        }}
+                    </div>
+                </div>
+
+                // ── Error banner (between header and body) ──
+                {match &job_error {
+                    Some(err) => view! {
+                        <div class="text-sm text-red-600 dark:text-red-400 bg-red-500/[.06] dark:bg-red-500/10 border-b border-red-500/20 px-5 max-md:px-3.5 py-2">
+                            {err.clone()}
+                        </div>
+                    }.into_any(),
+                    None => view! { <span></span> }.into_any(),
+                }}
+
+                // ── Body: cover art + identity info ──
                 <div class={cls(GLASS_BODY, "p-5 md:p-6")}>
-                    // Top row: cover art + title/meta side by side
-                    <div class="flex gap-5 mb-4">
+                    <div class="flex gap-5">
                         // Cover art — compact square, no glow effects
                         <div class="shrink-0 w-28 h-28 md:w-40 md:h-40 rounded-lg overflow-hidden bg-zinc-200 dark:bg-zinc-800">
                             {match cover_url.clone() {
@@ -527,34 +626,45 @@ fn AlbumDetailContent(
                             }}
                         </div>
                     </div>
+                </div>
+            </div>
 
-                    // Potential matches (full width below the top row)
-                    {if match_suggestions.iter().any(|m| m.status == "pending") {
-                        view! {
-                            <div class="mb-4 rounded-lg border border-amber-500/20 bg-amber-500/[.06] px-3 py-2.5">
-                                <div class="text-[11px] uppercase tracking-wider text-amber-700 dark:text-amber-300 mb-2 font-semibold">
-                                    "Potential Matches"
-                                </div>
-                                <div class="flex flex-col gap-2">
-                                    {match_suggestions.iter().filter(|m| m.status == "pending").map(|m| {
-                                        let suggestion_id = m.id;
-                                        let display_provider = provider_display_name(&m.right_provider);
-                                        let kind = if m.match_kind == "isrc_exact" { "ISRC" } else { "Fuzzy" };
-                                        let display_name = m
-                                            .external_name
-                                            .clone()
-                                            .unwrap_or_else(|| "Unknown album match".to_string());
-                                        let explanation = m.explanation.clone().unwrap_or_default();
-                                        view! {
-                                            <div class="flex flex-wrap items-center gap-2 text-xs text-zinc-700 dark:text-zinc-300">
-                                                <span class="inline-flex items-center px-1.5 py-0.5 rounded-md bg-white/70 dark:bg-zinc-800/70 border border-black/[.06] dark:border-white/[.08]">
+            // ── Potential matches (own card, only if pending) ─
+            {if match_suggestions.iter().any(|m| m.status == "pending") {
+                view! {
+                    <div class={cls(GLASS, "mb-5")}>
+                        <div class=GLASS_HEADER>
+                            <h2 class={cls(GLASS_TITLE, "inline-flex items-center gap-2")}>
+                                <GitCompareArrows size=16 />
+                                "Potential Matches"
+                            </h2>
+                        </div>
+                        <div class={cls(GLASS_BODY, "px-5 py-3")}>
+                            <div class="flex flex-col gap-2">
+                                {match_suggestions.iter().filter(|m| m.status == "pending").map(|m| {
+                                    let suggestion_id = m.id;
+                                    let display_provider = provider_display_name(&m.right_provider);
+                                    let kind = if m.match_kind == "isrc_exact" { "ISRC" } else { "Fuzzy" };
+                                    let display_name = m
+                                        .external_name
+                                        .clone()
+                                        .unwrap_or_else(|| "Unknown album match".to_string());
+                                    let explanation = m.explanation.clone().unwrap_or_default();
+                                    view! {
+                                        <div class="flex items-start gap-3 text-xs text-zinc-700 dark:text-zinc-300">
+                                            <div class="flex-1 min-w-0 flex flex-wrap items-center gap-2">
+                                                <span
+                                                    class="inline-flex items-center px-1.5 py-0.5 rounded-md bg-white/70 dark:bg-zinc-800/70 border border-black/[.06] dark:border-white/[.08]"
+                                                    title=explanation
+                                                >
                                                     {format!("{} {}%", kind, m.confidence)}
                                                 </span>
                                                 <span>{format!("{}: {}", display_provider, display_name)}</span>
-                                                <span class="text-zinc-500 dark:text-zinc-400">{explanation}</span>
+                                            </div>
+                                            <div class="shrink-0 flex items-center gap-1.5">
                                                 <button
                                                     type="button"
-                                                    class={cls(BTN_PRIMARY, "px-2 py-0.5 text-[11px]")}
+                                                    class={cls(BTN_PRIMARY, "px-2 py-0.5 text-[11px] inline-flex items-center gap-1")}
                                                     on:click=move |_| {
                                                         dispatch_with_toast(
                                                             ServerAction::AcceptMatchSuggestion { suggestion_id },
@@ -562,11 +672,12 @@ fn AlbumDetailContent(
                                                         );
                                                     }
                                                 >
+                                                    <Check size=12 />
                                                     "Accept"
                                                 </button>
                                                 <button
                                                     type="button"
-                                                    class={cls(BTN, "px-2 py-0.5 text-[11px]")}
+                                                    class={cls(BTN, "px-2 py-0.5 text-[11px] inline-flex items-center gap-1")}
                                                     on:click=move |_| {
                                                         dispatch_with_toast(
                                                             ServerAction::DismissMatchSuggestion { suggestion_id },
@@ -574,160 +685,20 @@ fn AlbumDetailContent(
                                                         );
                                                     }
                                                 >
+                                                    <X size=12 />
                                                     "Dismiss"
                                                 </button>
                                             </div>
-                                        }
-                                    }).collect_view()}
-                                </div>
-                            </div>
-                        }.into_any()
-                    } else {
-                        view! { <span></span> }.into_any()
-                    }}
-
-                    // Status pills + actions row
-                    <div class="flex flex-wrap items-center gap-2 mb-3">
-                        {if is_wanted && !is_acquired {
-                            view! { <span class="pill" style="background:rgba(245,158,11,.12);color:#f59e0b">"Wanted"</span> }.into_any()
-                        } else if is_partially_wanted {
-                            view! { <span class="pill" style="background:rgba(245,158,11,.08);color:#d97706">"Partially Wanted"</span> }.into_any()
-                        } else if is_acquired {
-                            view! { <span class="pill" style="background:rgba(34,197,94,.12);color:#22c55e">"Acquired"</span> }.into_any()
-                        } else {
-                            view! { <span class="pill">"Not Wanted"</span> }.into_any()
-                        }}
-                        {if is_monitored {
-                            view! { <span class="pill" style="background:rgba(59,130,246,.12);color:#3b82f6">"Monitored"</span> }.into_any()
-                        } else {
-                            view! { <span class="pill">"Unmonitored"</span> }.into_any()
-                        }}
-                        <span class=status_pill_class>{status_pill_text}</span>
-                        {match &job_quality {
-                            Some(q) => view! { <span class="pill d7-pill-muted">{q.to_string()}</span> }.into_any(),
-                            None => view! { <span></span> }.into_any(),
-                        }}
-                    </div>
-
-                    // Error message if job failed
-                    {match &job_error {
-                        Some(err) => view! {
-                            <div class="mb-3 text-sm text-red-600 dark:text-red-400 bg-red-500/[.06] dark:bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
-                                {err.clone()}
-                            </div>
-                        }.into_any(),
-                        None => view! { <span></span> }.into_any(),
-                    }}
-
-                    // Action buttons
-                    <div class="flex flex-wrap gap-1.5">
-                        {if can_retry {
-                            view! {
-                                <button type="button"
-                                    class=move || btn_cls(BTN_PRIMARY, "px-3 py-1.5 text-xs", download_loading.get())
-                                    disabled=move || download_loading.get()
-                                    on:click={
-                                        move |_| {
-                                            dispatch_with_toast_loading(ServerAction::RetryDownload { album_id }, "Download requeued", Some(download_loading));
-                                        }
-                                    }>
-                                    {move || if download_loading.get() { "Retrying\u{2026}" } else { "Retry Download" }}
-                                </button>
-                            }.into_any()
-                        } else if can_download {
-                            view! {
-                                <button type="button"
-                                    class=move || btn_cls(BTN_PRIMARY, "px-3 py-1.5 text-xs", download_loading.get())
-                                    disabled=move || download_loading.get()
-                                    on:click={
-                                        move |_| {
-                                            dispatch_with_toast_loading(ServerAction::RetryDownload { album_id }, "Download started", Some(download_loading));
-                                        }
-                                    }>
-                                    {move || if download_loading.get() { "Starting\u{2026}" } else { "Download" }}
-                                </button>
-                            }.into_any()
-                        } else {
-                            view! { <span></span> }.into_any()
-                        }}
-
-                        <button type="button" class={cls(BTN, "px-3 py-1.5 text-xs")} title=monitor_title
-                            on:click={
-                                move |_| {
-                                    let next = !is_monitored;
-                                    let msg = if next { "Album monitored" } else { "Album unmonitored" };
-                                    dispatch_with_toast(ServerAction::ToggleAlbumMonitor { album_id, monitored: next }, msg);
-                                }
-                            }>{monitor_label}</button>
-
-                        {if is_acquired {
-                            view! {
-                                <button type="button" class={cls(BTN_DANGER, "px-3 py-1.5 text-xs")} title="Delete downloaded files"
-                                    on:click=move |_| {
-                                        show_remove_files.set(true);
-                                    }>
-                                    "Remove Files"
-                                </button>
-                            }.into_any()
-                        } else {
-                            view! { <span></span> }.into_any()
-                        }}
-                    </div>
-                </div>
-            </div>
-
-            // ── Contributing artists ─────────────────────────
-            {
-                let mut contributing = std::collections::BTreeSet::<String>::new();
-                for t in &tracks {
-                    if let Some(ref ta) = t.track_artist {
-                        // Split on common joinphrases: ";", ",", " & ", " feat. ", " ft. ", " featuring ", " with ", " x "
-                        let re_split: Vec<&str> = ta
-                            .split(';')
-                            .flat_map(|s| s.split(','))
-                            .flat_map(|s| s.split(" & "))
-                            .flat_map(|s| s.split(" feat. "))
-                            .flat_map(|s| s.split(" ft. "))
-                            .flat_map(|s| s.split(" featuring "))
-                            .flat_map(|s| s.split(" with "))
-                            .collect();
-                        for name in re_split {
-                            let trimmed = name.trim();
-                            if !trimmed.is_empty() {
-                                contributing.insert(trimmed.to_string());
-                            }
-                        }
-                    }
-                }
-                // Remove all album-level artists so only additional (track-level) artists show
-                contributing.remove(&artist_name);
-                for credit in &album_artists {
-                    contributing.remove(&credit.name);
-                }
-                if !contributing.is_empty() {
-                    let artists_list: Vec<String> = contributing.into_iter().collect();
-                    view! {
-                        <div class={cls(GLASS, "mb-5")}>
-                            <div class=GLASS_HEADER>
-                                <h2 class=GLASS_TITLE>"Contributing Artists"</h2>
-                            </div>
-                            <div class={cls(GLASS_BODY, "px-5 py-3")}>
-                                <div class="flex flex-wrap gap-1.5">
-                                    {artists_list.into_iter().map(|name| {
-                                        view! {
-                                            <span class="inline-flex items-center px-2 py-1 text-xs font-medium text-zinc-600 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 border border-black/[.06] dark:border-white/[.08] rounded-md">
-                                                {name}
-                                            </span>
-                                        }
-                                    }).collect_view()}
-                                </div>
+                                        </div>
+                                    }
+                                }).collect_view()}
                             </div>
                         </div>
-                    }.into_any()
-                } else {
-                    view! { <span></span> }.into_any()
-                }
-            }
+                    </div>
+                }.into_any()
+            } else {
+                view! { <span></span> }.into_any()
+            }}
 
             // ── Tracklist card ───────────────────────────────
             <div class=GLASS>
@@ -736,50 +707,6 @@ fn AlbumDetailContent(
                         <h2 class=GLASS_TITLE>"Tracklist"</h2>
                         <span class={cls(MUTED, "text-xs")}>{format!("{track_count} tracks \u{00b7} {duration_display}")}</span>
                     </div>
-                    {if !tracks.is_empty() {
-                        let any_unmonitored = tracks.iter().any(|t| !t.monitored);
-                        let any_monitored = tracks.iter().any(|t| t.monitored);
-                        view! {
-                            <div class="flex items-center gap-1.5">
-                                {if any_unmonitored {
-                                    view! {
-                                        <button type="button"
-                                            class={cls(BTN, "px-2.5 py-1 text-[11px]")}
-                                            title="Monitor all tracks for download"
-                                            on:click=move |_| {
-                                                dispatch_with_toast(
-                                                    ServerAction::BulkToggleTrackMonitor { album_id, monitored: true },
-                                                    "All tracks monitored",
-                                                );
-                                            }>
-                                            "Monitor All"
-                                        </button>
-                                    }.into_any()
-                                } else {
-                                    view! { <span></span> }.into_any()
-                                }}
-                                {if any_monitored {
-                                    view! {
-                                        <button type="button"
-                                            class={cls(BTN, "px-2.5 py-1 text-[11px]")}
-                                            title="Unmonitor all tracks"
-                                            on:click=move |_| {
-                                                dispatch_with_toast(
-                                                    ServerAction::BulkToggleTrackMonitor { album_id, monitored: false },
-                                                    "All tracks unmonitored",
-                                                );
-                                            }>
-                                            "Unmonitor All"
-                                        </button>
-                                    }.into_any()
-                                } else {
-                                    view! { <span></span> }.into_any()
-                                }}
-                            </div>
-                        }.into_any()
-                    } else {
-                        view! { <span></span> }.into_any()
-                    }}
                 </div>
                 {if tracks.is_empty() {
                     view! {

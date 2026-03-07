@@ -484,24 +484,24 @@ fn ExistingArtistRow(
                         let toaster = expect_toaster();
                         leptos::task::spawn_local(async move {
                             // 1. Link the provider to the existing artist (if we have provider info)
-                            if let (Some(provider), Some(external_id)) = (credit_provider, credit_external_id) {
-                                if let Err(e) = dispatch_action(ServerAction::LinkArtistProvider {
+                            if let (Some(provider), Some(external_id)) = (credit_provider, credit_external_id)
+                                && let Err(e) = dispatch_action(ServerAction::LinkArtistProvider {
                                     artist_id,
                                     provider,
                                     external_id,
                                     external_url: None,
                                     external_name: Some(artist_name.clone()),
                                     image_ref: None,
-                                }).await {
-                                    toaster.toast(
-                                        ToastBuilder::new(format!("Error linking provider: {e}"))
-                                            .with_level(ToastLevel::Error)
-                                            .with_position(ToastPosition::BottomRight)
-                                            .with_expiry(Some(8_000)),
-                                    );
-                                    linking.set(false);
-                                    return;
-                                }
+                                }).await
+                            {
+                                toaster.toast(
+                                    ToastBuilder::new(format!("Error linking provider: {e}"))
+                                        .with_level(ToastLevel::Error)
+                                        .with_position(ToastPosition::BottomRight)
+                                        .with_expiry(Some(8_000)),
+                                );
+                                linking.set(false);
+                                return;
                             }
                             // 2. Add artist to the album
                             match dispatch_action(ServerAction::AddAlbumArtist {

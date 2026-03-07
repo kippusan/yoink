@@ -76,7 +76,10 @@ pub async fn get_merge_albums_data(artist_id: String) -> Result<MergeAlbumsData,
     for album in &albums {
         album_by_id.insert(album.id, album.clone());
         let links = (ctx.fetch_album_links)(album.id).await.map_err(|e| {
-            ServerFnError::new(format!("failed to load provider links for album {}: {e}", album.id))
+            ServerFnError::new(format!(
+                "failed to load provider links for album {}: {e}",
+                album.id
+            ))
         })?;
         for link in &links {
             pair_to_album.insert((link.provider.clone(), link.external_id.clone()), album.id);
@@ -639,7 +642,7 @@ pub fn MergeAlbumsPage() -> impl IntoView {
                                 .artist
                                 .as_ref()
                                 .map(|a| a.id.to_string())
-                                .or_else(|| artist_id());
+                                .or_else(&artist_id);
                             let artist_link = artist_id_back
                                 .as_deref()
                                 .map(|id| format!("/artists/{id}"))

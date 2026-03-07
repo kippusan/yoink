@@ -15,7 +15,7 @@ const THEME_BOOTSTRAP: &str = r#"
 "#;
 
 /// Album glow script — extracts the dominant saturated color from each album
-/// cover image and applies it as `--d7-glow-rgb` on the parent `.d7-sleeve`.
+/// cover image and applies it as `--glow-rgb` on the parent `.sleeve`.
 /// Uses a MutationObserver to handle dynamically rendered sleeves (SPA nav).
 const ALBUM_GLOW: &str = r#"
 (() => {
@@ -69,12 +69,12 @@ const ALBUM_GLOW: &str = r#"
     return hslToRgb(h, targetS, targetL);
   }
   function applyGlow(img) {
-    var sleeve = img.closest('.d7-sleeve');
+    var sleeve = img.closest('.sleeve');
     if (!sleeve || sleeve.dataset.glowApplied) return;
     try {
       var c = pickGlowColor(img);
       if (!c) return;
-      sleeve.style.setProperty('--d7-glow-rgb', c.r+', '+c.g+', '+c.b);
+      sleeve.style.setProperty('--glow-rgb', c.r+', '+c.g+', '+c.b);
       sleeve.dataset.glowApplied = '1';
     } catch(_) {}
   }
@@ -84,14 +84,14 @@ const ALBUM_GLOW: &str = r#"
   }
   function init() {
     // Process existing covers
-    document.querySelectorAll('.d7-sleeve-cover').forEach(processImg);
+    document.querySelectorAll('.sleeve-cover').forEach(processImg);
     // Watch for new covers added by SPA navigation
     new MutationObserver(function(muts) {
       for (var m of muts) {
         for (var node of m.addedNodes) {
           if (node.nodeType !== 1) continue;
-          if (node.classList && node.classList.contains('d7-sleeve-cover')) processImg(node);
-          else if (node.querySelectorAll) node.querySelectorAll('.d7-sleeve-cover').forEach(processImg);
+          if (node.classList && node.classList.contains('sleeve-cover')) processImg(node);
+          else if (node.querySelectorAll) node.querySelectorAll('.sleeve-cover').forEach(processImg);
         }
       }
     }).observe(document.body, { childList: true, subtree: true });

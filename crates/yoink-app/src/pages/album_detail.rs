@@ -13,10 +13,10 @@ use crate::components::toast::{dispatch_with_toast, dispatch_with_toast_loading}
 use crate::components::{
     Badge, BadgeSize, BadgeSurface, BadgeVariant, Breadcrumb, BreadcrumbItem, Button, ButtonSize,
     ButtonVariant, ConfirmDialog, ErrorPanel, PageShell, Panel, PanelBody, PanelHeader, PanelTitle,
-    ResolveArtistDialog, download_status_badge_variant, fallback_initial,
+    QualitySelect, ResolveArtistDialog, download_status_badge_variant, fallback_initial,
 };
 use crate::hooks::{set_page_title, use_sse_version};
-use crate::styles::{MUTED, SELECT};
+use crate::styles::MUTED;
 
 // ── DTO ─────────────────────────────────────────────────────
 
@@ -44,23 +44,6 @@ pub struct AlbumDetailData {
     pub provider_links: Vec<ProviderLink>,
     pub match_suggestions: Vec<MatchSuggestion>,
     pub default_quality: Quality,
-}
-
-fn quality_label(quality: Quality) -> &'static str {
-    match quality {
-        Quality::HiRes => "Hi-Res Lossless",
-        Quality::Lossless => "Lossless",
-        Quality::High => "High",
-        Quality::Low => "Low",
-    }
-}
-
-fn parse_quality_override(value: &str) -> Option<Quality> {
-    if value.is_empty() {
-        None
-    } else {
-        value.parse().ok()
-    }
 }
 
 // ── Server function ─────────────────────────────────────────
@@ -660,34 +643,20 @@ fn AlbumDetailContent(
                                 <label class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
                                     "Download Quality"
                                 </label>
-                                <select
-                                    class=SELECT
-                                    on:change=move |ev| {
+                                <QualitySelect
+                                    selected=album.quality_override
+                                    default_quality=default_quality
+                                    default_label_prefix="Use default"
+                                    on_change=Callback::new(move |quality: Option<Quality>| {
                                         dispatch_with_toast(
                                             ServerAction::SetAlbumQuality {
                                                 album_id,
-                                                quality: parse_quality_override(&event_target_value(&ev)),
+                                                quality,
                                             },
                                             "Album quality updated",
                                         );
-                                    }
-                                >
-                                    <option value="" selected=album.quality_override.is_none()>
-                                        {format!("Use default ({})", quality_label(default_quality))}
-                                    </option>
-                                    <option value=Quality::HiRes.as_str() selected=album.quality_override == Some(Quality::HiRes)>
-                                        {quality_label(Quality::HiRes)}
-                                    </option>
-                                    <option value=Quality::Lossless.as_str() selected=album.quality_override == Some(Quality::Lossless)>
-                                        {quality_label(Quality::Lossless)}
-                                    </option>
-                                    <option value=Quality::High.as_str() selected=album.quality_override == Some(Quality::High)>
-                                        {quality_label(Quality::High)}
-                                    </option>
-                                    <option value=Quality::Low.as_str() selected=album.quality_override == Some(Quality::Low)>
-                                        {quality_label(Quality::Low)}
-                                    </option>
-                                </select>
+                                    })
+                                />
                                 <span class={cls!(MUTED, "text-[11px]")}>
                                     "Applies to tracks without their own override."
                                 </span>
@@ -812,7 +781,7 @@ fn AlbumDetailContent(
                                         } else {
                                             num.to_string()
                                         };
-                                        let effective_track_quality = track_quality_override.unwrap_or(effective_album_quality);
+
                                         // Show track artist only if it contains names not in the album artist list
                                         let show_track_artist = has_any_artist && track_artist.as_deref()
                                             .map(|ta| {
@@ -864,38 +833,21 @@ fn AlbumDetailContent(
                                                         <span class={cls!(MUTED, "text-[10px] font-semibold uppercase tracking-wider")}>
                                                             "Quality"
                                                         </span>
-                                                        <select
-                                                            class=SELECT
-                                                            on:change=move |ev| {
+                                                        <QualitySelect
+                                                            selected=track_quality_override
+                                                            default_quality=effective_album_quality
+                                                            default_label_prefix="Album default"
+                                                            on_change=Callback::new(move |quality: Option<Quality>| {
                                                                 dispatch_with_toast(
                                                                     ServerAction::SetTrackQuality {
                                                                         album_id,
                                                                         track_id,
-                                                                        quality: parse_quality_override(&event_target_value(&ev)),
+                                                                        quality,
                                                                     },
                                                                     "Track quality updated",
                                                                 );
-                                                            }
-                                                        >
-                                                            <option value="" selected=track_quality_override.is_none()>
-                                                                {format!("Album default ({})", quality_label(effective_album_quality))}
-                                                            </option>
-                                                            <option value=Quality::HiRes.as_str() selected=track_quality_override == Some(Quality::HiRes)>
-                                                                {quality_label(Quality::HiRes)}
-                                                            </option>
-                                                            <option value=Quality::Lossless.as_str() selected=track_quality_override == Some(Quality::Lossless)>
-                                                                {quality_label(Quality::Lossless)}
-                                                            </option>
-                                                            <option value=Quality::High.as_str() selected=track_quality_override == Some(Quality::High)>
-                                                                {quality_label(Quality::High)}
-                                                            </option>
-                                                            <option value=Quality::Low.as_str() selected=track_quality_override == Some(Quality::Low)>
-                                                                {quality_label(Quality::Low)}
-                                                            </option>
-                                                        </select>
-                                                        <span class={cls!(MUTED, "text-[10px]")}>
-                                                            {format!("Effective: {}", quality_label(effective_track_quality))}
-                                                        </span>
+                                                            })
+                                                        />
                                                     </div>
                                                     // ISRC + file path metadata line
                                                     {

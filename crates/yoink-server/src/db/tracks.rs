@@ -204,77 +204,6 @@ pub(crate) async fn find_track_by_album_position(
     .await
 }
 
-/// Load all tracks across all albums, joined with album title and primary artist name.
-/// Used for the library-wide Tracks tab.
-pub(crate) async fn load_all_tracks(
-    pool: &SqlitePool,
-) -> Result<Vec<(TrackInfo, Uuid, String, Uuid, String)>, sqlx::Error> {
-    struct JoinedRow {
-        id: Uuid,
-        title: String,
-        version: Option<String>,
-        disc_number: i64,
-        track_number: i64,
-        duration_secs: Option<i64>,
-        explicit: bool,
-        isrc: Option<String>,
-        track_artist: Option<String>,
-        file_path: Option<String>,
-        monitored: bool,
-        acquired: bool,
-        album_id: Uuid,
-        album_title: String,
-        artist_id: Uuid,
-        artist_name: String,
-    }
-
-    let rows = sqlx::query_as!(
-        JoinedRow,
-        r#"SELECT
-            t.id as "id!: Uuid",
-            t.title, t.version, t.disc_number, t.track_number, t.duration_secs,
-            t.explicit as "explicit!: bool",
-            t.isrc, t.track_artist, t.file_path,
-            t.monitored as "monitored!: bool",
-            t.acquired as "acquired!: bool",
-            a.id as "album_id!: Uuid",
-            a.title as album_title,
-            ar.id as "artist_id!: Uuid",
-            ar.name as artist_name
-         FROM tracks t
-         JOIN albums a ON t.album_id = a.id
-         JOIN artists ar ON a.artist_id = ar.id
-         ORDER BY ar.name, a.title, t.disc_number, t.track_number"#,
-    )
-    .fetch_all(pool)
-    .await?;
-
-    Ok(rows
-        .into_iter()
-        .map(|r| {
-            let secs = r.duration_secs.unwrap_or(0) as u32;
-            let mins = secs / 60;
-            let rem = secs % 60;
-            let track = TrackInfo {
-                id: r.id,
-                title: r.title,
-                version: r.version,
-                disc_number: r.disc_number as u32,
-                track_number: r.track_number as u32,
-                duration_secs: secs,
-                duration_display: format!("{mins}:{rem:02}"),
-                isrc: r.isrc,
-                explicit: r.explicit,
-                track_artist: r.track_artist,
-                file_path: r.file_path,
-                monitored: r.monitored,
-                acquired: r.acquired,
-            };
-            (track, r.album_id, r.album_title, r.artist_id, r.artist_name)
-        })
-        .collect())
-}
-
 /// Check whether ALL monitored tracks for an album have been acquired.
 /// Returns `true` when there are no monitored-but-unacquired tracks,
 /// including the degenerate case where no tracks are monitored at all.
@@ -537,19 +466,4 @@ mod tests {
         assert!(not_found.is_none());
     }
 
-    #[tokio::test]
-    async fn load_all_tracks_joins_album_and_artist() {
-        let pool = test_db().await;
-        let artist = seed_artist(&pool, "TestArtist").await;
-        let album = seed_album(&pool, artist.id, "TestAlbum").await;
-        seed_tracks(&pool, album.id, 2).await;
-
-        let all = super::load_all_tracks(&pool).await.unwrap();
-        assert_eq!(all.len(), 2);
-        let (_, alb_id, alb_title, art_id, art_name) = &all[0];
-        assert_eq!(*alb_id, album.id);
-        assert_eq!(alb_title, "TestAlbum");
-        assert_eq!(*art_id, artist.id);
-        assert_eq!(art_name, "TestArtist");
-    }
 }

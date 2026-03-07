@@ -6,8 +6,8 @@ use lucide_leptos::{
 
 use yoink_shared::{
     ArtistImageOption, DownloadJob, DownloadStatus, MatchSuggestion, MonitoredAlbum,
-    MonitoredArtist, ProviderLink, ServerAction, album_type_label,
-    album_type_rank, build_latest_jobs, provider_display_name,
+    MonitoredArtist, ProviderLink, ServerAction, album_type_label, album_type_rank,
+    build_latest_jobs, provider_display_name,
 };
 
 use leptoaster::{ToastBuilder, ToastLevel, ToastPosition, expect_toaster};
@@ -906,5 +906,3 @@ fn ArtistBio(bio: String) -> impl IntoView {
         </div>
     }
 }
-
-

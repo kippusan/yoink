@@ -33,8 +33,8 @@ pub(crate) use provider_links::{
 };
 pub(crate) use tracks::{
     all_monitored_tracks_acquired, find_track_by_album_isrc, find_track_by_album_position,
-    find_track_by_provider_link, has_wanted_tracks, load_all_tracks,
-    load_monitored_tracks_for_album, load_tracks_for_album, update_track_flags, upsert_track,
+    find_track_by_provider_link, has_wanted_tracks, load_monitored_tracks_for_album,
+    load_tracks_for_album, update_track_flags, upsert_track,
 };
 
 /// Open (or create) the database and run migrations.

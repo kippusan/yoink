@@ -1,8 +1,8 @@
 use leptos::prelude::*;
 use lucide_leptos::Bookmark;
-use yoink_shared::{album_cover_url, MonitoredAlbum, ServerAction, Uuid};
+use yoink_shared::{MonitoredAlbum, ServerAction, Uuid, album_cover_url};
 
-use super::{fallback_initial, SleeveBadge, SleeveBadgeView};
+use super::{SleeveBadge, SleeveBadgeView, fallback_initial};
 use crate::components::toast::dispatch_with_toast;
 
 // ── Monitor toggle helper ───────────────────────────────────

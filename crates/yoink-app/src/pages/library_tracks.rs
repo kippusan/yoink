@@ -24,12 +24,6 @@ pub async fn get_library_tracks_data() -> Result<Vec<LibraryTrack>, ServerFnErro
 
     (ctx.fetch_library_tracks)()
         .await
-        .map(|tracks| {
-            tracks
-                .into_iter()
-                .filter(|t| t.track.monitored)
-                .collect::<Vec<_>>()
-        })
         .map_err(ServerFnError::new)
 }
 

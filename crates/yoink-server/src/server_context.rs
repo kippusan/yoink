@@ -159,102 +159,9 @@ fn build_fetch_tracks_fn(state: &AppState) -> yoink_shared::FetchTracksFn {
     std::sync::Arc::new(move |album_id: Uuid| {
         let s = s.clone();
         Box::pin(async move {
-            // First try to load from local DB
-            let tracks = db::load_tracks_for_album(&s.db, album_id)
+            load_or_backfill_album_tracks(&s, album_id)
                 .await
-                .map_err(|e| format!("Failed to load tracks: {e}"))?;
-
-            let needs_artist_backfill =
-                !tracks.is_empty() && tracks.iter().all(|t| t.track_artist.is_none());
-            if !tracks.is_empty() && !needs_artist_backfill {
-                return Ok(tracks);
-            }
-
-            // Fallback: try to fetch from any linked metadata provider
-            let links = db::load_album_provider_links(&s.db, album_id)
-                .await
-                .map_err(|e| format!("Failed to load album links: {e}"))?;
-
-            for link in &links {
-                let Some(provider) = s.registry.metadata_provider(&link.provider) else {
-                    continue;
-                };
-
-                match provider.fetch_tracks(&link.external_id).await {
-                    Ok((provider_tracks, _album_extra)) => {
-                        for t in provider_tracks {
-                            let local_track_id = if let Ok(Some(track_id)) =
-                                db::find_track_by_provider_link(
-                                    &s.db,
-                                    &link.provider,
-                                    &t.external_id,
-                                )
-                                .await
-                            {
-                                track_id
-                            } else if let Some(ref isrc) = t.isrc {
-                                if let Ok(Some(track_id)) =
-                                    db::find_track_by_album_isrc(&s.db, album_id, isrc).await
-                                {
-                                    track_id
-                                } else {
-                                    Uuid::now_v7()
-                                }
-                            } else {
-                                db::find_track_by_album_position(
-                                    &s.db,
-                                    album_id,
-                                    t.disc_number.unwrap_or(1),
-                                    t.track_number,
-                                )
-                                .await
-                                .ok()
-                                .flatten()
-                                .unwrap_or_else(Uuid::now_v7)
-                            };
-
-                            let secs = t.duration_secs;
-                            let mins = secs / 60;
-                            let rem = secs % 60;
-                            let track_info = yoink_shared::TrackInfo {
-                                id: local_track_id,
-                                title: t.title,
-                                version: t.version,
-                                disc_number: t.disc_number.unwrap_or(1),
-                                track_number: t.track_number,
-                                duration_secs: secs,
-                                duration_display: format!("{mins}:{rem:02}"),
-                                isrc: t.isrc,
-                                explicit: t.explicit,
-                                track_artist: t.artists,
-                                file_path: None,
-                                monitored: false,
-                                acquired: false,
-                            };
-
-                            db::upsert_track(&s.db, &track_info, album_id)
-                                .await
-                                .map_err(|e| format!("failed to persist track: {e}"))?;
-                            db::upsert_track_provider_link(
-                                &s.db,
-                                local_track_id,
-                                &link.provider,
-                                &t.external_id,
-                            )
-                            .await
-                            .map_err(|e| format!("failed to persist track provider link: {e}"))?;
-                        }
-
-                        let persisted = db::load_tracks_for_album(&s.db, album_id)
-                            .await
-                            .unwrap_or_default();
-                        return Ok(persisted);
-                    }
-                    Err(_) => continue,
-                }
-            }
-
-            Ok(Vec::new())
+                .map_err(Into::into)
         })
     })
 }
@@ -373,7 +280,11 @@ fn build_preview_import_fn(state: &AppState) -> yoink_shared::PreviewImportFn {
     let s = state.clone();
     std::sync::Arc::new(move || {
         let s = s.clone();
-        Box::pin(async move { services::preview_import_library(&s).await.map_err(Into::into) })
+        Box::pin(async move {
+            services::preview_import_library(&s)
+                .await
+                .map_err(Into::into)
+        })
     })
 }
 
@@ -381,7 +292,11 @@ fn build_confirm_import_fn(state: &AppState) -> yoink_shared::ConfirmImportFn {
     let s = state.clone();
     std::sync::Arc::new(move |items: Vec<yoink_shared::ImportConfirmation>| {
         let s = s.clone();
-        Box::pin(async move { services::confirm_import_library(&s, items).await.map_err(Into::into) })
+        Box::pin(async move {
+            services::confirm_import_library(&s, items)
+                .await
+                .map_err(Into::into)
+        })
     })
 }
 
@@ -636,24 +551,196 @@ fn build_fetch_library_tracks_fn(state: &AppState) -> yoink_shared::FetchLibrary
     std::sync::Arc::new(move || {
         let s = s.clone();
         Box::pin(async move {
-            let rows = db::load_all_tracks(&s.db)
-                .await
-                .map_err(|e| format!("Failed to load library tracks: {e}"))?;
-
-            Ok(rows
+            let artists = s.monitored_artists.read().await.clone();
+            let artist_names: HashMap<Uuid, String> = artists
                 .into_iter()
-                .map(|(track, album_id, album_title, artist_id, artist_name)| {
-                    yoink_shared::LibraryTrack {
-                        track,
-                        album_id,
-                        album_title,
-                        artist_id,
-                        artist_name,
-                    }
-                })
-                .collect())
+                .map(|artist| (artist.id, artist.name))
+                .collect();
+            let albums = s.monitored_albums.read().await.clone();
+
+            let mut rows = Vec::new();
+            for album in albums {
+                let tracks = load_or_backfill_album_tracks(&s, album.id)
+                    .await
+                    .map_err(yoink_shared::YoinkError::from)?;
+                if tracks.is_empty() {
+                    continue;
+                }
+
+                let include_album = album.monitored
+                    || album.acquired
+                    || tracks.iter().any(|t| t.monitored || t.acquired);
+                if !include_album {
+                    continue;
+                }
+
+                let artist_name = artist_names
+                    .get(&album.artist_id)
+                    .cloned()
+                    .unwrap_or_else(|| "Unknown Artist".to_string());
+
+                rows.extend(tracks.into_iter().map(|track| yoink_shared::LibraryTrack {
+                    track,
+                    album_id: album.id,
+                    album_title: album.title.clone(),
+                    artist_id: album.artist_id,
+                    artist_name: artist_name.clone(),
+                }));
+            }
+
+            rows.sort_by(|a, b| {
+                a.artist_name
+                    .cmp(&b.artist_name)
+                    .then_with(|| a.album_title.cmp(&b.album_title))
+                    .then_with(|| a.track.disc_number.cmp(&b.track.disc_number))
+                    .then_with(|| a.track.track_number.cmp(&b.track.track_number))
+            });
+
+            Ok(rows)
         })
     })
+}
+
+async fn load_or_backfill_album_tracks(
+    state: &AppState,
+    album_id: Uuid,
+) -> Result<Vec<yoink_shared::TrackInfo>, String> {
+    let album = {
+        let albums = state.monitored_albums.read().await;
+        albums.iter().find(|album| album.id == album_id).cloned()
+    };
+
+    let mut tracks = db::load_tracks_for_album(&state.db, album_id)
+        .await
+        .map_err(|e| format!("Failed to load tracks: {e}"))?;
+
+    if let Some(album) = album.as_ref() {
+        let mut repaired = false;
+        for track in &mut tracks {
+            let next_monitored = track.monitored || album.monitored;
+            let next_acquired = track.acquired || album.acquired;
+            if next_monitored != track.monitored || next_acquired != track.acquired {
+                db::update_track_flags(&state.db, track.id, next_monitored, next_acquired)
+                    .await
+                    .map_err(|e| format!("failed to repair track flags: {e}"))?;
+                track.monitored = next_monitored;
+                track.acquired = next_acquired;
+                repaired = true;
+            }
+        }
+
+        if repaired {
+            tracks.sort_by(|a, b| {
+                a.disc_number
+                    .cmp(&b.disc_number)
+                    .then_with(|| a.track_number.cmp(&b.track_number))
+            });
+        }
+    }
+
+    let needs_artist_backfill =
+        !tracks.is_empty() && tracks.iter().all(|track| track.track_artist.is_none());
+    if !tracks.is_empty() && !needs_artist_backfill {
+        return Ok(tracks);
+    }
+
+    let links = db::load_album_provider_links(&state.db, album_id)
+        .await
+        .map_err(|e| format!("Failed to load album links: {e}"))?;
+
+    for link in &links {
+        let Some(provider) = state.registry.metadata_provider(&link.provider) else {
+            continue;
+        };
+
+        match provider.fetch_tracks(&link.external_id).await {
+            Ok((provider_tracks, _album_extra)) => {
+                for provider_track in provider_tracks {
+                    let local_track_id = if let Ok(Some(track_id)) =
+                        db::find_track_by_provider_link(
+                            &state.db,
+                            &link.provider,
+                            &provider_track.external_id,
+                        )
+                        .await
+                    {
+                        track_id
+                    } else if let Some(ref isrc) = provider_track.isrc {
+                        if let Ok(Some(track_id)) =
+                            db::find_track_by_album_isrc(&state.db, album_id, isrc).await
+                        {
+                            track_id
+                        } else {
+                            Uuid::now_v7()
+                        }
+                    } else {
+                        db::find_track_by_album_position(
+                            &state.db,
+                            album_id,
+                            provider_track.disc_number.unwrap_or(1),
+                            provider_track.track_number,
+                        )
+                        .await
+                        .ok()
+                        .flatten()
+                        .unwrap_or_else(Uuid::now_v7)
+                    };
+
+                    let existing_track = tracks.iter().find(|track| track.id == local_track_id);
+                    let secs = provider_track.duration_secs;
+                    let mins = secs / 60;
+                    let rem = secs % 60;
+                    let track_info =
+                        yoink_shared::TrackInfo {
+                            id: local_track_id,
+                            title: provider_track.title,
+                            version: provider_track.version,
+                            disc_number: provider_track.disc_number.unwrap_or(1),
+                            track_number: provider_track.track_number,
+                            duration_secs: secs,
+                            duration_display: format!("{mins}:{rem:02}"),
+                            isrc: provider_track.isrc,
+                            explicit: provider_track.explicit,
+                            track_artist: provider_track.artists.or_else(|| {
+                                existing_track.and_then(|track| track.track_artist.clone())
+                            }),
+                            file_path: existing_track.and_then(|track| track.file_path.clone()),
+                            monitored: existing_track.map(|track| track.monitored).unwrap_or_else(
+                                || album.as_ref().map(|album| album.monitored).unwrap_or(false),
+                            ),
+                            acquired: existing_track.map(|track| track.acquired).unwrap_or_else(
+                                || album.as_ref().map(|album| album.acquired).unwrap_or(false),
+                            ),
+                        };
+
+                    db::upsert_track(&state.db, &track_info, album_id)
+                        .await
+                        .map_err(|e| format!("failed to persist track: {e}"))?;
+                    db::upsert_track_provider_link(
+                        &state.db,
+                        local_track_id,
+                        &link.provider,
+                        &provider_track.external_id,
+                    )
+                    .await
+                    .map_err(|e| format!("failed to persist track provider link: {e}"))?;
+                }
+
+                let mut persisted = db::load_tracks_for_album(&state.db, album_id)
+                    .await
+                    .map_err(|e| format!("Failed to reload tracks: {e}"))?;
+                persisted.sort_by(|a, b| {
+                    a.disc_number
+                        .cmp(&b.disc_number)
+                        .then_with(|| a.track_number.cmp(&b.track_number))
+                });
+                return Ok(persisted);
+            }
+            Err(_) => continue,
+        }
+    }
+
+    Ok(tracks)
 }
 
 // ── Suggestion mapping helpers ──────────────────────────────────────
@@ -796,7 +883,16 @@ fn map_album_suggestion(
 
 #[cfg(test)]
 mod tests {
+    use std::{collections::HashMap, sync::Arc};
+
     use super::*;
+    use crate::{
+        providers::{MetadataProvider, ProviderTrack, registry::ProviderRegistry},
+        test_helpers::{
+            MockMetadataProvider, seed_album, seed_album_provider_link, seed_artist,
+            test_app_state_with_registry,
+        },
+    };
 
     #[test]
     fn exact_match_returns_one() {
@@ -837,5 +933,101 @@ mod tests {
         // Edge case: should not panic
         let _ = search_relevance_score("", "something");
         let _ = search_relevance_score("something", "");
+    }
+
+    #[tokio::test]
+    async fn fetch_tracks_backfill_inherits_album_flags() {
+        let mock = Arc::new(MockMetadataProvider::new("mock"));
+        *mock.fetch_tracks_result.lock().await = Ok((
+            vec![
+                ProviderTrack {
+                    external_id: "trk-1".to_string(),
+                    title: "Track 1".to_string(),
+                    version: None,
+                    track_number: 1,
+                    disc_number: Some(1),
+                    duration_secs: 180,
+                    isrc: Some("USRC12340001".to_string()),
+                    artists: Some("Artist".to_string()),
+                    explicit: false,
+                    extra: HashMap::new(),
+                },
+                ProviderTrack {
+                    external_id: "trk-2".to_string(),
+                    title: "Track 2".to_string(),
+                    version: None,
+                    track_number: 2,
+                    disc_number: Some(1),
+                    duration_secs: 200,
+                    isrc: Some("USRC12340002".to_string()),
+                    artists: Some("Artist".to_string()),
+                    explicit: false,
+                    extra: HashMap::new(),
+                },
+            ],
+            HashMap::new(),
+        ));
+
+        let mut registry = ProviderRegistry::new();
+        registry.register_metadata(mock as Arc<dyn MetadataProvider>);
+        let (state, _tmp) = test_app_state_with_registry(registry).await;
+
+        let artist = seed_artist(&state.db, "Artist").await;
+        let mut album = seed_album(&state.db, artist.id, "Album").await;
+        album.acquired = true;
+        album.wanted = false;
+        db::upsert_album(&state.db, &album).await.unwrap();
+        seed_album_provider_link(&state.db, album.id, "mock", "alb-1").await;
+
+        state.monitored_artists.write().await.push(artist.clone());
+        state.monitored_albums.write().await.push(album.clone());
+
+        let ctx = build_server_context(&state);
+        let tracks = (ctx.fetch_tracks)(album.id).await.unwrap();
+
+        assert_eq!(tracks.len(), 2);
+        assert!(tracks.iter().all(|track| track.monitored));
+        assert!(tracks.iter().all(|track| track.acquired));
+    }
+
+    #[tokio::test]
+    async fn fetch_library_tracks_backfills_missing_synced_album_tracks() {
+        let mock = Arc::new(MockMetadataProvider::new("mock"));
+        *mock.fetch_tracks_result.lock().await = Ok((
+            vec![ProviderTrack {
+                external_id: "trk-1".to_string(),
+                title: "Track 1".to_string(),
+                version: None,
+                track_number: 1,
+                disc_number: Some(1),
+                duration_secs: 180,
+                isrc: Some("USRC12340001".to_string()),
+                artists: Some("Artist".to_string()),
+                explicit: false,
+                extra: HashMap::new(),
+            }],
+            HashMap::new(),
+        ));
+
+        let mut registry = ProviderRegistry::new();
+        registry.register_metadata(mock as Arc<dyn MetadataProvider>);
+        let (state, _tmp) = test_app_state_with_registry(registry).await;
+
+        let artist = seed_artist(&state.db, "Artist").await;
+        let album = seed_album(&state.db, artist.id, "Album").await;
+        db::upsert_album(&state.db, &album).await.unwrap();
+        seed_album_provider_link(&state.db, album.id, "mock", "alb-1").await;
+
+        state.monitored_artists.write().await.push(artist.clone());
+        state.monitored_albums.write().await.push(album.clone());
+
+        let ctx = build_server_context(&state);
+        let tracks = (ctx.fetch_library_tracks)().await.unwrap();
+
+        assert_eq!(tracks.len(), 1);
+        assert_eq!(tracks[0].album_id, album.id);
+        assert_eq!(tracks[0].artist_id, artist.id);
+        assert_eq!(tracks[0].track.title, "Track 1");
+        assert!(tracks[0].track.monitored);
     }
 }

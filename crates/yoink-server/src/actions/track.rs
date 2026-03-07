@@ -29,12 +29,12 @@ pub(super) async fn add_track(
     .await?;
 
     // 2. Fetch album metadata to create the parent album.
-    let prov = state
-        .registry
-        .metadata_provider(&provider)
-        .ok_or_else(|| {
-            AppError::unavailable("metadata provider", format!("unknown provider '{provider}'"))
-        })?;
+    let prov = state.registry.metadata_provider(&provider).ok_or_else(|| {
+        AppError::unavailable(
+            "metadata provider",
+            format!("unknown provider '{provider}'"),
+        )
+    })?;
 
     let albums = prov.fetch_albums(&artist_external_id).await?;
 

@@ -93,9 +93,7 @@ pub(crate) async fn scan_and_import_library(state: &AppState) -> AppResult<ScanI
 
 /// Preview what a library scan would import, returning match candidates for
 /// each discovered local album folder.
-pub(crate) async fn preview_import_library(
-    state: &AppState,
-) -> AppResult<Vec<ImportPreviewItem>> {
+pub(crate) async fn preview_import_library(state: &AppState) -> AppResult<Vec<ImportPreviewItem>> {
     let discovered = discover_local_albums(state).await?;
     if discovered.is_empty() {
         return Ok(Vec::new());
@@ -390,13 +388,14 @@ async fn discover_local_albums(state: &AppState) -> AppResult<Vec<LocalAlbumDir>
 
     let mut out = Vec::new();
     let mut artist_dirs = fs::read_dir(&state.music_root).await.map_err(|err| {
-        AppError::filesystem("read music root", state.music_root.display().to_string(), err)
+        AppError::filesystem(
+            "read music root",
+            state.music_root.display().to_string(),
+            err,
+        )
     })?;
 
-    while let Some(artist_entry) = artist_dirs
-        .next_entry()
-        .await?
-    {
+    while let Some(artist_entry) = artist_dirs.next_entry().await? {
         let artist_path = artist_entry.path();
         if !artist_path.is_dir() {
             continue;

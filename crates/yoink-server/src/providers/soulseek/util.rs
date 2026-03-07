@@ -40,7 +40,10 @@ pub(crate) fn sanitize_relative_path(input: &str) -> PathBuf {
     for component in path.components() {
         match component {
             Component::Normal(part) => out.push(part),
-            Component::CurDir | Component::ParentDir | Component::RootDir | Component::Prefix(_) => {}
+            Component::CurDir
+            | Component::ParentDir
+            | Component::RootDir
+            | Component::Prefix(_) => {}
         }
     }
     out

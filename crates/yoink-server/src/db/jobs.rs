@@ -177,9 +177,11 @@ mod tests {
 
         let remaining = super::load_jobs(&pool).await.unwrap();
         assert_eq!(remaining.len(), 2);
-        assert!(remaining
-            .iter()
-            .all(|j| !matches!(j.status, DownloadStatus::Completed)));
+        assert!(
+            remaining
+                .iter()
+                .all(|j| !matches!(j.status, DownloadStatus::Completed))
+        );
     }
 
     #[tokio::test]

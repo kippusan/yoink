@@ -309,7 +309,7 @@ fn sanitize_vorbis_key(prefix: &str, key: &str) -> String {
 mod tests {
     use std::collections::HashMap;
 
-    use serde_json::{json, Value};
+    use serde_json::{Value, json};
 
     use super::*;
 
@@ -362,16 +362,12 @@ mod tests {
 
     #[test]
     fn parse_featured_feat_no_dot() {
-        assert_eq!(
-            parse_featured_artists("Song (feat Artist)"),
-            vec!["Artist"]
-        );
+        assert_eq!(parse_featured_artists("Song (feat Artist)"), vec!["Artist"]);
     }
 
     #[test]
     fn parse_featured_multiple_parens() {
-        let result =
-            parse_featured_artists("Song (Remix) (feat. A) (Live)");
+        let result = parse_featured_artists("Song (Remix) (feat. A) (Live)");
         assert_eq!(result, vec!["A"]);
     }
 
@@ -390,8 +386,7 @@ mod tests {
             "artists".to_string(),
             json!([{"name": "Artist A"}, {"name": "Artist B"}]),
         );
-        let result =
-            build_full_artist_string("Song", &track_extra, None, "Fallback");
+        let result = build_full_artist_string("Song", &track_extra, None, "Fallback");
         assert_eq!(result, "Artist A; Artist B");
     }
 
@@ -399,8 +394,7 @@ mod tests {
     fn build_artist_from_track_extra_string() {
         let mut track_extra = HashMap::new();
         track_extra.insert("artist".to_string(), json!("Solo Artist"));
-        let result =
-            build_full_artist_string("Song", &track_extra, None, "Fallback");
+        let result = build_full_artist_string("Song", &track_extra, None, "Fallback");
         assert_eq!(result, "Solo Artist");
     }
 
@@ -411,8 +405,7 @@ mod tests {
             "artists".to_string(),
             json!([{"name": "Artist"}, {"name": "artist"}]),
         );
-        let result =
-            build_full_artist_string("Song", &track_extra, None, "Fallback");
+        let result = build_full_artist_string("Song", &track_extra, None, "Fallback");
         assert_eq!(result, "Artist");
     }
 
@@ -431,16 +424,9 @@ mod tests {
     #[test]
     fn build_artist_merges_featured_from_title() {
         let mut track_extra = HashMap::new();
-        track_extra.insert(
-            "artists".to_string(),
-            json!([{"name": "Main Artist"}]),
-        );
-        let result = build_full_artist_string(
-            "Song (feat. Featured One)",
-            &track_extra,
-            None,
-            "Fallback",
-        );
+        track_extra.insert("artists".to_string(), json!([{"name": "Main Artist"}]));
+        let result =
+            build_full_artist_string("Song (feat. Featured One)", &track_extra, None, "Fallback");
         assert_eq!(result, "Main Artist; Featured One");
     }
 
@@ -452,12 +438,8 @@ mod tests {
             json!([{"name": "Main"}, {"name": "Featured"}]),
         );
         // Featured is already in extra, so title feat should not add duplicate
-        let result = build_full_artist_string(
-            "Song (feat. Featured)",
-            &track_extra,
-            None,
-            "Fallback",
-        );
+        let result =
+            build_full_artist_string("Song (feat. Featured)", &track_extra, None, "Fallback");
         assert_eq!(result, "Main; Featured");
     }
 
@@ -465,16 +447,8 @@ mod tests {
     fn build_artist_merges_track_info_extra() {
         let track_extra = HashMap::new();
         let mut info_extra = HashMap::new();
-        info_extra.insert(
-            "artists".to_string(),
-            json!([{"name": "Info Artist"}]),
-        );
-        let result = build_full_artist_string(
-            "Song",
-            &track_extra,
-            Some(&info_extra),
-            "Fallback",
-        );
+        info_extra.insert("artists".to_string(), json!([{"name": "Info Artist"}]));
+        let result = build_full_artist_string("Song", &track_extra, Some(&info_extra), "Fallback");
         assert_eq!(result, "Info Artist");
     }
 
@@ -485,8 +459,7 @@ mod tests {
             "artists".to_string(),
             json!([{"title": "Artist Via Title Key"}]),
         );
-        let result =
-            build_full_artist_string("Song", &track_extra, None, "Fallback");
+        let result = build_full_artist_string("Song", &track_extra, None, "Fallback");
         assert_eq!(result, "Artist Via Title Key");
     }
 
@@ -497,7 +470,10 @@ mod tests {
         let track_extra = HashMap::new();
         let mut info_extra = HashMap::new();
         info_extra.insert("volumeNumber".to_string(), json!(2));
-        assert_eq!(extract_disc_number(&track_extra, Some(&info_extra)), Some(2));
+        assert_eq!(
+            extract_disc_number(&track_extra, Some(&info_extra)),
+            Some(2)
+        );
     }
 
     #[test]
@@ -574,10 +550,7 @@ mod tests {
 
     #[test]
     fn value_as_string_from_number() {
-        assert_eq!(
-            value_as_string(Some(&json!(42))),
-            Some("42".to_string())
-        );
+        assert_eq!(value_as_string(Some(&json!(42))), Some("42".to_string()));
     }
 
     #[test]

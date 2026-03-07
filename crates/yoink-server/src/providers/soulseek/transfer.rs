@@ -11,7 +11,14 @@ fn state_text(t: &Transfer) -> String {
 }
 
 const FAILURE_KEYWORDS: &[&str] = &[
-    "rejected", "failed", "cancel", "aborted", "timed out", "timeout", "errored", "denied",
+    "rejected",
+    "failed",
+    "cancel",
+    "aborted",
+    "timed out",
+    "timeout",
+    "errored",
+    "denied",
 ];
 
 pub(crate) fn is_failure(t: &Transfer) -> bool {

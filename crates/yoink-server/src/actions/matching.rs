@@ -19,8 +19,7 @@ pub(super) async fn accept_match_suggestion(
 
     match suggestion.scope_type.as_str() {
         "album" => {
-            let album_links = db::load_album_provider_links(&state.db, suggestion.scope_id)
-                .await?;
+            let album_links = db::load_album_provider_links(&state.db, suggestion.scope_id).await?;
             let linked: std::collections::HashSet<(String, String)> = album_links
                 .iter()
                 .map(|l| (l.provider.clone(), l.external_id.clone()))
@@ -33,33 +32,30 @@ pub(super) async fn accept_match_suggestion(
                 suggestion.right_provider.clone(),
                 suggestion.right_external_id.clone(),
             ));
-            let (target_provider, target_external_id, target_url) =
-                if left_linked && !right_linked {
-                    (
-                        suggestion.right_provider.clone(),
-                        suggestion.right_external_id.clone(),
-                        suggestion.external_url.clone(),
-                    )
-                } else if right_linked && !left_linked {
-                    (
-                        suggestion.left_provider.clone(),
-                        suggestion.left_external_id.clone(),
-                        None,
-                    )
-                } else {
-                    (
-                        suggestion.right_provider.clone(),
-                        suggestion.right_external_id.clone(),
-                        suggestion.external_url.clone(),
-                    )
-                };
+            let (target_provider, target_external_id, target_url) = if left_linked && !right_linked
+            {
+                (
+                    suggestion.right_provider.clone(),
+                    suggestion.right_external_id.clone(),
+                    suggestion.external_url.clone(),
+                )
+            } else if right_linked && !left_linked {
+                (
+                    suggestion.left_provider.clone(),
+                    suggestion.left_external_id.clone(),
+                    None,
+                )
+            } else {
+                (
+                    suggestion.right_provider.clone(),
+                    suggestion.right_external_id.clone(),
+                    suggestion.external_url.clone(),
+                )
+            };
 
-            let existing = db::find_album_by_provider_link(
-                &state.db,
-                &target_provider,
-                &target_external_id,
-            )
-            .await?;
+            let existing =
+                db::find_album_by_provider_link(&state.db, &target_provider, &target_external_id)
+                    .await?;
 
             if let Some(existing_album_id) = existing
                 && existing_album_id != suggestion.scope_id
@@ -78,13 +74,11 @@ pub(super) async fn accept_match_suggestion(
                 external_title: suggestion.external_name.clone(),
                 cover_ref: None,
             };
-            db::upsert_album_provider_link(&state.db, &link)
-                .await?;
+            db::upsert_album_provider_link(&state.db, &link).await?;
         }
         "artist" => {
             let artist_links =
-                db::load_artist_provider_links(&state.db, suggestion.scope_id)
-                    .await?;
+                db::load_artist_provider_links(&state.db, suggestion.scope_id).await?;
             let linked: std::collections::HashSet<(String, String)> = artist_links
                 .iter()
                 .map(|l| (l.provider.clone(), l.external_id.clone()))
@@ -97,33 +91,30 @@ pub(super) async fn accept_match_suggestion(
                 suggestion.right_provider.clone(),
                 suggestion.right_external_id.clone(),
             ));
-            let (target_provider, target_external_id, target_url) =
-                if left_linked && !right_linked {
-                    (
-                        suggestion.right_provider.clone(),
-                        suggestion.right_external_id.clone(),
-                        suggestion.external_url.clone(),
-                    )
-                } else if right_linked && !left_linked {
-                    (
-                        suggestion.left_provider.clone(),
-                        suggestion.left_external_id.clone(),
-                        None,
-                    )
-                } else {
-                    (
-                        suggestion.right_provider.clone(),
-                        suggestion.right_external_id.clone(),
-                        suggestion.external_url.clone(),
-                    )
-                };
+            let (target_provider, target_external_id, target_url) = if left_linked && !right_linked
+            {
+                (
+                    suggestion.right_provider.clone(),
+                    suggestion.right_external_id.clone(),
+                    suggestion.external_url.clone(),
+                )
+            } else if right_linked && !left_linked {
+                (
+                    suggestion.left_provider.clone(),
+                    suggestion.left_external_id.clone(),
+                    None,
+                )
+            } else {
+                (
+                    suggestion.right_provider.clone(),
+                    suggestion.right_external_id.clone(),
+                    suggestion.external_url.clone(),
+                )
+            };
 
-            let existing = db::find_artist_by_provider_link(
-                &state.db,
-                &target_provider,
-                &target_external_id,
-            )
-            .await?;
+            let existing =
+                db::find_artist_by_provider_link(&state.db, &target_provider, &target_external_id)
+                    .await?;
 
             if let Some(existing_artist_id) = existing
                 && existing_artist_id != suggestion.scope_id
@@ -142,8 +133,7 @@ pub(super) async fn accept_match_suggestion(
                 external_name: suggestion.external_name.clone(),
                 image_ref: None,
             };
-            db::upsert_artist_provider_link(&state.db, &link)
-                .await?;
+            db::upsert_artist_provider_link(&state.db, &link).await?;
 
             services::sync_artist_albums(state, suggestion.scope_id).await?;
             helpers::spawn_recompute_artist_match_suggestions(state, suggestion.scope_id);
@@ -203,10 +193,7 @@ pub(super) async fn dismiss_match_suggestion(
     Ok(())
 }
 
-pub(super) async fn refresh_match_suggestions(
-    state: &AppState,
-    artist_id: Uuid,
-) -> AppResult<()> {
+pub(super) async fn refresh_match_suggestions(state: &AppState, artist_id: Uuid) -> AppResult<()> {
     services::recompute_artist_match_suggestions(state, artist_id).await?;
     state.notify_sse();
     Ok(())

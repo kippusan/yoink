@@ -138,7 +138,9 @@ mod tests {
         let artist = seed_artist(&pool, "Artist").await;
 
         // Set bio directly
-        super::update_artist_bio(&pool, artist.id, Some("Great band")).await.unwrap();
+        super::update_artist_bio(&pool, artist.id, Some("Great band"))
+            .await
+            .unwrap();
 
         // Upsert with bio = None should keep the existing bio (COALESCE behavior)
         let mut updated = artist.clone();
@@ -156,12 +158,16 @@ mod tests {
         let pool = test_db().await;
         let artist = seed_artist(&pool, "Artist").await;
 
-        super::update_artist_bio(&pool, artist.id, Some("A biography")).await.unwrap();
+        super::update_artist_bio(&pool, artist.id, Some("A biography"))
+            .await
+            .unwrap();
         let loaded = super::load_artists(&pool).await.unwrap();
         assert_eq!(loaded[0].bio.as_deref(), Some("A biography"));
 
         // Clear bio
-        super::update_artist_bio(&pool, artist.id, None).await.unwrap();
+        super::update_artist_bio(&pool, artist.id, None)
+            .await
+            .unwrap();
         let loaded = super::load_artists(&pool).await.unwrap();
         assert!(loaded[0].bio.is_none());
     }
@@ -208,7 +214,9 @@ mod tests {
         let artist = seed_artist(&pool, "Artist").await;
         assert!(artist.monitored);
 
-        super::update_artist_monitored(&pool, artist.id, false).await.unwrap();
+        super::update_artist_monitored(&pool, artist.id, false)
+            .await
+            .unwrap();
         let loaded = super::load_artists(&pool).await.unwrap();
         assert!(!loaded[0].monitored);
     }

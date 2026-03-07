@@ -251,9 +251,7 @@ pub(crate) async fn download_worker_loop(state: AppState) {
     }
 }
 
-pub(crate) async fn retag_existing_files(
-    state: &AppState,
-) -> AppResult<(usize, usize, usize)> {
+pub(crate) async fn retag_existing_files(state: &AppState) -> AppResult<(usize, usize, usize)> {
     let artists = state.monitored_artists.read().await.clone();
     let albums = state.monitored_albums.read().await.clone();
 
@@ -414,14 +412,22 @@ pub(crate) async fn remove_downloaded_album_files(
     let album_dir = artist_dir.join(sanitize(&format!("{} ({})", album.title, release_suffix)));
 
     let exists = fs::try_exists(&album_dir).await.map_err(|err| {
-        AppError::filesystem("check album directory", album_dir.display().to_string(), err)
+        AppError::filesystem(
+            "check album directory",
+            album_dir.display().to_string(),
+            err,
+        )
     })?;
     if !exists {
         return Ok(false);
     }
 
     fs::remove_dir_all(&album_dir).await.map_err(|err| {
-        AppError::filesystem("remove album directory", album_dir.display().to_string(), err)
+        AppError::filesystem(
+            "remove album directory",
+            album_dir.display().to_string(),
+            err,
+        )
     })?;
 
     if let Ok(mut entries) = fs::read_dir(&artist_dir).await {

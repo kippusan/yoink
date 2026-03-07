@@ -33,11 +33,9 @@ pub(crate) async fn recompute_artist_match_suggestions(
             .collect()
     };
 
-    let artist_links = db::load_artist_provider_links(&state.db, artist_id)
-        .await?;
+    let artist_links = db::load_artist_provider_links(&state.db, artist_id).await?;
 
-    db::clear_pending_match_suggestions(&state.db, "artist", artist_id)
-        .await?;
+    db::clear_pending_match_suggestions(&state.db, "artist", artist_id).await?;
 
     recompute_artist_level_suggestions(state, artist_id, &artist_name, &artist_links).await?;
 
@@ -113,8 +111,7 @@ async fn recompute_artist_level_suggestions(
             updated_at: now,
         };
 
-        db::upsert_match_suggestion(&state.db, &suggestion)
-            .await?;
+        db::upsert_match_suggestion(&state.db, &suggestion).await?;
     }
 
     Ok(())
@@ -125,11 +122,9 @@ async fn recompute_album_match_suggestions(
     album: &MonitoredAlbum,
     artist_name: &str,
 ) -> AppResult<()> {
-    let existing_links = db::load_album_provider_links(&state.db, album.id)
-        .await?;
+    let existing_links = db::load_album_provider_links(&state.db, album.id).await?;
 
-    db::clear_pending_match_suggestions(&state.db, "album", album.id)
-        .await?;
+    db::clear_pending_match_suggestions(&state.db, "album", album.id).await?;
 
     if existing_links.is_empty() {
         return Ok(());
@@ -248,8 +243,7 @@ async fn recompute_album_match_suggestions(
             updated_at: now,
         };
 
-        db::upsert_match_suggestion(&state.db, &suggestion)
-            .await?;
+        db::upsert_match_suggestion(&state.db, &suggestion).await?;
     }
 
     Ok(())
@@ -450,10 +444,7 @@ mod tests {
 
     #[test]
     fn normalize_mixed() {
-        assert_eq!(
-            normalize("The Black Keys (Live)"),
-            "the black keys live"
-        );
+        assert_eq!(normalize("The Black Keys (Live)"), "the black keys live");
     }
 
     // ── provider_priority ───────────────────────────────────────

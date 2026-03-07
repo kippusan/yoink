@@ -75,10 +75,11 @@ pub(crate) fn extract_download_payload(
         }
         other => {
             warn!(manifest_mime_type = %other, "Unknown manifest type, attempting BTS parse as fallback");
-            let manifest = serde_json::from_slice::<BtsManifest>(&decoded)
-                .map_err(|_| ManifestError::UnsupportedType {
+            let manifest = serde_json::from_slice::<BtsManifest>(&decoded).map_err(|_| {
+                ManifestError::UnsupportedType {
                     mime_type: other.to_string(),
-                })?;
+                }
+            })?;
             manifest
                 .urls
                 .first()
@@ -100,14 +101,18 @@ pub(crate) fn extract_download_payload(
 fn extract_dash_segment_urls(xml: &str) -> Result<Vec<String>, ManifestError> {
     let doc = Document::parse(xml).map_err(ManifestError::DashXml)?;
 
-    let mpd = doc
-        .descendants()
-        .find(|n| n.has_tag_name("MPD"))
-        .ok_or(ManifestError::DashStructure("DASH manifest has no MPD element"))?;
-    let period = mpd
-        .children()
-        .find(|n| n.has_tag_name("Period"))
-        .ok_or(ManifestError::DashStructure("DASH manifest has no Period element"))?;
+    let mpd =
+        doc.descendants()
+            .find(|n| n.has_tag_name("MPD"))
+            .ok_or(ManifestError::DashStructure(
+                "DASH manifest has no MPD element",
+            ))?;
+    let period =
+        mpd.children()
+            .find(|n| n.has_tag_name("Period"))
+            .ok_or(ManifestError::DashStructure(
+                "DASH manifest has no Period element",
+            ))?;
 
     let adaptation_sets: Vec<Node<'_, '_>> = period
         .children()
@@ -213,12 +218,9 @@ fn extract_dash_segment_urls(xml: &str) -> Result<Vec<String>, ManifestError> {
         if let Some(t) = s.attribute("t").and_then(|v| v.parse::<u64>().ok()) {
             current_time = t;
         }
-        let duration = s
-            .attribute("d")
-            .and_then(|v| v.parse::<u64>().ok())
-            .ok_or(ManifestError::DashStructure(
-                "DASH timeline entry missing duration",
-            ))?;
+        let duration = s.attribute("d").and_then(|v| v.parse::<u64>().ok()).ok_or(
+            ManifestError::DashStructure("DASH timeline entry missing duration"),
+        )?;
         let repeats = s
             .attribute("r")
             .and_then(|v| v.parse::<i64>().ok())

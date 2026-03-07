@@ -106,10 +106,12 @@ fn strip_lrc_timestamps(input: &str) -> String {
 
 pub(crate) async fn write_lrc_sidecar(audio_path: &Path, synced_lrc: &str) -> AppResult<()> {
     let sidecar_path = audio_path.with_extension("lrc");
-    fs::write(&sidecar_path, synced_lrc)
-        .await
-        .map_err(|err| {
-            AppError::filesystem("write lyrics sidecar", sidecar_path.display().to_string(), err)
-        })?;
+    fs::write(&sidecar_path, synced_lrc).await.map_err(|err| {
+        AppError::filesystem(
+            "write lyrics sidecar",
+            sidecar_path.display().to_string(),
+            err,
+        )
+    })?;
     Ok(())
 }

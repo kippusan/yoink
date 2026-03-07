@@ -28,12 +28,9 @@ pub(crate) async fn download_album_job(state: &AppState, job: DownloadJob) -> Ap
     // Resolve the provider link for this album to find the external ID and provider
     let album_links = db::load_album_provider_links(&state.db, job.album_id).await?;
 
-    let download_source = state
-        .registry
-        .download_source(&job.source)
-        .ok_or_else(|| {
-            AppError::unavailable("download source", format!("'{}' not available", job.source))
-        })?;
+    let download_source = state.registry.download_source(&job.source).ok_or_else(|| {
+        AppError::unavailable("download source", format!("'{}' not available", job.source))
+    })?;
 
     // Pick a metadata provider link independently from the download source.
     // If the source itself has metadata, prefer it; otherwise use highest-priority linked metadata.
@@ -77,9 +74,7 @@ pub(crate) async fn download_album_job(state: &AppState, job: DownloadJob) -> Ap
     let artist_name = &job.artist_name;
 
     // Fetch tracks from the metadata provider
-    let (provider_tracks, album_extra) = metadata_provider
-        .fetch_tracks(external_album_id)
-        .await?;
+    let (provider_tracks, album_extra) = metadata_provider.fetch_tracks(external_album_id).await?;
 
     if provider_tracks.is_empty() {
         return Err(AppError::not_found(
@@ -179,11 +174,13 @@ pub(crate) async fn download_album_job(state: &AppState, job: DownloadJob) -> Ap
         "{} ({})",
         job.album_title, release_suffix
     )));
-    fs::create_dir_all(&album_dir)
-        .await
-        .map_err(|err| {
-            AppError::filesystem("create output directory", album_dir.display().to_string(), err)
-        })?;
+    fs::create_dir_all(&album_dir).await.map_err(|err| {
+        AppError::filesystem(
+            "create output directory",
+            album_dir.display().to_string(),
+            err,
+        )
+    })?;
 
     let max_parallel = state.download_max_parallel_tracks.max(1);
     info!(
@@ -417,11 +414,9 @@ async fn process_track_download(
 
     let mut final_ext = "flac";
     if requested_quality == Quality::HiRes {
-        let is_flac = has_flac_stream_marker(&temp_path)
-            .await
-            .map_err(|err| {
-                AppError::download("validate track format", format!("{}: {err}", track.title))
-            })?;
+        let is_flac = has_flac_stream_marker(&temp_path).await.map_err(|err| {
+            AppError::download("validate track format", format!("{}: {err}", track.title))
+        })?;
         if !is_flac {
             let container = sniff_media_container(&temp_path)
                 .await
@@ -454,33 +449,39 @@ async fn process_track_download(
                 )
                 .await
                 .map_err(|e| {
-                    AppError::download("resolve lossless fallback", format!(
-                        "Failed to resolve LOSSLESS playback for {}: {e}",
-                        track.title
-                    ))
+                    AppError::download(
+                        "resolve lossless fallback",
+                        format!(
+                            "Failed to resolve LOSSLESS playback for {}: {e}",
+                            track.title
+                        ),
+                    )
                 })?;
 
                 download_playback_to_file(&state.http, &lossless_payload, &temp_path)
                     .await
                     .map_err(|err| {
-                        AppError::download("download lossless fallback", format!(
-                            "failed track {} in LOSSLESS fallback: {err}",
-                            track.title
-                        ))
+                        AppError::download(
+                            "download lossless fallback",
+                            format!("failed track {} in LOSSLESS fallback: {err}", track.title),
+                        )
                     })?;
 
                 let fallback_is_flac = has_flac_stream_marker(&temp_path).await.map_err(|err| {
-                    AppError::download("validate lossless fallback", format!(
-                        "failed validating LOSSLESS fallback track {}: {err}",
-                        track.title
-                    ))
+                    AppError::download(
+                        "validate lossless fallback",
+                        format!(
+                            "failed validating LOSSLESS fallback track {}: {err}",
+                            track.title
+                        ),
+                    )
                 })?;
                 if !fallback_is_flac {
                     return Err(AppError::validation(
                         Some("audio_format"),
                         format!(
-                        "track {} is not FLAC even after LOSSLESS fallback",
-                        track.title
+                            "track {} is not FLAC even after LOSSLESS fallback",
+                            track.title
                         ),
                     ));
                 }
@@ -489,11 +490,9 @@ async fn process_track_download(
     }
 
     let final_path = album_dir.join(format!("{base_name}.{final_ext}"));
-    fs::rename(&temp_path, &final_path)
-        .await
-        .map_err(|err| {
-            AppError::filesystem("finalize track file", final_path.display().to_string(), err)
-        })?;
+    fs::rename(&temp_path, &final_path).await.map_err(|err| {
+        AppError::filesystem("finalize track file", final_path.display().to_string(), err)
+    })?;
 
     if let Err(err) = write_audio_metadata(&TrackMetadata {
         path: &final_path,
@@ -657,11 +656,9 @@ async fn download_playback_to_file(
     path: &std::path::Path,
 ) -> AppResult<()> {
     if let Some(parent) = path.parent() {
-        tokio::fs::create_dir_all(parent)
-            .await
-            .map_err(|e| {
-                AppError::filesystem("create parent directory", parent.display().to_string(), e)
-            })?;
+        tokio::fs::create_dir_all(parent).await.map_err(|e| {
+            AppError::filesystem("create parent directory", parent.display().to_string(), e)
+        })?;
     }
 
     use super::io::DownloadPayload;
@@ -669,11 +666,9 @@ async fn download_playback_to_file(
         PlaybackInfo::DirectUrl(url) => DownloadPayload::DirectUrl(url.clone()),
         PlaybackInfo::SegmentUrls(urls) => DownloadPayload::DashSegmentUrls(urls.clone()),
         PlaybackInfo::LocalFile(local_path) => {
-            tokio::fs::copy(local_path, path)
-                .await
-                .map_err(|e| {
-                    AppError::filesystem("copy local file", local_path.display().to_string(), e)
-                })?;
+            tokio::fs::copy(local_path, path).await.map_err(|e| {
+                AppError::filesystem("copy local file", local_path.display().to_string(), e)
+            })?;
             return Ok(());
         }
     };
@@ -744,8 +739,6 @@ async fn resolve_playback_with_fallback(
 
     Err(AppError::unavailable(
         "playback",
-        format!(
-            "failed to resolve playback for {track_title}: no source could resolve track"
-        ),
+        format!("failed to resolve playback for {track_title}: no source could resolve track"),
     ))
 }

@@ -95,8 +95,7 @@ impl MetadataProvider for TidalProvider {
     async fn search_artists(&self, query: &str) -> Result<Vec<ProviderArtist>, ProviderError> {
         let parsed = self
             .hifi_get::<HifiResponse>("/search/", vec![("a".to_string(), query.to_string())])
-            .await
-            ?;
+            .await?;
 
         let artists = parsed
             .data
@@ -147,8 +146,7 @@ impl MetadataProvider for TidalProvider {
                     ("skip_tracks".to_string(), "true".to_string()),
                 ],
             )
-            .await
-            ?;
+            .await?;
 
         Ok(response
             .albums
@@ -183,8 +181,7 @@ impl MetadataProvider for TidalProvider {
                 "/album/",
                 vec![("id".to_string(), external_album_id.to_string())],
             )
-            .await
-            ?;
+            .await?;
 
         let album_extra = response.data.extra;
         let tracks = response
@@ -297,8 +294,7 @@ impl MetadataProvider for TidalProvider {
         // We use the same endpoint but extract the albums section.
         let parsed = self
             .hifi_get::<HifiResponse>("/search/", vec![("a".to_string(), query.to_string())])
-            .await
-            ?;
+            .await?;
 
         let albums = parsed.data.albums.map(|p| p.items).unwrap_or_default();
 
@@ -329,8 +325,7 @@ impl MetadataProvider for TidalProvider {
     async fn search_tracks(&self, query: &str) -> Result<Vec<ProviderSearchTrack>, ProviderError> {
         let parsed = self
             .hifi_get::<HifiResponse>("/search/", vec![("a".to_string(), query.to_string())])
-            .await
-            ?;
+            .await?;
 
         let tracks = parsed.data.tracks.map(|p| p.items).unwrap_or_default();
 
@@ -387,8 +382,7 @@ impl DownloadSource for TidalProvider {
                     ("quality".to_string(), quality_str),
                 ],
             )
-            .await
-            ?;
+            .await?;
 
         match extract_download_payload(&playback.data) {
             Ok(payload) => Ok(payload),
@@ -413,8 +407,7 @@ impl DownloadSource for TidalProvider {
                             ("quality".to_string(), "LOSSLESS".to_string()),
                         ],
                     )
-                    .await
-                    ?;
+                    .await?;
 
                 extract_download_payload(&fallback_playback.data)
             }

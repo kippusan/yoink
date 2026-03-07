@@ -199,7 +199,9 @@ pub(super) async fn remove_album_artist(
         if let Some(album) = albums.iter().find(|a| a.id == album_id)
             && album.artist_ids.len() <= 1
         {
-            return Err(AppError::conflict("cannot remove the only artist from an album"));
+            return Err(AppError::conflict(
+                "cannot remove the only artist from an album",
+            ));
         }
     }
     db::remove_album_artist(&state.db, album_id, artist_id).await?;
@@ -236,12 +238,12 @@ pub(super) async fn add_album(
     .await?;
 
     // 2. Fetch album metadata from the provider.
-    let prov = state
-        .registry
-        .metadata_provider(&provider)
-        .ok_or_else(|| {
-            AppError::unavailable("metadata provider", format!("unknown provider '{provider}'"))
-        })?;
+    let prov = state.registry.metadata_provider(&provider).ok_or_else(|| {
+        AppError::unavailable(
+            "metadata provider",
+            format!("unknown provider '{provider}'"),
+        )
+    })?;
 
     let albums = prov.fetch_albums(&artist_external_id).await?;
 
@@ -408,9 +410,7 @@ mod tests {
             albums.push(a2.clone());
         }
 
-        super::bulk_monitor(&state, artist.id, false)
-            .await
-            .unwrap();
+        super::bulk_monitor(&state, artist.id, false).await.unwrap();
 
         let albums = state.monitored_albums.read().await;
         assert!(albums.iter().all(|a| !a.monitored));
@@ -463,10 +463,12 @@ mod tests {
         let result = super::remove_album_artist(&state, album.id, a1.id).await;
 
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("cannot remove the only artist"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("cannot remove the only artist")
+        );
     }
 
     // ── MergeAlbums ─────────────────────────────────────────────
@@ -525,7 +527,12 @@ mod tests {
         let result = super::merge_albums(&state, album.id, album.id, None, None).await;
 
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("must be different"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("must be different")
+        );
     }
 
     // ── AddAlbum with mock provider ─────────────────────────────

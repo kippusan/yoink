@@ -26,7 +26,9 @@ use yoink_shared::Quality;
 
 /// Create an in-memory SQLite pool with all migrations applied.
 pub(crate) async fn test_db() -> SqlitePool {
-    db::open("sqlite::memory:").await.expect("failed to open in-memory test db")
+    db::open("sqlite::memory:")
+        .await
+        .expect("failed to open in-memory test db")
 }
 
 // ── AppState helpers ────────────────────────────────────────────────
@@ -76,16 +78,14 @@ pub(crate) async fn seed_artist(pool: &SqlitePool, name: &str) -> MonitoredArtis
         monitored: true,
         added_at: Utc::now(),
     };
-    db::upsert_artist(pool, &artist).await.expect("seed_artist failed");
+    db::upsert_artist(pool, &artist)
+        .await
+        .expect("seed_artist failed");
     artist
 }
 
 /// Insert a monitored album into the DB and return it.
-pub(crate) async fn seed_album(
-    pool: &SqlitePool,
-    artist_id: Uuid,
-    title: &str,
-) -> MonitoredAlbum {
+pub(crate) async fn seed_album(pool: &SqlitePool, artist_id: Uuid, title: &str) -> MonitoredAlbum {
     let album = MonitoredAlbum {
         id: Uuid::now_v7(),
         artist_id,
@@ -102,16 +102,14 @@ pub(crate) async fn seed_album(
         partially_wanted: false,
         added_at: Utc::now(),
     };
-    db::upsert_album(pool, &album).await.expect("seed_album failed");
+    db::upsert_album(pool, &album)
+        .await
+        .expect("seed_album failed");
     album
 }
 
 /// Insert N tracks for an album and return them.
-pub(crate) async fn seed_tracks(
-    pool: &SqlitePool,
-    album_id: Uuid,
-    count: u32,
-) -> Vec<TrackInfo> {
+pub(crate) async fn seed_tracks(pool: &SqlitePool, album_id: Uuid, count: u32) -> Vec<TrackInfo> {
     let mut tracks = Vec::with_capacity(count as usize);
     for i in 1..=count {
         let track = TrackInfo {
@@ -280,17 +278,11 @@ impl MetadataProvider for MockMetadataProvider {
         None
     }
 
-    async fn search_albums(
-        &self,
-        _query: &str,
-    ) -> Result<Vec<ProviderSearchAlbum>, ProviderError> {
+    async fn search_albums(&self, _query: &str) -> Result<Vec<ProviderSearchAlbum>, ProviderError> {
         self.search_albums_result.lock().await.clone()
     }
 
-    async fn search_tracks(
-        &self,
-        _query: &str,
-    ) -> Result<Vec<ProviderSearchTrack>, ProviderError> {
+    async fn search_tracks(&self, _query: &str) -> Result<Vec<ProviderSearchTrack>, ProviderError> {
         self.search_tracks_result.lock().await.clone()
     }
 }

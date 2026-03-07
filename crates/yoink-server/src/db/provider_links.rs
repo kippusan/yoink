@@ -204,7 +204,9 @@ mod tests {
             external_name: Some("Old Name".to_string()),
             image_ref: None,
         };
-        super::upsert_artist_provider_link(&pool, &link).await.unwrap();
+        super::upsert_artist_provider_link(&pool, &link)
+            .await
+            .unwrap();
 
         // Upsert again with same (provider, external_id) but updated name
         let updated = super::ArtistProviderLink {
@@ -212,7 +214,9 @@ mod tests {
             external_name: Some("New Name".to_string()),
             ..link.clone()
         };
-        super::upsert_artist_provider_link(&pool, &updated).await.unwrap();
+        super::upsert_artist_provider_link(&pool, &updated)
+            .await
+            .unwrap();
 
         let links = super::load_artist_provider_links(&pool, artist.id)
             .await
@@ -327,7 +331,9 @@ mod tests {
             external_title: None,
             cover_ref: None,
         };
-        super::upsert_album_provider_link(&pool, &link).await.unwrap();
+        super::upsert_album_provider_link(&pool, &link)
+            .await
+            .unwrap();
 
         // Should now point to album2
         let found = super::find_album_by_provider_link(&pool, "tidal", "SAME_EXT")

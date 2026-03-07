@@ -53,8 +53,7 @@ pub(crate) async fn merge_albums(
         ));
     }
 
-    let source_links = db::load_album_provider_links(&state.db, source_album_id)
-        .await?;
+    let source_links = db::load_album_provider_links(&state.db, source_album_id).await?;
 
     for link in source_links {
         let moved = db::AlbumProviderLink {
@@ -69,10 +68,8 @@ pub(crate) async fn merge_albums(
         db::upsert_album_provider_link(&state.db, &moved).await?;
     }
 
-    db::reassign_tracks_to_album(&state.db, source_album_id, target_album_id)
-        .await?;
-    db::reassign_jobs_to_album(&state.db, source_album_id, target_album_id)
-        .await?;
+    db::reassign_tracks_to_album(&state.db, source_album_id, target_album_id).await?;
+    db::reassign_jobs_to_album(&state.db, source_album_id, target_album_id).await?;
 
     {
         let mut albums = state.monitored_albums.write().await;
@@ -93,8 +90,7 @@ pub(crate) async fn merge_albums(
         albums.retain(|a| a.id != source_album_id);
     }
 
-    db::delete_album(&state.db, source_album_id)
-        .await?;
+    db::delete_album(&state.db, source_album_id).await?;
 
     Ok(())
 }

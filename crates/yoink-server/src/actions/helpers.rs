@@ -168,12 +168,12 @@ pub(super) async fn store_album_tracks(
     album_id: Uuid,
     monitor_all: bool,
 ) -> AppResult<()> {
-    let prov = state
-        .registry
-        .metadata_provider(provider)
-        .ok_or_else(|| {
-            AppError::unavailable("metadata provider", format!("unknown provider '{provider}'"))
-        })?;
+    let prov = state.registry.metadata_provider(provider).ok_or_else(|| {
+        AppError::unavailable(
+            "metadata provider",
+            format!("unknown provider '{provider}'"),
+        )
+    })?;
 
     let (tracks, _album_extra) = prov.fetch_tracks(external_album_id).await?;
 

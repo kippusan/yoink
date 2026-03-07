@@ -148,11 +148,9 @@ impl ProviderRegistry {
         provider_id: &str,
         query: &str,
     ) -> Result<Vec<ProviderArtist>, ProviderError> {
-        let provider = self
-            .metadata_provider(provider_id)
-            .ok_or_else(|| {
-                ProviderError::not_found("registry", format!("metadata provider '{provider_id}'"))
-            })?;
+        let provider = self.metadata_provider(provider_id).ok_or_else(|| {
+            ProviderError::not_found("registry", format!("metadata provider '{provider_id}'"))
+        })?;
         provider.search_artists(query).await
     }
 }

@@ -457,9 +457,7 @@ impl MetadataProvider for MusicBrainzProvider {
         let release = self
             .best_release_for_group(external_album_id)
             .await?
-            .ok_or_else(|| {
-                ProviderError::not_found("musicbrainz", "release in release group")
-            })?;
+            .ok_or_else(|| ProviderError::not_found("musicbrainz", "release in release group"))?;
 
         // Now fetch the full release with recordings (which contain ISRCs)
         let full_release = MbRelease::fetch()

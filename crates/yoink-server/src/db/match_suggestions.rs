@@ -286,7 +286,9 @@ mod tests {
         let artist = seed_artist(&pool, "Artist").await;
         let suggestion = make_suggestion(artist.id);
 
-        super::upsert_match_suggestion(&pool, &suggestion).await.unwrap();
+        super::upsert_match_suggestion(&pool, &suggestion)
+            .await
+            .unwrap();
 
         let loaded = super::load_match_suggestions_for_scope(&pool, "artist", artist.id)
             .await
@@ -303,7 +305,9 @@ mod tests {
         let pool = test_db().await;
         let artist = seed_artist(&pool, "Artist").await;
         let suggestion = make_suggestion(artist.id);
-        super::upsert_match_suggestion(&pool, &suggestion).await.unwrap();
+        super::upsert_match_suggestion(&pool, &suggestion)
+            .await
+            .unwrap();
 
         let loaded = super::load_match_suggestion_by_id(&pool, suggestion.id)
             .await
@@ -322,7 +326,9 @@ mod tests {
         let pool = test_db().await;
         let artist = seed_artist(&pool, "Artist").await;
         let suggestion = make_suggestion(artist.id);
-        super::upsert_match_suggestion(&pool, &suggestion).await.unwrap();
+        super::upsert_match_suggestion(&pool, &suggestion)
+            .await
+            .unwrap();
 
         super::set_match_suggestion_status(&pool, suggestion.id, "accepted")
             .await
@@ -371,7 +377,9 @@ mod tests {
 
         let mut suggestion = make_suggestion(artist.id);
         suggestion.confidence = 70;
-        super::upsert_match_suggestion(&pool, &suggestion).await.unwrap();
+        super::upsert_match_suggestion(&pool, &suggestion)
+            .await
+            .unwrap();
 
         // Accept the suggestion
         super::set_match_suggestion_status(&pool, suggestion.id, "accepted")
@@ -382,7 +390,9 @@ mod tests {
         // because the WHERE clause excludes accepted/dismissed
         suggestion.confidence = 95;
         suggestion.id = Uuid::now_v7(); // new id but same unique key
-        super::upsert_match_suggestion(&pool, &suggestion).await.unwrap();
+        super::upsert_match_suggestion(&pool, &suggestion)
+            .await
+            .unwrap();
 
         let loaded = super::load_match_suggestions_for_scope(&pool, "artist", artist.id)
             .await

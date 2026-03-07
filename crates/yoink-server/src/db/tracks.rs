@@ -263,7 +263,9 @@ mod tests {
                 monitored: false,
                 acquired: false,
             };
-            crate::db::upsert_track(&pool, &track, album.id).await.unwrap();
+            crate::db::upsert_track(&pool, &track, album.id)
+                .await
+                .unwrap();
         }
 
         let loaded = super::load_tracks_for_album(&pool, album.id).await.unwrap();
@@ -278,7 +280,9 @@ mod tests {
         let album = seed_album(&pool, artist.id, "Album").await;
         let tracks = seed_tracks(&pool, album.id, 1).await;
 
-        super::update_track_flags(&pool, tracks[0].id, true, true).await.unwrap();
+        super::update_track_flags(&pool, tracks[0].id, true, true)
+            .await
+            .unwrap();
 
         let loaded = super::load_tracks_for_album(&pool, album.id).await.unwrap();
         assert!(loaded[0].monitored);
@@ -296,7 +300,9 @@ mod tests {
         assert!(!super::has_wanted_tracks(&pool, album.id).await.unwrap());
 
         // Monitor one track (but don't acquire it)
-        super::update_track_flags(&pool, tracks[0].id, true, false).await.unwrap();
+        super::update_track_flags(&pool, tracks[0].id, true, false)
+            .await
+            .unwrap();
         assert!(super::has_wanted_tracks(&pool, album.id).await.unwrap());
     }
 
@@ -307,7 +313,9 @@ mod tests {
         let album = seed_album(&pool, artist.id, "Album").await;
         let tracks = seed_tracks(&pool, album.id, 1).await;
 
-        super::update_track_flags(&pool, tracks[0].id, true, true).await.unwrap();
+        super::update_track_flags(&pool, tracks[0].id, true, true)
+            .await
+            .unwrap();
         assert!(!super::has_wanted_tracks(&pool, album.id).await.unwrap());
     }
 
@@ -319,7 +327,11 @@ mod tests {
         seed_tracks(&pool, album.id, 2).await;
 
         // No tracks monitored at all → degenerate true
-        assert!(super::all_monitored_tracks_acquired(&pool, album.id).await.unwrap());
+        assert!(
+            super::all_monitored_tracks_acquired(&pool, album.id)
+                .await
+                .unwrap()
+        );
     }
 
     #[tokio::test]
@@ -330,9 +342,17 @@ mod tests {
         let tracks = seed_tracks(&pool, album.id, 2).await;
 
         // Monitor both, acquire only one
-        super::update_track_flags(&pool, tracks[0].id, true, true).await.unwrap();
-        super::update_track_flags(&pool, tracks[1].id, true, false).await.unwrap();
-        assert!(!super::all_monitored_tracks_acquired(&pool, album.id).await.unwrap());
+        super::update_track_flags(&pool, tracks[0].id, true, true)
+            .await
+            .unwrap();
+        super::update_track_flags(&pool, tracks[1].id, true, false)
+            .await
+            .unwrap();
+        assert!(
+            !super::all_monitored_tracks_acquired(&pool, album.id)
+                .await
+                .unwrap()
+        );
     }
 
     #[tokio::test]
@@ -342,9 +362,17 @@ mod tests {
         let album = seed_album(&pool, artist.id, "Album").await;
         let tracks = seed_tracks(&pool, album.id, 2).await;
 
-        super::update_track_flags(&pool, tracks[0].id, true, true).await.unwrap();
-        super::update_track_flags(&pool, tracks[1].id, true, true).await.unwrap();
-        assert!(super::all_monitored_tracks_acquired(&pool, album.id).await.unwrap());
+        super::update_track_flags(&pool, tracks[0].id, true, true)
+            .await
+            .unwrap();
+        super::update_track_flags(&pool, tracks[1].id, true, true)
+            .await
+            .unwrap();
+        assert!(
+            super::all_monitored_tracks_acquired(&pool, album.id)
+                .await
+                .unwrap()
+        );
     }
 
     #[tokio::test]
@@ -354,7 +382,9 @@ mod tests {
         let album = seed_album(&pool, artist.id, "Album").await;
         let tracks = seed_tracks(&pool, album.id, 3).await;
 
-        super::update_track_flags(&pool, tracks[1].id, true, false).await.unwrap();
+        super::update_track_flags(&pool, tracks[1].id, true, false)
+            .await
+            .unwrap();
 
         let monitored = super::load_monitored_tracks_for_album(&pool, album.id)
             .await
@@ -384,14 +414,18 @@ mod tests {
             monitored: false,
             acquired: false,
         };
-        crate::db::upsert_track(&pool, &track, album.id).await.unwrap();
+        crate::db::upsert_track(&pool, &track, album.id)
+            .await
+            .unwrap();
 
         // Upsert again with None for track_artist and file_path
         // The COALESCE should preserve the existing values
         track.track_artist = None;
         track.file_path = None;
         track.title = "Song (Remastered)".to_string();
-        crate::db::upsert_track(&pool, &track, album.id).await.unwrap();
+        crate::db::upsert_track(&pool, &track, album.id)
+            .await
+            .unwrap();
 
         let loaded = super::load_tracks_for_album(&pool, album.id).await.unwrap();
         assert_eq!(loaded[0].title, "Song (Remastered)");
@@ -465,5 +499,4 @@ mod tests {
             .unwrap();
         assert!(not_found.is_none());
     }
-
 }

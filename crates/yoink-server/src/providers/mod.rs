@@ -387,10 +387,7 @@ mod tests {
     #[test]
     fn extract_artist_display_array_of_strings() {
         let mut extra = HashMap::new();
-        extra.insert(
-            "artists".to_string(),
-            json!(["Artist X", "Artist Y"]),
-        );
+        extra.insert("artists".to_string(), json!(["Artist X", "Artist Y"]));
         assert_eq!(
             extract_artist_display(&extra),
             Some("Artist X; Artist Y".to_string())
@@ -430,10 +427,7 @@ mod tests {
     #[test]
     fn extract_artist_display_prefers_artists_over_artist() {
         let mut extra = HashMap::new();
-        extra.insert(
-            "artists".to_string(),
-            json!([{"name": "From Artists Key"}]),
-        );
+        extra.insert("artists".to_string(), json!([{"name": "From Artists Key"}]));
         extra.insert("artist".to_string(), json!("From Artist Key"));
         // "artists" is checked first
         assert_eq!(
@@ -447,7 +441,10 @@ mod tests {
     #[test]
     fn provider_error_display() {
         let err = ProviderError::invalid_response("test", "something went wrong");
-        assert_eq!(format!("{err}"), "test invalid response: something went wrong");
+        assert_eq!(
+            format!("{err}"),
+            "test invalid response: something went wrong"
+        );
     }
 
     #[test]

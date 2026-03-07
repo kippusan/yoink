@@ -152,7 +152,9 @@ mod tests {
         let a2 = seed_artist(&pool, "Artist 2").await;
         let album = seed_album(&pool, a1.id, "Album").await;
 
-        super::add_album_artist(&pool, album.id, a2.id).await.unwrap();
+        super::add_album_artist(&pool, album.id, a2.id)
+            .await
+            .unwrap();
 
         let ids = super::load_album_artist_ids(&pool, album.id).await.unwrap();
         assert_eq!(ids.len(), 2);
@@ -167,7 +169,9 @@ mod tests {
         let album = seed_album(&pool, a1.id, "Album").await;
 
         // a1 is already in the junction table from seed_album
-        super::add_album_artist(&pool, album.id, a1.id).await.unwrap();
+        super::add_album_artist(&pool, album.id, a1.id)
+            .await
+            .unwrap();
 
         let ids = super::load_album_artist_ids(&pool, album.id).await.unwrap();
         assert_eq!(ids.len(), 1); // Not duplicated
@@ -179,9 +183,13 @@ mod tests {
         let a1 = seed_artist(&pool, "Artist 1").await;
         let a2 = seed_artist(&pool, "Artist 2").await;
         let album = seed_album(&pool, a1.id, "Album").await;
-        super::add_album_artist(&pool, album.id, a2.id).await.unwrap();
+        super::add_album_artist(&pool, album.id, a2.id)
+            .await
+            .unwrap();
 
-        super::remove_album_artist(&pool, album.id, a1.id).await.unwrap();
+        super::remove_album_artist(&pool, album.id, a1.id)
+            .await
+            .unwrap();
 
         let ids = super::load_album_artist_ids(&pool, album.id).await.unwrap();
         assert_eq!(ids, vec![a2.id]);
@@ -194,7 +202,9 @@ mod tests {
         let a2 = seed_artist(&pool, "Artist 2").await;
         let album1 = seed_album(&pool, a1.id, "Album 1").await;
         let album2 = seed_album(&pool, a2.id, "Album 2").await;
-        super::add_album_artist(&pool, album1.id, a2.id).await.unwrap();
+        super::add_album_artist(&pool, album1.id, a2.id)
+            .await
+            .unwrap();
 
         let all = super::load_all_album_artist_ids(&pool).await.unwrap();
         // album1 has [a1, a2], album2 has [a2]
@@ -219,9 +229,13 @@ mod tests {
         let a1 = seed_artist(&pool, "Artist 1").await;
         let a2 = seed_artist(&pool, "Artist 2").await;
         let album = seed_album(&pool, a1.id, "Album").await;
-        super::add_album_artist(&pool, album.id, a2.id).await.unwrap();
+        super::add_album_artist(&pool, album.id, a2.id)
+            .await
+            .unwrap();
 
-        super::delete_album_artists_by_artist(&pool, a1.id).await.unwrap();
+        super::delete_album_artists_by_artist(&pool, a1.id)
+            .await
+            .unwrap();
 
         let ids = super::load_album_artist_ids(&pool, album.id).await.unwrap();
         assert_eq!(ids, vec![a2.id]); // Only a2 remains

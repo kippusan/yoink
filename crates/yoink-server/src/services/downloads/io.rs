@@ -50,11 +50,9 @@ async fn download_to_file(http: &reqwest::Client, url: &str, path: &Path) -> App
             continue;
         }
         for slice in chunk.chunks(DOWNLOAD_CHUNK_SIZE) {
-            file.write_all(slice)
-                .await
-                .map_err(|err| {
-                    AppError::filesystem("write file", path.display().to_string(), err)
-                })?;
+            file.write_all(slice).await.map_err(|err| {
+                AppError::filesystem("write file", path.display().to_string(), err)
+            })?;
         }
     }
 
@@ -90,15 +88,13 @@ async fn download_dash_segments_to_file(
             continue;
         }
         for slice in bytes.chunks(DOWNLOAD_CHUNK_SIZE) {
-            file.write_all(slice)
-                .await
-                .map_err(|err| {
-                    AppError::filesystem(
-                        format!("write dash segment #{idx}"),
-                        path.display().to_string(),
-                        err,
-                    )
-                })?;
+            file.write_all(slice).await.map_err(|err| {
+                AppError::filesystem(
+                    format!("write dash segment #{idx}"),
+                    path.display().to_string(),
+                    err,
+                )
+            })?;
         }
     }
 
@@ -240,10 +236,7 @@ mod tests {
     #[test]
     fn sanitize_unicode_preserved() {
         assert_eq!(sanitize_path_component("Bjork"), "Bjork");
-        assert_eq!(
-            sanitize_path_component("Sigur Ros"),
-            "Sigur Ros"
-        );
+        assert_eq!(sanitize_path_component("Sigur Ros"), "Sigur Ros");
     }
 
     // ── parse_track_number_from_path ────────────────────────────

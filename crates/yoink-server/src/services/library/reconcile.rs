@@ -4,9 +4,7 @@ use tokio::fs;
 use tracing::{info, warn};
 use uuid::Uuid;
 
-use crate::{
-    db, error::AppResult, services::downloads::sanitize_path_component, state::AppState,
-};
+use crate::{db, error::AppResult, services::downloads::sanitize_path_component, state::AppState};
 
 use super::{
     album_dir_has_downloaded_audio, normalize_text, parse_release_year, recompute_partially_wanted,

@@ -12,8 +12,7 @@ pub(super) async fn cancel_download(state: &AppState, job_id: Uuid) -> AppResult
         job.status = yoink_shared::DownloadStatus::Failed;
         job.error = Some("Cancelled by user".to_string());
         job.updated_at = Utc::now();
-        db::update_job(&state.db, job)
-            .await?;
+        db::update_job(&state.db, job).await?;
         info!(%job_id, "Cancelled download job");
     }
     drop(jobs);
@@ -35,16 +34,16 @@ pub(super) async fn clear_completed(state: &AppState) -> AppResult<()> {
 pub(super) async fn retry_download(state: &AppState, album_id: Uuid) -> AppResult<()> {
     {
         let mut jobs = state.download_jobs.write().await;
-        if let Some(job) = jobs.iter_mut().find(|j| {
-            j.album_id == album_id && j.status == yoink_shared::DownloadStatus::Failed
-        }) {
+        if let Some(job) = jobs
+            .iter_mut()
+            .find(|j| j.album_id == album_id && j.status == yoink_shared::DownloadStatus::Failed)
+        {
             let previous_quality = job.quality;
             job.status = yoink_shared::DownloadStatus::Queued;
             job.quality = state.default_quality;
             job.error = None;
             job.updated_at = Utc::now();
-            db::update_job(&state.db, job)
-                .await?;
+            db::update_job(&state.db, job).await?;
             info!(
                 %album_id,
                 job_id = %job.id,

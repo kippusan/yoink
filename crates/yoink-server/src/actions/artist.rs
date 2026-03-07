@@ -18,11 +18,10 @@ pub(super) async fn add_artist(
     let external_url =
         external_url.or_else(|| helpers::default_provider_artist_url(&provider, &external_id));
 
-    let existing_artist_id =
-        db::find_artist_by_provider_link(&state.db, &provider, &external_id)
-            .await
-            .ok()
-            .flatten();
+    let existing_artist_id = db::find_artist_by_provider_link(&state.db, &provider, &external_id)
+        .await
+        .ok()
+        .flatten();
 
     let artist_id = if let Some(id) = existing_artist_id {
         id
@@ -97,8 +96,7 @@ pub(super) async fn remove_artist(
         let mut albums = state.monitored_albums.write().await;
         let mut sole_album_ids = Vec::new();
         for album in albums.iter_mut() {
-            let is_related =
-                album.artist_id == artist_id || album.artist_ids.contains(&artist_id);
+            let is_related = album.artist_id == artist_id || album.artist_ids.contains(&artist_id);
             if !is_related {
                 continue;
             }
@@ -208,10 +206,7 @@ pub(super) async fn fetch_artist_bio(state: &AppState, artist_id: Uuid) -> AppRe
     Ok(())
 }
 
-pub(super) async fn sync_artist_albums(
-    state: &AppState,
-    artist_id: Uuid,
-) -> AppResult<()> {
+pub(super) async fn sync_artist_albums(state: &AppState, artist_id: Uuid) -> AppResult<()> {
     services::sync_artist_albums(state, artist_id).await?;
     {
         let artists = state.monitored_artists.read().await;
@@ -339,7 +334,9 @@ mod tests {
         let mut album = seed_album(&state.db, a1.id, "Collab").await;
         album.artist_ids = vec![a1.id, a2.id];
         db::upsert_album(&state.db, &album).await.unwrap();
-        db::add_album_artist(&state.db, album.id, a2.id).await.unwrap();
+        db::add_album_artist(&state.db, album.id, a2.id)
+            .await
+            .unwrap();
 
         let job = seed_job(&state.db, album.id, crate::models::DownloadStatus::Queued).await;
 
@@ -460,14 +457,9 @@ mod tests {
             Some("https://www.deezer.com/artist/D999")
         );
 
-        super::unlink_artist_provider(
-            &state,
-            artist.id,
-            "deezer".to_string(),
-            "D999".to_string(),
-        )
-        .await
-        .unwrap();
+        super::unlink_artist_provider(&state, artist.id, "deezer".to_string(), "D999".to_string())
+            .await
+            .unwrap();
 
         let links = db::load_artist_provider_links(&state.db, artist.id)
             .await

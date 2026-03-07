@@ -384,22 +384,16 @@ mod tests {
     use tower::ServiceExt;
 
     use crate::models::DownloadStatus;
-    use crate::providers::registry::ProviderRegistry;
     use crate::providers::ProviderArtist;
+    use crate::providers::registry::ProviderRegistry;
     use crate::test_helpers::*;
 
     use super::build_router;
 
     /// Helper: send a GET request to a path and return the status + body bytes.
-    async fn get(
-        state: crate::state::AppState,
-        path: &str,
-    ) -> (StatusCode, Vec<u8>) {
+    async fn get(state: crate::state::AppState, path: &str) -> (StatusCode, Vec<u8>) {
         let app = build_router(state);
-        let req = Request::builder()
-            .uri(path)
-            .body(Body::empty())
-            .unwrap();
+        let req = Request::builder().uri(path).body(Body::empty()).unwrap();
         let resp = app.oneshot(req).await.unwrap();
         let status = resp.status();
         let body = axum::body::to_bytes(resp.into_body(), 1024 * 1024)

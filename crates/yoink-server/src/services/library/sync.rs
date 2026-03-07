@@ -149,8 +149,7 @@ pub(crate) async fn sync_artist_albums(state: &AppState, artist_id: Uuid) -> App
                 if !credits.is_empty() {
                     existing.artist_credits = credits.clone();
                 }
-                db::upsert_album(&state.db, existing)
-                    .await?;
+                db::upsert_album(&state.db, existing).await?;
             }
             existing_id
         } else {
@@ -174,8 +173,7 @@ pub(crate) async fn sync_artist_albums(state: &AppState, artist_id: Uuid) -> App
                 partially_wanted: false,
                 added_at: Utc::now(),
             };
-            db::upsert_album(&state.db, &album)
-                .await?;
+            db::upsert_album(&state.db, &album).await?;
             albums.push(album);
             new_id
         };
@@ -193,8 +191,7 @@ pub(crate) async fn sync_artist_albums(state: &AppState, artist_id: Uuid) -> App
                 external_title: Some(album.title.clone()),
                 cover_ref: album.cover_ref.clone(),
             };
-            db::upsert_album_provider_link(&state.db, &link)
-                .await?;
+            db::upsert_album_provider_link(&state.db, &link).await?;
 
             // Collect extra artists from this provider (skip the artist we're syncing for)
             for pa in &album.artists {
@@ -219,8 +216,7 @@ pub(crate) async fn sync_artist_albums(state: &AppState, artist_id: Uuid) -> App
                     album.artist_ids = resolved_ids.clone();
                     album.artist_id = resolved_ids[0];
                 }
-                db::set_album_artists(&state.db, album_id, &resolved_ids)
-                    .await?;
+                db::set_album_artists(&state.db, album_id, &resolved_ids).await?;
             }
         }
     }
@@ -243,8 +239,7 @@ pub(crate) async fn sync_artist_albums(state: &AppState, artist_id: Uuid) -> App
         }
 
         for id in &ids_to_remove {
-            db::delete_album(&state.db, *id)
-                .await?;
+            db::delete_album(&state.db, *id).await?;
         }
         albums.retain(|album| !ids_to_remove.contains(&album.id));
         removed_album_ids = ids_to_remove;
@@ -433,10 +428,7 @@ mod tests {
     #[test]
     fn normalize_title_normalizes_unicode_quotes() {
         // Smart quotes -> ASCII
-        assert_eq!(
-            normalize_title("It\u{2019}s A Test"),
-            "it's a test"
-        );
+        assert_eq!(normalize_title("It\u{2019}s A Test"), "it's a test");
     }
 
     #[test]
@@ -450,18 +442,12 @@ mod tests {
 
     #[test]
     fn normalize_title_strips_featuring() {
-        assert_eq!(
-            normalize_title("Song (feat. Artist)"),
-            "song"
-        );
+        assert_eq!(normalize_title("Song (feat. Artist)"), "song");
     }
 
     #[test]
     fn normalize_title_strips_featuring_bracket() {
-        assert_eq!(
-            normalize_title("Song [ft. Artist]"),
-            "song"
-        );
+        assert_eq!(normalize_title("Song [ft. Artist]"), "song");
     }
 
     #[test]
@@ -539,8 +525,18 @@ mod tests {
     fn prefer_album_with_cover() {
         let with_cover = make_provider_album("A", Some("2024"), Some("cover_ref"), false);
         let without_cover = make_provider_album("A", Some("2024"), None, false);
-        assert!(should_prefer_album("tidal", &without_cover, "tidal", &with_cover));
-        assert!(!should_prefer_album("tidal", &with_cover, "tidal", &without_cover));
+        assert!(should_prefer_album(
+            "tidal",
+            &without_cover,
+            "tidal",
+            &with_cover
+        ));
+        assert!(!should_prefer_album(
+            "tidal",
+            &with_cover,
+            "tidal",
+            &without_cover
+        ));
     }
 
     #[test]

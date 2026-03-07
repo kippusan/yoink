@@ -346,7 +346,9 @@ mod tests {
         seed_album(&pool, artist1.id, "Album 2").await;
         seed_album(&pool, artist2.id, "Album 3").await;
 
-        super::delete_albums_by_artist(&pool, artist1.id).await.unwrap();
+        super::delete_albums_by_artist(&pool, artist1.id)
+            .await
+            .unwrap();
 
         let albums = super::load_albums(&pool).await.unwrap();
         assert_eq!(albums.len(), 1);
@@ -363,7 +365,9 @@ mod tests {
         seed_job(&pool, album1.id, crate::models::DownloadStatus::Queued).await;
         seed_job(&pool, album2.id, crate::models::DownloadStatus::Queued).await;
 
-        super::delete_albums_by_artist(&pool, artist1.id).await.unwrap();
+        super::delete_albums_by_artist(&pool, artist1.id)
+            .await
+            .unwrap();
 
         let jobs = crate::db::load_jobs(&pool).await.unwrap();
         assert_eq!(jobs.len(), 1);

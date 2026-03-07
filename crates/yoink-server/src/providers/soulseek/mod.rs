@@ -266,9 +266,7 @@ impl SoulSeekSource {
         let token_resp: TokenResponse = resp
             .json()
             .await
-            .map_err(|e| {
-                ProviderError::parse("soulseek", "slskd login response", e.to_string())
-            })?;
+            .map_err(|e| ProviderError::parse("soulseek", "slskd login response", e.to_string()))?;
 
         let token = token_resp.token;
         *self.token.write().await = Some(token.clone());
@@ -292,12 +290,9 @@ impl SoulSeekSource {
             req = req.bearer_auth(t);
         }
 
-        let resp = req
-            .send()
-            .await
-            .map_err(|e| {
-                ProviderError::http("soulseek", format!("slskd POST {path}"), e.to_string())
-            })?;
+        let resp = req.send().await.map_err(|e| {
+            ProviderError::http("soulseek", format!("slskd POST {path}"), e.to_string())
+        })?;
 
         if !resp.status().is_success() {
             let status = resp.status();
@@ -314,11 +309,13 @@ impl SoulSeekSource {
             ));
         }
 
-        resp.json()
-            .await
-            .map_err(|e| {
-                ProviderError::parse("soulseek", format!("slskd POST {path} decode"), e.to_string())
-            })
+        resp.json().await.map_err(|e| {
+            ProviderError::parse(
+                "soulseek",
+                format!("slskd POST {path} decode"),
+                e.to_string(),
+            )
+        })
     }
 
     /// Authenticated GET that deserializes a JSON response.
@@ -330,12 +327,9 @@ impl SoulSeekSource {
             req = req.bearer_auth(t);
         }
 
-        let resp = req
-            .send()
-            .await
-            .map_err(|e| {
-                ProviderError::http("soulseek", format!("slskd GET {path}"), e.to_string())
-            })?;
+        let resp = req.send().await.map_err(|e| {
+            ProviderError::http("soulseek", format!("slskd GET {path}"), e.to_string())
+        })?;
 
         if !resp.status().is_success() {
             let status = resp.status();
@@ -352,11 +346,13 @@ impl SoulSeekSource {
             ));
         }
 
-        resp.json()
-            .await
-            .map_err(|e| {
-                ProviderError::parse("soulseek", format!("slskd GET {path} decode"), e.to_string())
-            })
+        resp.json().await.map_err(|e| {
+            ProviderError::parse(
+                "soulseek",
+                format!("slskd GET {path} decode"),
+                e.to_string(),
+            )
+        })
     }
 
     /// Kick off a search, retrying on 429 rate-limit responses.
@@ -471,9 +467,7 @@ impl SoulSeekSource {
         let resp = req
             .send()
             .await
-            .map_err(|e| {
-                ProviderError::http("soulseek", "enqueue download", e.to_string())
-            })?;
+            .map_err(|e| ProviderError::http("soulseek", "enqueue download", e.to_string()))?;
 
         if !resp.status().is_success() {
             return Err(ProviderError::http(

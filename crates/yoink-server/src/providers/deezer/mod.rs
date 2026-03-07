@@ -215,9 +215,7 @@ impl DeezerProvider {
 
         // Deezer returns HTTP 200 even for errors — check the JSON body.
         if let Ok(err) = serde_json::from_str::<DeezerErrorBody>(&body) {
-            if err.error.code == 4
-                || err.error.error_type.eq_ignore_ascii_case("QuotaException")
-            {
+            if err.error.code == 4 || err.error.error_type.eq_ignore_ascii_case("QuotaException") {
                 return Err(ProviderError::rate_limited(
                     "deezer",
                     format!(

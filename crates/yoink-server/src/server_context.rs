@@ -583,6 +583,7 @@ fn build_fetch_library_tracks_fn(state: &AppState) -> yoink_shared::FetchLibrary
                     track,
                     album_id: album.id,
                     album_title: album.title.clone(),
+                    album_cover_url: album.cover_url.clone(),
                     artist_id: album.artist_id,
                     artist_name: artist_name.clone(),
                 }));

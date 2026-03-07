@@ -167,6 +167,7 @@ pub struct LibraryTrack {
     pub track: TrackInfo,
     pub album_id: Uuid,
     pub album_title: String,
+    pub album_cover_url: Option<String>,
     pub artist_id: Uuid,
     pub artist_name: String,
 }

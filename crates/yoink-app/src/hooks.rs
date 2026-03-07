@@ -10,7 +10,7 @@ pub fn set_page_title(title: &str) {
         let full = if title.is_empty() {
             "yoink".to_string()
         } else {
-            format!("{title} \u{2014} yoink")
+            format!("{title} · yoink")
         };
         if let Ok(doc) = leptos::prelude::document().query_selector("title")
             && let Some(el) = doc

@@ -28,6 +28,8 @@ This way (just like in IT security) you can use multiple metadata sources to cov
 - **Artist profiles**: Unified artist pages combine a single artist from all of your providers (you still have to manually add them)
 - **Lightweight & fast** — Built with Rust for minimal resource usage; runs happily on a Raspberry Pi or a [BEEFY COMPUTER](https://www.youtube.com/watch?v=ZMGEO4URQqQ)
 
+Other features and their status can be found in the [roadmap](ROADMAP.md).
+
 ### Supported Providers
 
 | Provider        | Type                 | Notes                                                        |

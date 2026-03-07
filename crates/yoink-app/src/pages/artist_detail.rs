@@ -6,7 +6,7 @@ use lucide_leptos::{
 
 use yoink_shared::{
     ArtistImageOption, DownloadJob, DownloadStatus, MatchSuggestion, MonitoredAlbum,
-    MonitoredArtist, ProviderLink, ServerAction, album_cover_url, album_type_label,
+    MonitoredArtist, ProviderLink, ServerAction, album_type_label,
     album_type_rank, build_latest_jobs, provider_display_name,
 };
 
@@ -18,8 +18,9 @@ use crate::components::toast::{
     dispatch_with_toast, dispatch_with_toast_loading, toast_missing_context,
 };
 use crate::components::{
-    Breadcrumb, BreadcrumbItem, Button, ButtonSize, ButtonVariant, ConfirmDialog, EditArtistDialog,
-    ErrorPanel, LinkProviderDialog, PageShell, SleeveBadge, SleeveBadgeView, fallback_initial,
+    AlbumCard, Breadcrumb, BreadcrumbItem, Button, ButtonSize, ButtonVariant, ConfirmDialog,
+    EditArtistDialog, ErrorPanel, LinkProviderDialog, MonitorToggle, PageShell, SleeveBadge,
+    fallback_initial,
 };
 use crate::hooks::{set_page_title, use_sse_version};
 use crate::styles::{
@@ -804,7 +805,60 @@ fn ArtistDetailContent(
                                         key=|album| album.id
                                         let:album
                                     >
-                                        <AlbumSleeve album=album albums=albums jobs=jobs artist_id=artist />
+                                        {
+                                            let album_id = album.id;
+                                            let is_explicit = album.explicit;
+                                            let release_date = album.release_date.clone().unwrap_or_else(|| "\u{2014}".to_string());
+                                            let at = album_type_label(album.album_type.as_deref(), &album.title);
+                                            let detail_url = artist
+                                                .get_untracked()
+                                                .map(|a| format!("/artists/{}/albums/{}", a.id, album_id))
+                                                .unwrap_or_else(|| "/library".to_string());
+
+                                            // Reactive flags derived from the canonical albums signal
+                                            let flags = Memo::new(move |_| {
+                                                let all = albums.get();
+                                                all.iter()
+                                                    .find(|a| a.id == album_id)
+                                                    .map(|a| (a.monitored, a.wanted, a.acquired))
+                                                    .unwrap_or((false, false, false))
+                                            });
+                                            let is_monitored = Signal::derive(move || flags.get().0);
+
+                                            // Reactive badge from job status
+                                            let badge_signal = Signal::derive(move || {
+                                                let (_, is_wanted, is_acquired) = flags.get();
+                                                let all_jobs = jobs.get();
+                                                let latest = build_latest_jobs(all_jobs);
+                                                let ji = latest.get(&album_id).cloned();
+                                                match ji.as_ref().map(|j| &j.status) {
+                                                    Some(DownloadStatus::Downloading) => {
+                                                        let j = ji.as_ref().unwrap();
+                                                        SleeveBadge::Downloading { completed: j.completed_tracks, total: j.total_tracks }
+                                                    }
+                                                    Some(DownloadStatus::Resolving) => SleeveBadge::Downloading { completed: 0, total: 0 },
+                                                    Some(DownloadStatus::Queued) => SleeveBadge::Queued,
+                                                    Some(DownloadStatus::Failed) => SleeveBadge::Failed,
+                                                    Some(DownloadStatus::Completed) | None => {
+                                                        if is_acquired { SleeveBadge::Acquired }
+                                                        else if is_wanted { SleeveBadge::Wanted }
+                                                        else { SleeveBadge::None }
+                                                    }
+                                                }
+                                            });
+
+                                            view! {
+                                                <AlbumCard
+                                                    album=album
+                                                    href=detail_url
+                                                    cover_resolution=640
+                                                    sleeve_badge=badge_signal
+                                                    show_explicit=is_explicit
+                                                    subtitle=format!("{release_date} \u{00b7} {at}")
+                                                    monitor_toggle=MonitorToggle { album_id, is_monitored }
+                                                />
+                                            }
+                                        }
                                     </For>
                                 </div>
                             </div>
@@ -816,13 +870,6 @@ fn ArtistDetailContent(
     }
 }
 
-/// Album sleeve card in the discography grid.
-///
-/// The title links to the album detail page.
-/// Mutable album state (monitored, wanted, acquired) is derived reactively
-/// from the `albums` signal so that changes (e.g. toggling monitor) are
-/// reflected immediately without recreating the component — `<For>` keeps
-/// the same instance alive as long as the key (album ID) exists.
 /// Collapsible artist bio — shows first 3 lines with "Read more" toggle.
 #[component]
 fn ArtistBio(bio: String) -> impl IntoView {
@@ -860,138 +907,4 @@ fn ArtistBio(bio: String) -> impl IntoView {
     }
 }
 
-#[component]
-fn AlbumSleeve(
-    album: MonitoredAlbum,
-    albums: RwSignal<Vec<MonitoredAlbum>>,
-    jobs: RwSignal<Vec<DownloadJob>>,
-    artist_id: RwSignal<Option<MonitoredArtist>>,
-) -> impl IntoView {
-    let album_id = album.id;
-    let album_id_str = album.id.to_string();
-    let album_id_for_url = album.id;
-    let album_title = album.title.clone();
-    let release_date = album
-        .release_date
-        .clone()
-        .unwrap_or_else(|| "\u{2014}".to_string());
-    let at = album_type_label(album.album_type.as_deref(), &album.title);
-    let is_explicit = album.explicit;
 
-    let cover_url = album_cover_url(&album, 640);
-    let detail_url = artist_id
-        .get_untracked()
-        .map(|a| format!("/artists/{}/albums/{}", a.id, album_id_for_url))
-        .unwrap_or_else(|| "/library".to_string());
-
-    // Reactively derive mutable album flags from the canonical albums signal.
-    // This ensures that when the server updates an album (e.g. toggling monitor),
-    // the UI reflects the change without needing to recreate the component.
-    // We use a Memo so the flags are computed once per change and can be read
-    // cheaply from multiple reactive closures (Memo is Copy).
-
-    let flags = Memo::new(move |_| {
-        let all = albums.get();
-        all.iter()
-            .find(|a| a.id == album_id)
-            .map(|a| (a.monitored, a.wanted, a.acquired))
-            .unwrap_or((false, false, false))
-    });
-    let is_monitored = move || flags.get().0;
-    let is_wanted = move || flags.get().1;
-    let is_acquired = move || flags.get().2;
-
-    // Reactively derive job status from the jobs signal
-    let job_info = move || {
-        let all_jobs = jobs.get();
-        let latest = build_latest_jobs(all_jobs);
-        latest.get(&album_id).cloned()
-    };
-
-    let fallback_initial = fallback_initial(&album_title);
-
-    view! {
-        // ── Album card (grid cell) ──────────────────────────
-        <div class="sleeve" data-album-row data-album-id=album_id_str.clone()>
-            <a href=detail_url.clone() class="contents">
-                <div class="relative w-full pt-[100%] bg-zinc-200 dark:bg-zinc-800 overflow-hidden">
-                    {match cover_url {
-                        Some(url) => view! {
-                            <img class="sleeve-cover" src=url alt="" loading="lazy" />
-                        }.into_any(),
-                        None => view! {
-                            <div class="absolute inset-0 flex items-center justify-center text-4xl font-extrabold text-zinc-400 dark:text-zinc-600">{fallback_initial}</div>
-                        }.into_any(),
-                    }}
-                    // Status badge — reactive
-                    {move || {
-                        let ji = job_info();
-                        let acquired = is_acquired();
-                        let wanted = is_wanted();
-
-                        let badge = match ji.as_ref().map(|j| &j.status) {
-                            Some(DownloadStatus::Downloading) => {
-                                let j = ji.as_ref().unwrap();
-                                SleeveBadge::Downloading { completed: j.completed_tracks, total: j.total_tracks }
-                            }
-                            Some(DownloadStatus::Resolving) => SleeveBadge::Downloading { completed: 0, total: 0 },
-                            Some(DownloadStatus::Queued) => SleeveBadge::Queued,
-                            Some(DownloadStatus::Failed) => SleeveBadge::Failed,
-                            Some(DownloadStatus::Completed) | None => {
-                                if acquired { SleeveBadge::Acquired }
-                                else if wanted { SleeveBadge::Wanted }
-                                else { SleeveBadge::None }
-                            }
-                        };
-                        view! { <SleeveBadgeView badge=badge /> }
-                    }}
-                    {if is_explicit {
-                        view! { <span class="absolute z-3 top-2 left-2 text-[8px] font-bold uppercase tracking-wide px-[5px] py-[2px] rounded-md whitespace-nowrap backdrop-blur-[8px] bg-zinc-700/85 text-zinc-200 dark:bg-zinc-400/85 dark:text-zinc-900">"E"</span> }.into_any()
-                    } else {
-                        view! { <span></span> }.into_any()
-                    }}
-                </div>
-            </a>
-
-            <div class="px-3 py-2.5 flex items-center gap-1.5">
-                <div class="flex-1 min-w-0">
-                    <div class="text-[13px] font-semibold text-zinc-900 dark:text-zinc-100 whitespace-nowrap overflow-hidden text-ellipsis">
-                        <a href=detail_url title=album_title.clone() class="text-inherit no-underline hover:text-blue-500">{album_title.clone()}</a>
-                    </div>
-                    <div class="text-[11px] text-zinc-500 dark:text-zinc-400 whitespace-nowrap overflow-hidden text-ellipsis">{format!("{release_date} \u{00b7} {at}")}</div>
-                </div>
-
-                // Monitor toggle — bookmark icon
-                {move || {
-                    let monitored = is_monitored();
-                    if monitored {
-                        view! {
-                            <button type="button"
-                                class="shrink-0 flex items-center justify-center w-5 h-5 text-amber-500 dark:text-amber-400 bg-transparent border-none cursor-pointer p-0 transition-colors duration-150 hover:text-amber-600 dark:hover:text-amber-300"
-                                title="Monitored \u{2014} click to unmonitor"
-                                on:click=move |_| {
-                                    dispatch_with_toast(ServerAction::ToggleAlbumMonitor { album_id, monitored: false }, "Album unmonitored");
-                                }
-                            >
-                                <Bookmark size=18 fill="currentColor" />
-                            </button>
-                        }.into_any()
-                    } else {
-                        view! {
-                            <button type="button"
-                                class="shrink-0 flex items-center justify-center w-5 h-5 text-zinc-300 dark:text-zinc-600 bg-transparent border-none cursor-pointer p-0 transition-colors duration-150 hover:text-amber-500 dark:hover:text-amber-400"
-                                title="Not monitored \u{2014} click to monitor"
-                                on:click=move |_| {
-                                    dispatch_with_toast(ServerAction::ToggleAlbumMonitor { album_id, monitored: true }, "Album monitored");
-                                }
-                            >
-                                <Bookmark size=18 />
-                            </button>
-                        }.into_any()
-                    }
-                }}
-            </div>
-        </div>
-
-    }
-}

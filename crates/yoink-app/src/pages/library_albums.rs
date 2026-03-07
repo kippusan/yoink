@@ -3,17 +3,15 @@ use std::collections::HashMap;
 
 use leptos::prelude::*;
 
-use yoink_shared::{
-    MonitoredAlbum, MonitoredArtist, SearchAlbumResult, ServerAction, album_cover_url,
-    album_type_label,
-};
+use yoink_shared::{MonitoredAlbum, MonitoredArtist, SearchAlbumResult, ServerAction};
 
 use crate::components::toast::dispatch_with_toast_loading;
-use crate::components::{Breadcrumb, BreadcrumbItem, Button, ButtonVariant, PageShell};
+use crate::components::{
+    AlbumCard, Breadcrumb, BreadcrumbItem, Button, ButtonVariant, PageShell, SleeveBadge,
+};
 use crate::hooks::set_page_title;
 use crate::styles::{
-    EMPTY, GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, MUTED, SEARCH_INPUT, SELECT, TAG_NEUTRAL,
-    TAG_SUCCESS, TAG_WARNING,
+    EMPTY, GLASS, GLASS_BODY, GLASS_HEADER, GLASS_TITLE, MUTED, SEARCH_INPUT, SELECT,
 };
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -141,7 +139,7 @@ pub fn LibraryAlbumsTab() -> impl IntoView {
                                         <h2 class=GLASS_TITLE>"Albums"</h2>
                                     </div>
                                     <div class={cls!(GLASS_BODY, "p-4")}>
-                                        <div class="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
+                                        <div class="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-5 max-md:grid-cols-[repeat(auto-fill,minmax(140px,1fr))] max-md:gap-3">
                                             {move || {
                                                 let q = query.get().trim().to_lowercase();
                                                 let filter = filter_key.get();
@@ -191,29 +189,24 @@ pub fn LibraryAlbumsTab() -> impl IntoView {
                                                                 .cloned()
                                                                 .unwrap_or_else(|| "Unknown Artist".to_string());
                                                             let href = format!("/artists/{}/albums/{}", album.artist_id, album.id);
-                                                            let cover = album_cover_url(album, 320);
-                                                            let at = album_type_label(album.album_type.as_deref(), &album.title);
+                                                            let badge = if album.acquired {
+                                                                SleeveBadge::Acquired
+                                                            } else if album.wanted || album.partially_wanted {
+                                                                SleeveBadge::Wanted
+                                                            } else {
+                                                                SleeveBadge::None
+                                                            };
+                                                            let badge_signal = Signal::derive(move || badge);
+                                                            let is_explicit = album.explicit;
                                                             view! {
-                                                                <a href=href class="bg-white/70 dark:bg-zinc-800/60 border border-black/[.06] dark:border-white/[.08] rounded-xl p-3 no-underline transition-[transform,border-color] duration-150 hover:-translate-y-0.5 hover:border-blue-500/30">
-                                                                    <div class="aspect-square rounded-lg overflow-hidden bg-zinc-200 dark:bg-zinc-800 mb-2">
-                                                                        {match cover {
-                                                                            Some(url) => view! { <img src=url class="w-full h-full object-cover" alt="" /> }.into_any(),
-                                                                            None => view! { <div class="w-full h-full grid place-items-center text-zinc-400 text-xs">"No Cover"</div> }.into_any(),
-                                                                        }}
-                                                                    </div>
-                                                                    <div class="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate">{album.title.clone()}</div>
-                                                                    <div class={cls!(MUTED, "text-xs truncate")}>{artist_name}</div>
-                                                                    <div class="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                                                                        <span class=TAG_NEUTRAL>{at}</span>
-                                                                         {if album.acquired {
-                                                                             view! { <span class=TAG_SUCCESS>"Acquired"</span> }.into_any()
-                                                                         } else if album.wanted || album.partially_wanted {
-                                                                             view! { <span class=TAG_WARNING>"Wanted"</span> }.into_any()
-                                                                        } else {
-                                                                            view! { <span></span> }.into_any()
-                                                                        }}
-                                                                    </div>
-                                                                </a>
+                                                                <AlbumCard
+                                                                    album=album.clone()
+                                                                    href=href
+                                                                    cover_resolution=640
+                                                                    sleeve_badge=badge_signal
+                                                                    show_explicit=is_explicit
+                                                                    subtitle=artist_name
+                                                                />
                                                             }
                                                         })
                                                         .collect_view()

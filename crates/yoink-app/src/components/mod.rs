@@ -1,3 +1,4 @@
+mod album_card;
 mod breadcrumb;
 mod button;
 pub(crate) mod confirm_dialog;
@@ -10,6 +11,7 @@ mod sidebar;
 mod sleeve_badge;
 pub mod toast;
 
+pub use album_card::{AlbumCard, MonitorToggle};
 pub use breadcrumb::{Breadcrumb, BreadcrumbItem};
 pub use button::{Button, ButtonSize, ButtonVariant};
 pub use confirm_dialog::ConfirmDialog;

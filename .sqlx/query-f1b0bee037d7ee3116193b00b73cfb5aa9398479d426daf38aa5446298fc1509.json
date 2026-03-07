@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT\n            a.id as \"id!: Uuid\",\n            a.artist_id as \"artist_id!: Uuid\",\n            a.title, a.album_type, a.release_date, a.cover_url,\n            a.explicit as \"explicit!: bool\",\n            a.monitored as \"monitored!: bool\",\n            a.acquired as \"acquired!: bool\",\n            a.wanted as \"wanted!: bool\",\n            CASE WHEN a.monitored = 0 AND EXISTS (\n                SELECT 1 FROM tracks t WHERE t.album_id = a.id AND t.monitored = 1 AND t.acquired = 0\n            ) THEN 1 ELSE 0 END as \"partially_wanted!: bool\",\n            a.added_at as \"added_at!: chrono::DateTime<chrono::Utc>\",\n            a.artist_credits\n         FROM albums a ORDER BY a.release_date DESC",
+  "query": "SELECT\n            a.id as \"id!: Uuid\",\n            a.artist_id as \"artist_id!: Uuid\",\n            a.title, a.album_type, a.release_date, a.cover_url,\n            a.explicit as \"explicit!: bool\",\n            a.quality_override,\n            a.monitored as \"monitored!: bool\",\n            a.acquired as \"acquired!: bool\",\n            a.wanted as \"wanted!: bool\",\n            CASE WHEN a.monitored = 0 AND EXISTS (\n                SELECT 1 FROM tracks t WHERE t.album_id = a.id AND t.monitored = 1 AND t.acquired = 0\n            ) THEN 1 ELSE 0 END as \"partially_wanted!: bool\",\n            a.added_at as \"added_at!: chrono::DateTime<chrono::Utc>\",\n            a.artist_credits\n         FROM albums a ORDER BY a.release_date DESC",
   "describe": {
     "columns": [
       {
@@ -39,33 +39,38 @@
         "type_info": "Integer"
       },
       {
-        "name": "monitored!: bool",
+        "name": "quality_override",
         "ordinal": 7,
-        "type_info": "Integer"
+        "type_info": "Text"
       },
       {
-        "name": "acquired!: bool",
+        "name": "monitored!: bool",
         "ordinal": 8,
         "type_info": "Integer"
       },
       {
-        "name": "wanted!: bool",
+        "name": "acquired!: bool",
         "ordinal": 9,
         "type_info": "Integer"
       },
       {
-        "name": "partially_wanted!: bool",
+        "name": "wanted!: bool",
         "ordinal": 10,
         "type_info": "Integer"
       },
       {
-        "name": "added_at!: chrono::DateTime<chrono::Utc>",
+        "name": "partially_wanted!: bool",
         "ordinal": 11,
+        "type_info": "Integer"
+      },
+      {
+        "name": "added_at!: chrono::DateTime<chrono::Utc>",
+        "ordinal": 12,
         "type_info": "Text"
       },
       {
         "name": "artist_credits",
-        "ordinal": 12,
+        "ordinal": 13,
         "type_info": "Text"
       }
     ],
@@ -80,6 +85,7 @@
       true,
       true,
       false,
+      true,
       false,
       false,
       false,
@@ -88,5 +94,5 @@
       true
     ]
   },
-  "hash": "bddcb33af06b0c28e7bb6ff784f5878e6464fb11c1300f6b92ea1a3e94c03b6e"
+  "hash": "f1b0bee037d7ee3116193b00b73cfb5aa9398479d426daf38aa5446298fc1509"
 }

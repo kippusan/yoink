@@ -16,11 +16,18 @@ use crate::{
     state::AppState,
 };
 
+use super::fetch_cover_art_bytes_from_url;
 use super::io::{has_flac_stream_marker, sanitize_path_component, sniff_media_container};
 use super::lyrics::{fetch_track_lyrics, write_lrc_sidecar};
 use super::metadata::{
     TrackMetadata, build_full_artist_string, extract_disc_number, write_audio_metadata,
 };
+
+#[derive(Clone)]
+struct PlannedTrackDownload {
+    provider_track: ProviderTrack,
+    existing_track: Option<yoink_shared::TrackInfo>,
+}
 
 pub(crate) async fn download_album_job(state: &AppState, job: DownloadJob) -> AppResult<()> {
     let requested_quality = job.quality;
@@ -98,13 +105,39 @@ pub(crate) async fn download_album_job(state: &AppState, job: DownloadJob) -> Ap
             .unwrap_or(false)
     };
 
-    let provider_tracks = if album_is_fully_monitored {
-        provider_tracks
+    let local_tracks = db::load_tracks_for_album(&state.db, job.album_id)
+        .await
+        .unwrap_or_default();
+
+    let mut planned_tracks = Vec::with_capacity(provider_tracks.len());
+    for provider_track in provider_tracks {
+        let existing_track = match_local_track(
+            state,
+            &metadata_link.provider,
+            &provider_track,
+            &local_tracks,
+        )
+        .await;
+
+        planned_tracks.push(PlannedTrackDownload {
+            provider_track,
+            existing_track,
+        });
+    }
+
+    let planned_tracks = if album_is_fully_monitored {
+        planned_tracks
     } else {
-        // Load monitored tracks from DB to know which ones to download
-        let monitored_tracks = db::load_monitored_tracks_for_album(&state.db, job.album_id)
-            .await
-            .unwrap_or_default();
+        let monitored_tracks: Vec<PlannedTrackDownload> = planned_tracks
+            .into_iter()
+            .filter(|planned| {
+                planned
+                    .existing_track
+                    .as_ref()
+                    .map(|track| track.monitored)
+                    .unwrap_or(false)
+            })
+            .collect();
 
         if monitored_tracks.is_empty() {
             return Err(AppError::not_found(
@@ -113,33 +146,17 @@ pub(crate) async fn download_album_job(state: &AppState, job: DownloadJob) -> Ap
             ));
         }
 
-        provider_tracks
-            .into_iter()
-            .filter(|pt| {
-                monitored_tracks.iter().any(|mt| {
-                    // Match by ISRC first (most reliable)
-                    if let (Some(pt_isrc), Some(mt_isrc)) = (&pt.isrc, &mt.isrc)
-                        && pt_isrc.eq_ignore_ascii_case(mt_isrc)
-                    {
-                        return true;
-                    }
-                    // Fallback: match by disc + track number
-                    let pt_disc =
-                        super::metadata::extract_disc_number(&pt.extra, None).unwrap_or(1);
-                    mt.disc_number == pt_disc && mt.track_number == pt.track_number
-                })
-            })
-            .collect::<Vec<_>>()
+        monitored_tracks
     };
 
-    if provider_tracks.is_empty() {
+    if planned_tracks.is_empty() {
         return Err(AppError::not_found(
             "matching provider tracks",
             Some(job.album_id.to_string()),
         ));
     }
 
-    let total_tracks = provider_tracks.len();
+    let total_tracks = planned_tracks.len();
     update_job_progress(
         state,
         job.id,
@@ -162,12 +179,13 @@ pub(crate) async fn download_album_job(state: &AppState, job: DownloadJob) -> Ap
         .and_then(|album| album.release_date.clone())
         .unwrap_or_else(|| "Unknown".to_string());
 
-    // Fetch cover art via the selected metadata provider
-    let cover_art = if let Some(cover_ref) = metadata_link.cover_ref.as_deref() {
-        metadata_provider.fetch_cover_art_bytes(cover_ref).await
-    } else {
-        None
-    };
+    let cover_art = fetch_album_cover_art(
+        &state.http,
+        metadata_provider.as_ref(),
+        metadata_link,
+        album.as_ref(),
+    )
+    .await;
 
     let artist_dir = state.music_root.join(sanitize_path_component(artist_name));
     let album_dir = artist_dir.join(sanitize_path_component(&format!(
@@ -192,7 +210,7 @@ pub(crate) async fn download_album_job(state: &AppState, job: DownloadJob) -> Ap
 
     let mut completed_tracks = 0usize;
     let mut join_set = JoinSet::new();
-    let mut track_iter = provider_tracks.into_iter();
+    let mut track_iter = planned_tracks.into_iter();
     let mut in_flight = 0usize;
 
     while in_flight < max_parallel {
@@ -228,6 +246,7 @@ pub(crate) async fn download_album_job(state: &AppState, job: DownloadJob) -> Ap
                 album_dir_clone,
                 album_extra_clone,
                 cover_art_clone,
+                album_is_fully_monitored,
                 total_tracks,
                 full_count,
             )
@@ -284,6 +303,7 @@ pub(crate) async fn download_album_job(state: &AppState, job: DownloadJob) -> Ap
                             album_dir_clone,
                             album_extra_clone,
                             cover_art_clone,
+                            album_is_fully_monitored,
                             total_tracks,
                             full_count,
                         )
@@ -305,7 +325,7 @@ pub(crate) async fn download_album_job(state: &AppState, job: DownloadJob) -> Ap
 async fn process_track_download(
     state: AppState,
     job: DownloadJob,
-    track: ProviderTrack,
+    planned_track: PlannedTrackDownload,
     requested_quality: Quality,
     download_source: Arc<dyn DownloadSource>,
     metadata_provider: Arc<dyn MetadataProvider>,
@@ -315,11 +335,18 @@ async fn process_track_download(
     album_dir: std::path::PathBuf,
     album_extra: std::collections::HashMap<String, serde_json::Value>,
     cover_art: Option<Vec<u8>>,
+    album_is_fully_monitored: bool,
     _total_tracks: usize,
     // Full album track count for metadata tagging (track N of M).
     // May differ from the download count when only a subset is being downloaded.
     full_album_track_count: usize,
 ) -> AppResult<()> {
+    let track = planned_track.provider_track;
+    let existing_track = planned_track.existing_track;
+    let effective_quality = existing_track
+        .as_ref()
+        .and_then(|track| track.quality_override)
+        .unwrap_or(requested_quality);
     let base_name = format!(
         "{:02} - {}",
         track.track_number,
@@ -359,7 +386,7 @@ async fn process_track_download(
         &metadata_provider_id,
         &track.external_id,
         &track.title,
-        &requested_quality,
+        &effective_quality,
         &track_context,
     )
     .await?;
@@ -412,8 +439,8 @@ async fn process_track_download(
         .await
         .map_err(|err| AppError::download("download track", format!("{}: {err}", track.title)))?;
 
-    let mut final_ext = "flac";
-    if requested_quality == Quality::HiRes {
+    let mut final_ext = sniff_final_extension(&temp_path, effective_quality).await;
+    if effective_quality == Quality::HiRes {
         let is_flac = has_flac_stream_marker(&temp_path).await.map_err(|err| {
             AppError::download("validate track format", format!("{}: {err}", track.title))
         })?;
@@ -536,43 +563,17 @@ async fn process_track_download(
         .to_string_lossy()
         .to_string();
     let explicit = track.explicit;
-    let local_track_id = if let Ok(Some(id)) =
-        db::find_track_by_provider_link(&state.db, &metadata_provider_id, &track.external_id).await
-    {
-        id
-    } else if let Some(ref isrc) = track.isrc {
-        db::find_track_by_album_isrc(&state.db, job.album_id, isrc)
-            .await
-            .ok()
-            .flatten()
-            .unwrap_or_else(uuid::Uuid::now_v7)
-    } else {
-        db::find_track_by_album_position(
-            &state.db,
-            job.album_id,
-            disc_number.unwrap_or(1),
-            track_number,
-        )
-        .await
-        .ok()
-        .flatten()
-        .unwrap_or_else(uuid::Uuid::now_v7)
-    };
-
-    // Preserve existing monitored flag if the track already exists in DB.
-    // For fully-monitored albums all tracks inherit album-level monitoring;
-    // for partially-wanted albums only explicitly-monitored tracks are downloaded,
-    // so existing flag is always correct.
-    let existing_monitored = {
-        let tracks = db::load_tracks_for_album(&state.db, job.album_id)
-            .await
-            .unwrap_or_default();
-        tracks
-            .iter()
-            .find(|t| t.id == local_track_id)
-            .map(|t| t.monitored)
-            .unwrap_or(false)
-    };
+    let local_track_id = existing_track
+        .as_ref()
+        .map(|track| track.id)
+        .unwrap_or_else(uuid::Uuid::now_v7);
+    let existing_monitored = existing_track
+        .as_ref()
+        .map(|track| track.monitored)
+        .unwrap_or(album_is_fully_monitored);
+    let quality_override = existing_track
+        .as_ref()
+        .and_then(|track| track.quality_override);
 
     let track_info = yoink_shared::TrackInfo {
         id: local_track_id,
@@ -584,6 +585,7 @@ async fn process_track_download(
         duration_display: String::new(),
         isrc: track.isrc.clone(),
         explicit,
+        quality_override,
         track_artist: Some(track_artist.clone()),
         file_path: Some(relative_path),
         monitored: existing_monitored,
@@ -617,6 +619,74 @@ async fn find_existing_track_file(
         }
     }
     None
+}
+
+async fn sniff_final_extension(path: &std::path::Path, quality: Quality) -> &'static str {
+    match sniff_media_container(path).await.as_deref() {
+        Ok("flac") => "flac",
+        Ok("mp4") => "m4a",
+        Ok("mp3") => "mp3",
+        Ok("ogg") => "ogg",
+        Ok("wav") => "wav",
+        Ok("aac") => "aac",
+        _ => match quality {
+            Quality::HiRes | Quality::Lossless => "flac",
+            Quality::High | Quality::Low => "mp3",
+        },
+    }
+}
+
+async fn match_local_track(
+    state: &AppState,
+    metadata_provider_id: &str,
+    provider_track: &ProviderTrack,
+    local_tracks: &[yoink_shared::TrackInfo],
+) -> Option<yoink_shared::TrackInfo> {
+    if let Ok(Some(track_id)) = db::find_track_by_provider_link(
+        &state.db,
+        metadata_provider_id,
+        &provider_track.external_id,
+    )
+    .await
+        && let Some(track) = local_tracks.iter().find(|track| track.id == track_id)
+    {
+        return Some(track.clone());
+    }
+
+    if let Some(isrc) = provider_track.isrc.as_deref()
+        && let Some(track) = local_tracks.iter().find(|track| {
+            track
+                .isrc
+                .as_deref()
+                .map(|candidate| candidate.eq_ignore_ascii_case(isrc))
+                .unwrap_or(false)
+        })
+    {
+        return Some(track.clone());
+    }
+
+    let disc_number = extract_disc_number(&provider_track.extra, None).unwrap_or(1);
+    local_tracks
+        .iter()
+        .find(|track| {
+            track.disc_number == disc_number && track.track_number == provider_track.track_number
+        })
+        .cloned()
+}
+
+async fn fetch_album_cover_art(
+    http: &reqwest::Client,
+    metadata_provider: &dyn MetadataProvider,
+    metadata_link: &db::AlbumProviderLink,
+    album: Option<&yoink_shared::MonitoredAlbum>,
+) -> Option<Vec<u8>> {
+    if let Some(cover_ref) = metadata_link.cover_ref.as_deref()
+        && let Some(bytes) = metadata_provider.fetch_cover_art_bytes(cover_ref).await
+    {
+        return Some(bytes);
+    }
+
+    fetch_cover_art_bytes_from_url(http, album.and_then(|album| album.cover_url.as_deref())).await
 }
 
 pub(crate) async fn update_job_progress(
@@ -741,4 +811,178 @@ async fn resolve_playback_with_fallback(
         "playback",
         format!("failed to resolve playback for {track_title}: no source could resolve track"),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    use axum::{Router, routing::get};
+    use tokio::fs;
+    use tokio::net::TcpListener;
+
+    use crate::db;
+    use crate::db::AlbumProviderLink;
+    use crate::providers::registry::ProviderRegistry;
+    use crate::providers::{PlaybackInfo, ProviderTrack};
+    use crate::test_helpers::*;
+    use yoink_shared::{MonitoredAlbum, Quality};
+
+    fn provider_track(external_id: &str, track_number: u32) -> ProviderTrack {
+        ProviderTrack {
+            external_id: external_id.to_string(),
+            title: format!("Track {track_number}"),
+            version: None,
+            track_number,
+            disc_number: Some(1),
+            duration_secs: 180,
+            isrc: None,
+            artists: None,
+            explicit: false,
+            extra: HashMap::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn full_album_download_honors_track_quality_override() {
+        let metadata = Arc::new(MockMetadataProvider::new("mock"));
+        *metadata.fetch_tracks_result.lock().await = Ok((
+            vec![provider_track("trk-1", 1), provider_track("trk-2", 2)],
+            HashMap::new(),
+        ));
+
+        let download = Arc::new(MockDownloadSource::new("mock"));
+        let temp = tempfile::NamedTempFile::new().unwrap();
+        fs::write(temp.path(), b"not-real-audio").await.unwrap();
+        *download.resolve_result.lock().await =
+            Ok(PlaybackInfo::LocalFile(temp.path().to_path_buf()));
+
+        let mut registry = ProviderRegistry::new();
+        registry.register_metadata(metadata);
+        registry.register_download(download.clone());
+
+        let (state, _tmp) = test_app_state_with_registry(registry).await;
+        let artist = seed_artist(&state.db, "Artist").await;
+        let album = seed_album(&state.db, artist.id, "Album").await;
+        let tracks = seed_tracks(&state.db, album.id, 2).await;
+        db::update_track_quality_override(&state.db, tracks[0].id, Some(Quality::Lossless))
+            .await
+            .unwrap();
+        seed_album_provider_link(&state.db, album.id, "mock", "album-ext").await;
+
+        state.monitored_artists.write().await.push(artist);
+        state.monitored_albums.write().await.push(album.clone());
+
+        let mut job = seed_job(&state.db, album.id, crate::models::DownloadStatus::Queued).await;
+        job.quality = Quality::Low;
+        super::download_album_job(&state, job).await.unwrap();
+
+        let requested = download.requested.lock().await.clone();
+        assert_eq!(requested.len(), 2);
+        assert!(
+            requested
+                .iter()
+                .any(|(id, q)| id == "trk-1" && *q == Quality::Lossless)
+        );
+        assert!(
+            requested
+                .iter()
+                .any(|(id, q)| id == "trk-2" && *q == Quality::Low)
+        );
+    }
+
+    #[tokio::test]
+    async fn partial_album_download_honors_track_quality_override() {
+        let metadata = Arc::new(MockMetadataProvider::new("mock"));
+        *metadata.fetch_tracks_result.lock().await = Ok((
+            vec![provider_track("trk-1", 1), provider_track("trk-2", 2)],
+            HashMap::new(),
+        ));
+
+        let download = Arc::new(MockDownloadSource::new("mock"));
+        let temp = tempfile::NamedTempFile::new().unwrap();
+        fs::write(temp.path(), b"not-real-audio").await.unwrap();
+        *download.resolve_result.lock().await =
+            Ok(PlaybackInfo::LocalFile(temp.path().to_path_buf()));
+
+        let mut registry = ProviderRegistry::new();
+        registry.register_metadata(metadata);
+        registry.register_download(download.clone());
+
+        let (state, _tmp) = test_app_state_with_registry(registry).await;
+        let artist = seed_artist(&state.db, "Artist").await;
+        let mut album = seed_album(&state.db, artist.id, "Album").await;
+        album.monitored = false;
+        album.wanted = false;
+        album.partially_wanted = true;
+        db::upsert_album(&state.db, &album).await.unwrap();
+
+        let tracks = seed_tracks(&state.db, album.id, 2).await;
+        db::update_track_flags(&state.db, tracks[0].id, true, false)
+            .await
+            .unwrap();
+        db::update_track_quality_override(&state.db, tracks[0].id, Some(Quality::Lossless))
+            .await
+            .unwrap();
+        seed_album_provider_link(&state.db, album.id, "mock", "album-ext").await;
+
+        state.monitored_artists.write().await.push(artist);
+        state.monitored_albums.write().await.push(album.clone());
+
+        let job = seed_job(&state.db, album.id, crate::models::DownloadStatus::Queued).await;
+        super::download_album_job(&state, job).await.unwrap();
+
+        let requested = download.requested.lock().await.clone();
+        assert_eq!(requested, vec![("trk-1".to_string(), Quality::Lossless)]);
+    }
+
+    #[tokio::test]
+    async fn fetch_album_cover_art_falls_back_to_album_cover_url() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let app = Router::new().route(
+            "/cover.jpg",
+            get(|| async { ([("content-type", "image/jpeg")], vec![1_u8, 2, 3, 4]) }),
+        );
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let provider = MockMetadataProvider::new("mock");
+        let link = AlbumProviderLink {
+            id: uuid::Uuid::now_v7(),
+            album_id: uuid::Uuid::now_v7(),
+            provider: "mock".to_string(),
+            external_id: "album-1".to_string(),
+            external_url: None,
+            external_title: None,
+            cover_ref: None,
+        };
+        let album = MonitoredAlbum {
+            id: link.album_id,
+            artist_id: uuid::Uuid::now_v7(),
+            artist_ids: Vec::new(),
+            artist_credits: Vec::new(),
+            title: "Album".to_string(),
+            album_type: None,
+            release_date: None,
+            cover_url: Some(format!("http://{addr}/cover.jpg")),
+            explicit: false,
+            quality_override: None,
+            monitored: false,
+            acquired: false,
+            wanted: false,
+            partially_wanted: true,
+            added_at: chrono::Utc::now(),
+        };
+
+        let bytes =
+            super::fetch_album_cover_art(&reqwest::Client::new(), &provider, &link, Some(&album))
+                .await;
+
+        server.abort();
+
+        assert_eq!(bytes, Some(vec![1_u8, 2, 3, 4]));
+    }
 }

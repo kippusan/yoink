@@ -4,7 +4,7 @@ use lucide_leptos::{ArrowLeft, Bookmark, Check, Download, GitCompareArrows, Refr
 
 use yoink_shared::{
     DownloadJob, DownloadStatus, MatchSuggestion, MonitoredAlbum, MonitoredArtist, ProviderLink,
-    ServerAction, TrackInfo, Uuid, album_cover_url, album_type_label, build_latest_jobs,
+    Quality, ServerAction, TrackInfo, Uuid, album_cover_url, album_type_label, build_latest_jobs,
     provider_display_name, status_label_text,
 };
 
@@ -16,7 +16,7 @@ use crate::components::{
     ResolveArtistDialog, download_status_badge_variant, fallback_initial,
 };
 use crate::hooks::{set_page_title, use_sse_version};
-use crate::styles::MUTED;
+use crate::styles::{MUTED, SELECT};
 
 // ── DTO ─────────────────────────────────────────────────────
 
@@ -43,6 +43,24 @@ pub struct AlbumDetailData {
     pub jobs: Vec<DownloadJob>,
     pub provider_links: Vec<ProviderLink>,
     pub match_suggestions: Vec<MatchSuggestion>,
+    pub default_quality: Quality,
+}
+
+fn quality_label(quality: Quality) -> &'static str {
+    match quality {
+        Quality::HiRes => "Hi-Res Lossless",
+        Quality::Lossless => "Lossless",
+        Quality::High => "High",
+        Quality::Low => "Low",
+    }
+}
+
+fn parse_quality_override(value: &str) -> Option<Quality> {
+    if value.is_empty() {
+        None
+    } else {
+        value.parse().ok()
+    }
 }
 
 // ── Server function ─────────────────────────────────────────
@@ -152,6 +170,7 @@ pub async fn get_album_detail(album_id: String) -> Result<AlbumDetailData, Serve
         jobs,
         provider_links,
         match_suggestions,
+        default_quality: ctx.default_quality,
     })
 }
 
@@ -266,6 +285,7 @@ pub fn AlbumDetailPage() -> impl IntoView {
                                             jobs=data.jobs
                                             provider_links=data.provider_links
                                             match_suggestions=data.match_suggestions
+                                            default_quality=data.default_quality
                                             artist_id_param=aid
                                         />
                                     }.into_any()
@@ -289,6 +309,7 @@ fn AlbumDetailContent(
     jobs: Vec<DownloadJob>,
     provider_links: Vec<ProviderLink>,
     match_suggestions: Vec<MatchSuggestion>,
+    default_quality: Quality,
     artist_id_param: Option<String>,
 ) -> impl IntoView {
     set_page_title(&album.title);
@@ -305,6 +326,7 @@ fn AlbumDetailContent(
     let is_wanted = album.wanted;
     let is_acquired = album.acquired;
     let is_partially_wanted = album.partially_wanted;
+    let effective_album_quality = album.quality_override.unwrap_or(default_quality);
 
     let cover_url = album_cover_url(&album, 640);
 
@@ -633,6 +655,43 @@ fn AlbumDetailContent(
                             } else {
                                 view! { <span></span> }.into_any()
                             }}
+
+                            <div class="mt-3 flex flex-col gap-1 max-w-[240px]">
+                                <label class="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+                                    "Download Quality"
+                                </label>
+                                <select
+                                    class=SELECT
+                                    on:change=move |ev| {
+                                        dispatch_with_toast(
+                                            ServerAction::SetAlbumQuality {
+                                                album_id,
+                                                quality: parse_quality_override(&event_target_value(&ev)),
+                                            },
+                                            "Album quality updated",
+                                        );
+                                    }
+                                >
+                                    <option value="" selected=album.quality_override.is_none()>
+                                        {format!("Use default ({})", quality_label(default_quality))}
+                                    </option>
+                                    <option value=Quality::HiRes.as_str() selected=album.quality_override == Some(Quality::HiRes)>
+                                        {quality_label(Quality::HiRes)}
+                                    </option>
+                                    <option value=Quality::Lossless.as_str() selected=album.quality_override == Some(Quality::Lossless)>
+                                        {quality_label(Quality::Lossless)}
+                                    </option>
+                                    <option value=Quality::High.as_str() selected=album.quality_override == Some(Quality::High)>
+                                        {quality_label(Quality::High)}
+                                    </option>
+                                    <option value=Quality::Low.as_str() selected=album.quality_override == Some(Quality::Low)>
+                                        {quality_label(Quality::Low)}
+                                    </option>
+                                </select>
+                                <span class={cls!(MUTED, "text-[11px]")}>
+                                    "Applies to tracks without their own override."
+                                </span>
+                            </div>
                         </div>
                     </div>
                 </PanelBody>
@@ -747,11 +806,13 @@ fn AlbumDetailContent(
                                         let file_path = t.file_path.clone();
                                         let track_monitored = t.monitored;
                                         let track_acquired = t.acquired;
+                                        let track_quality_override = t.quality_override;
                                         let track_num_display = if has_multiple_discs {
                                             format!("{disc}-{num}")
                                         } else {
                                             num.to_string()
                                         };
+                                        let effective_track_quality = track_quality_override.unwrap_or(effective_album_quality);
                                         // Show track artist only if it contains names not in the album artist list
                                         let show_track_artist = has_any_artist && track_artist.as_deref()
                                             .map(|ta| {
@@ -799,6 +860,43 @@ fn AlbumDetailContent(
                                                     } else {
                                                         view! { <span></span> }.into_any()
                                                     }}
+                                                    <div class="mt-1.5 flex flex-wrap items-center gap-2">
+                                                        <span class={cls!(MUTED, "text-[10px] font-semibold uppercase tracking-wider")}>
+                                                            "Quality"
+                                                        </span>
+                                                        <select
+                                                            class=SELECT
+                                                            on:change=move |ev| {
+                                                                dispatch_with_toast(
+                                                                    ServerAction::SetTrackQuality {
+                                                                        album_id,
+                                                                        track_id,
+                                                                        quality: parse_quality_override(&event_target_value(&ev)),
+                                                                    },
+                                                                    "Track quality updated",
+                                                                );
+                                                            }
+                                                        >
+                                                            <option value="" selected=track_quality_override.is_none()>
+                                                                {format!("Album default ({})", quality_label(effective_album_quality))}
+                                                            </option>
+                                                            <option value=Quality::HiRes.as_str() selected=track_quality_override == Some(Quality::HiRes)>
+                                                                {quality_label(Quality::HiRes)}
+                                                            </option>
+                                                            <option value=Quality::Lossless.as_str() selected=track_quality_override == Some(Quality::Lossless)>
+                                                                {quality_label(Quality::Lossless)}
+                                                            </option>
+                                                            <option value=Quality::High.as_str() selected=track_quality_override == Some(Quality::High)>
+                                                                {quality_label(Quality::High)}
+                                                            </option>
+                                                            <option value=Quality::Low.as_str() selected=track_quality_override == Some(Quality::Low)>
+                                                                {quality_label(Quality::Low)}
+                                                            </option>
+                                                        </select>
+                                                        <span class={cls!(MUTED, "text-[10px]")}>
+                                                            {format!("Effective: {}", quality_label(effective_track_quality))}
+                                                        </span>
+                                                    </div>
                                                     // ISRC + file path metadata line
                                                     {
                                                         let has_isrc = isrc.as_ref().map(|c| !c.is_empty()).unwrap_or(false);

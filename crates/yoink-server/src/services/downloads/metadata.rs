@@ -34,29 +34,19 @@ pub(crate) struct TrackMetadata<'a> {
 }
 
 pub(crate) fn write_audio_metadata(meta: &TrackMetadata<'_>) -> AppResult<()> {
-    let default_tag_type = match meta
-        .path
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|e| e.to_ascii_lowercase())
-        .as_deref()
-    {
-        Some("m4a") | Some("mp4") => TagType::Mp4Ilst,
-        _ => TagType::VorbisComments,
-    };
-
     let mut tagged_file = Probe::open(meta.path)
         .map_err(|err| AppError::metadata("open tagged file", err.to_string()))?
         .read()
         .map_err(|err| AppError::metadata("read tagged file", err.to_string()))?;
 
-    let tag = if let Some(existing) = tagged_file.primary_tag_mut() {
+    let tag_type = preferred_tag_type(meta, &tagged_file);
+    let tag = if let Some(existing) = tagged_file.tag_mut(tag_type) {
         existing
     } else {
-        tagged_file.insert_tag(Tag::new(default_tag_type));
+        tagged_file.insert_tag(Tag::new(tag_type));
         tagged_file
-            .primary_tag_mut()
-            .ok_or_else(|| AppError::metadata("create metadata tag", "no primary tag"))?
+            .tag_mut(tag_type)
+            .ok_or_else(|| AppError::metadata("create metadata tag", "missing target tag"))?
     };
 
     tag.set_title(meta.title.to_string());
@@ -122,7 +112,7 @@ pub(crate) fn write_audio_metadata(meta: &TrackMetadata<'_>) -> AppResult<()> {
         ));
     }
 
-    if default_tag_type == TagType::VorbisComments {
+    if tag_type == TagType::VorbisComments {
         write_extra_vorbis(tag, "TIDAL_TRACK_", meta.track_extra);
         write_extra_vorbis(tag, "TIDAL_ALBUM_", meta.album_extra);
         if let Some(info) = meta.track_info_extra {
@@ -134,6 +124,10 @@ pub(crate) fn write_audio_metadata(meta: &TrackMetadata<'_>) -> AppResult<()> {
         .save_to_path(meta.path, WriteOptions::default())
         .map_err(|err| AppError::metadata("save metadata tags", err.to_string()))?;
     Ok(())
+}
+
+fn preferred_tag_type(_meta: &TrackMetadata<'_>, tagged_file: &impl TaggedFileExt) -> TagType {
+    tagged_file.primary_tag_type()
 }
 
 fn write_extra_vorbis(tag: &mut Tag, prefix: &str, extra: &HashMap<String, Value>) {
@@ -308,10 +302,43 @@ fn sanitize_vorbis_key(prefix: &str, key: &str) -> String {
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
+    use std::path::Path;
+    use std::process::Command;
 
+    use lofty::{
+        file::{FileType, TaggedFile, TaggedFileExt},
+        probe::Probe,
+        properties::FileProperties,
+        tag::TagType,
+    };
     use serde_json::{Value, json};
 
     use super::*;
+
+    fn test_meta<'a>(path: &'a Path, cover_art_jpeg: Option<&'a [u8]>) -> TrackMetadata<'a> {
+        let track_extra = Box::leak(Box::new(HashMap::new()));
+        let album_extra = Box::leak(Box::new(HashMap::new()));
+        TrackMetadata {
+            path,
+            title: "Track",
+            track_artist: "Artist",
+            album_artist: "Artist",
+            album: "Album",
+            track_number: 1,
+            disc_number: Some(1),
+            total_tracks: 1,
+            release_date: "2024-01-01",
+            track_extra,
+            album_extra,
+            track_info_extra: None,
+            lyrics_text: None,
+            cover_art_jpeg,
+        }
+    }
+
+    fn tagged_file(file_type: FileType) -> TaggedFile {
+        TaggedFile::new(file_type, FileProperties::default(), Vec::new())
+    }
 
     // ── parse_featured_artists ──────────────────────────────────
 
@@ -579,5 +606,57 @@ mod tests {
             sanitize_vorbis_key("PREFIX_", "some-key.here"),
             "PREFIX_SOME_KEY_HERE"
         );
+    }
+
+    #[test]
+    fn preferred_tag_type_uses_wav_primary_id3v2() {
+        let meta = test_meta(Path::new("track.wav"), Some(b"jpeg"));
+        let tagged_file = tagged_file(FileType::Wav);
+        assert_eq!(preferred_tag_type(&meta, &tagged_file), TagType::Id3v2);
+    }
+
+    #[test]
+    fn preferred_tag_type_uses_mp4_primary_tag() {
+        let meta = test_meta(Path::new("track.m4a"), Some(b"jpeg"));
+        let tagged_file = tagged_file(FileType::Mp4);
+        assert_eq!(preferred_tag_type(&meta, &tagged_file), TagType::Mp4Ilst);
+    }
+
+    #[test]
+    #[ignore = "developer regression test; requires ffmpeg"]
+    fn writes_cover_art_to_common_containers() {
+        for extension in ["mp3", "m4a", "flac"] {
+            let temp = tempfile::tempdir().unwrap();
+            let audio_path = temp.path().join(format!("sample.{extension}"));
+
+            let status = Command::new("ffmpeg")
+                .args([
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "anullsrc=r=44100:cl=stereo",
+                    "-t",
+                    "1",
+                    "-y",
+                ])
+                .arg(&audio_path)
+                .status()
+                .unwrap();
+            assert!(status.success(), "ffmpeg failed for {extension}");
+
+            let cover = vec![
+                0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, b'J', b'F', b'I', b'F', 0x00, 0x01, 0x01, 0x00,
+                0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xFF, 0xD9,
+            ];
+            let meta = test_meta(&audio_path, Some(&cover));
+            write_audio_metadata(&meta).unwrap();
+
+            let tagged = Probe::open(&audio_path).unwrap().read().unwrap();
+            let tag = tagged.primary_tag().expect("missing primary tag");
+            assert!(
+                !tag.pictures().is_empty(),
+                "missing cover art for {extension}"
+            );
+        }
     }
 }

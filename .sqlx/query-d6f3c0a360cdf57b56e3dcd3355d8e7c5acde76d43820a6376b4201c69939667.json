@@ -1,6 +1,6 @@
 {
   "db_name": "SQLite",
-  "query": "SELECT\n            id as \"id!: Uuid\",\n            title, version, disc_number, track_number, duration_secs,\n            explicit as \"explicit!: bool\",\n            isrc, track_artist, file_path,\n            monitored as \"monitored!: bool\",\n            acquired as \"acquired!: bool\"\n         FROM tracks WHERE album_id = $1\n         ORDER BY disc_number, track_number",
+  "query": "SELECT\n            id as \"id!: Uuid\",\n            title, version, disc_number, track_number, duration_secs,\n            explicit as \"explicit!: bool\",\n            isrc, quality_override, track_artist, file_path,\n            monitored as \"monitored!: bool\",\n            acquired as \"acquired!: bool\"\n         FROM tracks WHERE album_id = $1\n         ORDER BY disc_number, track_number",
   "describe": {
     "columns": [
       {
@@ -44,23 +44,28 @@
         "type_info": "Text"
       },
       {
-        "name": "track_artist",
+        "name": "quality_override",
         "ordinal": 8,
         "type_info": "Text"
       },
       {
-        "name": "file_path",
+        "name": "track_artist",
         "ordinal": 9,
         "type_info": "Text"
       },
       {
-        "name": "monitored!: bool",
+        "name": "file_path",
         "ordinal": 10,
+        "type_info": "Text"
+      },
+      {
+        "name": "monitored!: bool",
+        "ordinal": 11,
         "type_info": "Integer"
       },
       {
         "name": "acquired!: bool",
-        "ordinal": 11,
+        "ordinal": 12,
         "type_info": "Integer"
       }
     ],
@@ -78,9 +83,10 @@
       true,
       true,
       true,
+      true,
       false,
       false
     ]
   },
-  "hash": "3c48f7c1cc38afefbf8ff29d67b5f3586697751a4381b8fc26e9a316081ef869"
+  "hash": "d6f3c0a360cdf57b56e3dcd3355d8e7c5acde76d43820a6376b4201c69939667"
 }

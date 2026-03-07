@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use crate::{
     ArtistImageOption, DownloadJob, ImportConfirmation, ImportPreviewItem, ImportResultSummary,
-    LibraryTrack, MatchSuggestion, MonitoredAlbum, MonitoredArtist, ProviderLink,
+    LibraryTrack, MatchSuggestion, MonitoredAlbum, MonitoredArtist, ProviderLink, Quality,
     SearchAlbumResult, SearchArtistResult, SearchTrackResult, ServerAction, TrackInfo, YoinkError,
 };
 
@@ -64,6 +64,7 @@ pub struct ServerContext {
     pub monitored_artists: std::sync::Arc<tokio::sync::RwLock<Vec<MonitoredArtist>>>,
     pub monitored_albums: std::sync::Arc<tokio::sync::RwLock<Vec<MonitoredAlbum>>>,
     pub download_jobs: std::sync::Arc<tokio::sync::RwLock<Vec<DownloadJob>>>,
+    pub default_quality: Quality,
     pub search_artists: SearchArtistsFn,
     pub search_artists_scoped: SearchArtistsScopedFn,
     pub list_providers: ListProvidersFn,

@@ -130,6 +130,8 @@ pub struct MonitoredAlbum {
     pub release_date: Option<String>,
     pub cover_url: Option<String>,
     pub explicit: bool,
+    #[serde(default)]
+    pub quality_override: Option<Quality>,
     pub monitored: bool,
     pub acquired: bool,
     pub wanted: bool,
@@ -151,6 +153,8 @@ pub struct TrackInfo {
     pub duration_display: String,
     pub isrc: Option<String>,
     pub explicit: bool,
+    #[serde(default)]
+    pub quality_override: Option<Quality>,
     /// Track-level artist string (may differ from album artist for features/collabs).
     pub track_artist: Option<String>,
     /// Local file path relative to the music root (populated for acquired albums).
@@ -421,5 +425,28 @@ mod tests {
         assert!(!album.partially_wanted);
         assert!(album.artist_ids.is_empty());
         assert!(album.artist_credits.is_empty());
+        assert_eq!(album.quality_override, None);
+    }
+
+    #[test]
+    fn track_info_quality_override_defaults_to_none() {
+        let json = serde_json::json!({
+            "id": "01933e10-b4a4-7000-8000-000000000010",
+            "title": "Track",
+            "version": null,
+            "disc_number": 1,
+            "track_number": 1,
+            "duration_secs": 180,
+            "duration_display": "3:00",
+            "isrc": null,
+            "explicit": false,
+            "track_artist": null,
+            "file_path": null,
+            "monitored": false,
+            "acquired": false
+        });
+
+        let track: TrackInfo = serde_json::from_value(json).unwrap();
+        assert_eq!(track.quality_override, None);
     }
 }

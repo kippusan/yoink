@@ -590,8 +590,10 @@ async fn count_audio_files(path: &std::path::Path) -> usize {
                         || ext.eq_ignore_ascii_case("m4a")
                         || ext.eq_ignore_ascii_case("mp4")
                         || ext.eq_ignore_ascii_case("mp3")
+                        || ext.eq_ignore_ascii_case("aac")
                         || ext.eq_ignore_ascii_case("ogg")
                         || ext.eq_ignore_ascii_case("opus")
+                        || ext.eq_ignore_ascii_case("wav")
                 })
                 .unwrap_or(false)
             {

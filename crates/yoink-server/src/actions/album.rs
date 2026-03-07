@@ -1,10 +1,12 @@
 use chrono::Utc;
 use tracing::info;
 use uuid::Uuid;
+use yoink_shared::Quality;
 
 use crate::{
     db,
     error::{AppError, AppResult},
+    models::DownloadStatus,
     services,
     state::AppState,
 };
@@ -72,6 +74,40 @@ pub(super) async fn bulk_monitor(
     for album in to_queue {
         services::enqueue_album_download(state, &album).await;
     }
+    state.notify_sse();
+    Ok(())
+}
+
+pub(super) async fn set_album_quality(
+    state: &AppState,
+    album_id: Uuid,
+    quality: Option<Quality>,
+) -> AppResult<()> {
+    db::update_album_quality_override(&state.db, album_id, quality).await?;
+
+    {
+        let mut albums = state.monitored_albums.write().await;
+        let album = albums
+            .iter_mut()
+            .find(|a| a.id == album_id)
+            .ok_or_else(|| AppError::not_found("album", Some(album_id.to_string())))?;
+        album.quality_override = quality;
+    }
+
+    let effective_quality = quality.unwrap_or(state.default_quality);
+    {
+        let mut jobs = state.download_jobs.write().await;
+        for job in jobs.iter_mut().filter(|j| {
+            j.album_id == album_id
+                && matches!(j.status, DownloadStatus::Queued | DownloadStatus::Failed)
+        }) {
+            job.quality = effective_quality;
+            job.updated_at = Utc::now();
+            db::update_job(&state.db, job).await?;
+        }
+    }
+
+    info!(%album_id, quality = ?quality, "Updated album quality override");
     state.notify_sse();
     Ok(())
 }
@@ -289,6 +325,7 @@ pub(super) async fn add_album(
                 .as_deref()
                 .map(|c| yoink_shared::provider_image_url(&provider, c, 640)),
             explicit: prov_album.explicit,
+            quality_override: None,
             monitored: monitor_all,
             acquired: false,
             wanted: monitor_all,
@@ -344,6 +381,8 @@ mod tests {
     use crate::providers::registry::ProviderRegistry;
     use crate::providers::{ProviderAlbum, ProviderAlbumArtist, ProviderTrack};
     use crate::test_helpers::*;
+    use chrono::Utc;
+    use yoink_shared::Quality;
 
     // ── ToggleAlbumMonitor ──────────────────────────────────────
 
@@ -414,6 +453,52 @@ mod tests {
 
         let albums = state.monitored_albums.read().await;
         assert!(albums.iter().all(|a| !a.monitored));
+    }
+
+    #[tokio::test]
+    async fn set_album_quality_updates_album_and_queued_failed_jobs_only() {
+        let (state, _tmp) = test_app_state().await;
+        let artist = seed_artist(&state.db, "Artist").await;
+        let album = seed_album(&state.db, artist.id, "Album").await;
+
+        state.monitored_artists.write().await.push(artist);
+        state.monitored_albums.write().await.push(album.clone());
+
+        for status in [
+            crate::models::DownloadStatus::Queued,
+            crate::models::DownloadStatus::Failed,
+            crate::models::DownloadStatus::Resolving,
+            crate::models::DownloadStatus::Downloading,
+            crate::models::DownloadStatus::Completed,
+        ] {
+            let mut job = seed_job(&state.db, album.id, status.clone()).await;
+            job.status = status;
+            job.updated_at = Utc::now();
+            db::update_job(&state.db, &job).await.unwrap();
+            state.download_jobs.write().await.push(job);
+        }
+
+        super::set_album_quality(&state, album.id, Some(Quality::HiRes))
+            .await
+            .unwrap();
+
+        let albums = state.monitored_albums.read().await;
+        assert_eq!(albums[0].quality_override, Some(Quality::HiRes));
+        drop(albums);
+
+        let jobs = state.download_jobs.read().await;
+        for job in jobs.iter() {
+            match job.status {
+                crate::models::DownloadStatus::Queued | crate::models::DownloadStatus::Failed => {
+                    assert_eq!(job.quality, Quality::HiRes);
+                }
+                crate::models::DownloadStatus::Resolving
+                | crate::models::DownloadStatus::Downloading
+                | crate::models::DownloadStatus::Completed => {
+                    assert_eq!(job.quality, Quality::High);
+                }
+            }
+        }
     }
 
     // ── AddAlbumArtist / RemoveAlbumArtist ──────────────────────

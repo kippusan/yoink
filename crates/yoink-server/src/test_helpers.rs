@@ -96,6 +96,7 @@ pub(crate) async fn seed_album(pool: &SqlitePool, artist_id: Uuid, title: &str) 
         release_date: Some("2024-01-15".to_string()),
         cover_url: None,
         explicit: false,
+        quality_override: None,
         monitored: true,
         acquired: false,
         wanted: true,
@@ -122,6 +123,7 @@ pub(crate) async fn seed_tracks(pool: &SqlitePool, album_id: Uuid, count: u32) -
             duration_display: format!("{}:{:02}", (180 + i * 10) / 60, (180 + i * 10) % 60),
             isrc: Some(format!("USRC1234{i:04}")),
             explicit: false,
+            quality_override: None,
             track_artist: None,
             file_path: None,
             monitored: false,
@@ -295,6 +297,7 @@ pub(crate) struct MockDownloadSource {
     pub id: String,
     pub requires_linked: bool,
     pub resolve_result: Mutex<Result<PlaybackInfo, ProviderError>>,
+    pub requested: Mutex<Vec<(String, Quality)>>,
 }
 
 impl MockDownloadSource {
@@ -306,6 +309,7 @@ impl MockDownloadSource {
             resolve_result: Mutex::new(Ok(PlaybackInfo::DirectUrl(
                 "https://mock.test/track.flac".to_string(),
             ))),
+            requested: Mutex::new(Vec::new()),
         }
     }
 }
@@ -322,10 +326,14 @@ impl DownloadSource for MockDownloadSource {
 
     async fn resolve_playback(
         &self,
-        _external_track_id: &str,
-        _quality: &Quality,
+        external_track_id: &str,
+        quality: &Quality,
         _context: Option<&DownloadTrackContext>,
     ) -> Result<PlaybackInfo, ProviderError> {
+        self.requested
+            .lock()
+            .await
+            .push((external_track_id.to_string(), *quality));
         self.resolve_result.lock().await.clone()
     }
 }

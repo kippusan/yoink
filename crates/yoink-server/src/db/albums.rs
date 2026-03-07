@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use sqlx::SqlitePool;
 use uuid::Uuid;
+use yoink_shared::Quality;
 
 use crate::models::MonitoredAlbum;
 
@@ -17,6 +18,7 @@ pub(crate) async fn load_albums(pool: &SqlitePool) -> Result<Vec<MonitoredAlbum>
         release_date: Option<String>,
         cover_url: Option<String>,
         explicit: bool,
+        quality_override: Option<String>,
         monitored: bool,
         acquired: bool,
         wanted: bool,
@@ -32,6 +34,7 @@ pub(crate) async fn load_albums(pool: &SqlitePool) -> Result<Vec<MonitoredAlbum>
             a.artist_id as "artist_id!: Uuid",
             a.title, a.album_type, a.release_date, a.cover_url,
             a.explicit as "explicit!: bool",
+            a.quality_override,
             a.monitored as "monitored!: bool",
             a.acquired as "acquired!: bool",
             a.wanted as "wanted!: bool",
@@ -74,6 +77,12 @@ pub(crate) async fn load_albums(pool: &SqlitePool) -> Result<Vec<MonitoredAlbum>
                 release_date: r.release_date,
                 cover_url: r.cover_url,
                 explicit: r.explicit,
+                quality_override: r
+                    .quality_override
+                    .as_deref()
+                    .map(str::parse)
+                    .transpose()
+                    .expect("expected valid album quality override"),
                 monitored: r.monitored,
                 acquired: r.acquired,
                 wanted: r.wanted,
@@ -95,11 +104,12 @@ pub(crate) async fn upsert_album(
     } else {
         serde_json::to_string(&album.artist_credits).ok()
     };
+    let quality_override = album.quality_override.map(|q| q.as_str().to_string());
 
     sqlx::query!(
         "INSERT INTO albums (id, artist_id, title, album_type, release_date, cover_url,
-                             explicit, monitored, acquired, wanted, added_at, artist_credits)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+                             explicit, quality_override, monitored, acquired, wanted, added_at, artist_credits)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
          ON CONFLICT(id) DO UPDATE SET
            artist_id = excluded.artist_id,
            title = excluded.title,
@@ -107,6 +117,7 @@ pub(crate) async fn upsert_album(
            release_date = excluded.release_date,
            cover_url = excluded.cover_url,
            explicit = excluded.explicit,
+           quality_override = excluded.quality_override,
            monitored = excluded.monitored,
            acquired = excluded.acquired,
            wanted = excluded.wanted,
@@ -118,6 +129,7 @@ pub(crate) async fn upsert_album(
         album.release_date,
         album.cover_url,
         album.explicit,
+        quality_override,
         album.monitored,
         album.acquired,
         album.wanted,
@@ -189,6 +201,22 @@ pub(crate) async fn update_album_flags(
     Ok(())
 }
 
+pub(crate) async fn update_album_quality_override(
+    pool: &SqlitePool,
+    album_id: Uuid,
+    quality: Option<Quality>,
+) -> Result<(), sqlx::Error> {
+    let quality_override = quality.map(|q| q.as_str().to_string());
+    sqlx::query!(
+        "UPDATE albums SET quality_override = $1 WHERE id = $2",
+        quality_override,
+        album_id,
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 pub(crate) async fn reassign_tracks_to_album(
     pool: &SqlitePool,
     from_album_id: Uuid,
@@ -222,6 +250,7 @@ pub(crate) async fn reassign_jobs_to_album(
 #[cfg(test)]
 mod tests {
     use crate::test_helpers::*;
+    use yoink_shared::Quality;
 
     #[tokio::test]
     async fn upsert_and_load_album() {
@@ -294,6 +323,25 @@ mod tests {
         assert_eq!(albums.len(), 1);
         assert_eq!(albums[0].title, "Updated Title");
         assert!(albums[0].explicit);
+    }
+
+    #[tokio::test]
+    async fn album_quality_override_roundtrips_and_updates() {
+        let pool = test_db().await;
+        let artist = seed_artist(&pool, "Artist").await;
+        let album = seed_album(&pool, artist.id, "Album").await;
+
+        super::update_album_quality_override(&pool, album.id, Some(Quality::HiRes))
+            .await
+            .unwrap();
+        let albums = super::load_albums(&pool).await.unwrap();
+        assert_eq!(albums[0].quality_override, Some(Quality::HiRes));
+
+        super::update_album_quality_override(&pool, album.id, None)
+            .await
+            .unwrap();
+        let albums = super::load_albums(&pool).await.unwrap();
+        assert_eq!(albums[0].quality_override, None);
     }
 
     #[tokio::test]

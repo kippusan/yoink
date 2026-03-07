@@ -73,6 +73,10 @@ async fn album_dir_has_downloaded_audio(path: &std::path::Path) -> bool {
                 ext.eq_ignore_ascii_case("flac")
                     || ext.eq_ignore_ascii_case("m4a")
                     || ext.eq_ignore_ascii_case("mp4")
+                    || ext.eq_ignore_ascii_case("mp3")
+                    || ext.eq_ignore_ascii_case("aac")
+                    || ext.eq_ignore_ascii_case("ogg")
+                    || ext.eq_ignore_ascii_case("wav")
             })
             .unwrap_or(false)
         {
@@ -101,6 +105,7 @@ mod tests {
             release_date: None,
             cover_url: None,
             explicit: false,
+            quality_override: None,
             monitored,
             acquired,
             wanted: false,

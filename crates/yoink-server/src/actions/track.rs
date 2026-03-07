@@ -1,6 +1,7 @@
 use chrono::Utc;
 use tracing::info;
 use uuid::Uuid;
+use yoink_shared::Quality;
 
 use crate::{
     db,
@@ -80,6 +81,7 @@ pub(super) async fn add_track(
                 .as_deref()
                 .map(|c| yoink_shared::provider_image_url(&provider, c, 640)),
             explicit: prov_album.explicit,
+            quality_override: None,
             monitored: false, // album-level not monitored; only the specific track
             acquired: false,
             wanted: false,
@@ -173,6 +175,18 @@ pub(super) async fn toggle_track_monitor(
     Ok(())
 }
 
+pub(super) async fn set_track_quality(
+    state: &AppState,
+    album_id: Uuid,
+    track_id: Uuid,
+    quality: Option<Quality>,
+) -> AppResult<()> {
+    db::update_track_quality_override(&state.db, track_id, quality).await?;
+    info!(%album_id, %track_id, quality = ?quality, "Updated track quality override");
+    state.notify_sse();
+    Ok(())
+}
+
 pub(super) async fn bulk_toggle_track_monitor(
     state: &AppState,
     album_id: Uuid,
@@ -210,6 +224,7 @@ pub(super) async fn bulk_toggle_track_monitor(
 mod tests {
     use crate::db;
     use crate::test_helpers::*;
+    use yoink_shared::Quality;
 
     #[tokio::test]
     async fn toggle_track_monitor_updates_flags_and_partially_wanted() {
@@ -238,5 +253,26 @@ mod tests {
         let albums = state.monitored_albums.read().await;
         let a = albums.iter().find(|a| a.id == album.id).unwrap();
         assert!(a.partially_wanted);
+    }
+
+    #[tokio::test]
+    async fn set_track_quality_persists_without_enqueuing() {
+        let (state, _tmp) = test_app_state().await;
+        let artist = seed_artist(&state.db, "Artist").await;
+        let album = seed_album(&state.db, artist.id, "Album").await;
+        let tracks = seed_tracks(&state.db, album.id, 1).await;
+
+        state.monitored_artists.write().await.push(artist);
+        state.monitored_albums.write().await.push(album.clone());
+
+        super::set_track_quality(&state, album.id, tracks[0].id, Some(Quality::Lossless))
+            .await
+            .unwrap();
+
+        let loaded = db::load_tracks_for_album(&state.db, album.id)
+            .await
+            .unwrap();
+        assert_eq!(loaded[0].quality_override, Some(Quality::Lossless));
+        assert!(state.download_jobs.read().await.is_empty());
     }
 }

@@ -120,7 +120,7 @@ pub(crate) async fn sniff_media_container(path: &Path) -> AppResult<String> {
     let mut file = fs::File::open(path)
         .await
         .map_err(|err| AppError::filesystem("open file", path.display().to_string(), err))?;
-    let mut header = [0u8; 12];
+    let mut header = [0u8; 16];
     let read = file
         .read(&mut header)
         .await
@@ -130,6 +130,21 @@ pub(crate) async fn sniff_media_container(path: &Path) -> AppResult<String> {
     }
     if read >= 8 && header[4..8] == *b"ftyp" {
         return Ok("mp4".to_string());
+    }
+    if read >= 4 && header[..4] == *b"OggS" {
+        return Ok("ogg".to_string());
+    }
+    if read >= 12 && header[..4] == *b"RIFF" && header[8..12] == *b"WAVE" {
+        return Ok("wav".to_string());
+    }
+    if read >= 3 && header[..3] == *b"ID3" {
+        return Ok("mp3".to_string());
+    }
+    if read >= 2 && header[0] == 0xFF && (header[1] & 0xE0) == 0xE0 {
+        if read >= 3 && (header[1] & 0x16) == 0x10 {
+            return Ok("aac".to_string());
+        }
+        return Ok("mp3".to_string());
     }
     Ok("unknown".to_string())
 }
@@ -308,5 +323,23 @@ mod tests {
     fn extract_year_mixed_prefix() {
         // "v202" has a non-digit 'v' at position 0
         assert_eq!(extract_year("v202"), "");
+    }
+
+    #[tokio::test]
+    async fn sniff_media_container_detects_mp3_id3() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        fs::write(file.path(), b"ID3\x04\x00\x00\x00\x00\x00\x21")
+            .await
+            .unwrap();
+        assert_eq!(sniff_media_container(file.path()).await.unwrap(), "mp3");
+    }
+
+    #[tokio::test]
+    async fn sniff_media_container_detects_wav() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        fs::write(file.path(), b"RIFF\x24\x80\0\0WAVEfmt ")
+            .await
+            .unwrap();
+        assert_eq!(sniff_media_container(file.path()).await.unwrap(), "wav");
     }
 }

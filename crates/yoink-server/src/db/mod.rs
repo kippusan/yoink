@@ -14,7 +14,7 @@ pub(crate) use album_artists::{
 };
 pub(crate) use albums::{
     delete_album, delete_albums_by_artist, load_albums, reassign_jobs_to_album,
-    reassign_tracks_to_album, update_album_flags, upsert_album,
+    reassign_tracks_to_album, update_album_flags, update_album_quality_override, upsert_album,
 };
 pub(crate) use artists::{
     delete_artist, load_artists, update_artist_bio, update_artist_details, update_artist_monitored,
@@ -33,8 +33,8 @@ pub(crate) use provider_links::{
 };
 pub(crate) use tracks::{
     all_monitored_tracks_acquired, find_track_by_album_isrc, find_track_by_album_position,
-    find_track_by_provider_link, has_wanted_tracks, load_monitored_tracks_for_album,
-    load_tracks_for_album, update_track_flags, upsert_track,
+    find_track_by_provider_link, has_wanted_tracks, load_tracks_for_album, update_track_flags,
+    update_track_quality_override, upsert_track,
 };
 
 /// Open (or create) the database and run migrations.

@@ -82,13 +82,15 @@ pub(crate) async fn insert_job(pool: &SqlitePool, job: &DownloadJob) -> Result<U
 
 pub(crate) async fn update_job(pool: &SqlitePool, job: &DownloadJob) -> Result<(), sqlx::Error> {
     let status = job.status.as_str();
+    let quality = job.quality.as_str();
     let total = job.total_tracks as i32;
     let completed = job.completed_tracks as i32;
     sqlx::query!(
-        "UPDATE download_jobs SET status = $1, total_tracks = $2, completed_tracks = $3,
-                                  error = $4, updated_at = $5
-         WHERE id = $6",
+        "UPDATE download_jobs SET status = $1, quality = $2, total_tracks = $3, completed_tracks = $4,
+                                  error = $5, updated_at = $6
+         WHERE id = $7",
         status,
+        quality,
         total,
         completed,
         job.error,

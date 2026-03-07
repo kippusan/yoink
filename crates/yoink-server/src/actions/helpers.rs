@@ -203,6 +203,7 @@ pub(super) async fn store_album_tracks(
             duration_display: format!("{mins}:{rem:02}"),
             isrc: track.isrc,
             explicit: track.explicit,
+            quality_override: None,
             track_artist: track.artists,
             file_path: None,
             monitored: monitor_all,

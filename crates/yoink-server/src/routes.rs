@@ -111,6 +111,7 @@ async fn album_tracks(
                             duration_display: format!("{}:{:02}", mins, rem),
                             isrc: t.isrc,
                             explicit: t.explicit,
+                            quality_override: None,
                             track_artist: t.artists,
                             file_path: None,
                             monitored: false,

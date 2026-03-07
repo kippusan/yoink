@@ -167,6 +167,7 @@ pub(crate) async fn sync_artist_albums(state: &AppState, artist_id: Uuid) -> App
                     .as_deref()
                     .map(|c| yoink_shared::provider_image_url(best_provider, c, 640)),
                 explicit: best_album.explicit,
+                quality_override: None,
                 monitored: false,
                 acquired: false,
                 wanted: false,

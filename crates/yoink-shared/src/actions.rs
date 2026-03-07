@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::ImportConfirmation;
+use crate::{ImportConfirmation, Quality};
 
 /// A user-initiated action that the server can execute.
 ///
@@ -12,6 +12,10 @@ pub enum ServerAction {
     ToggleAlbumMonitor {
         album_id: Uuid,
         monitored: bool,
+    },
+    SetAlbumQuality {
+        album_id: Uuid,
+        quality: Option<Quality>,
     },
     BulkMonitor {
         artist_id: Uuid,
@@ -105,6 +109,11 @@ pub enum ServerAction {
         track_id: Uuid,
         album_id: Uuid,
         monitored: bool,
+    },
+    SetTrackQuality {
+        album_id: Uuid,
+        track_id: Uuid,
+        quality: Option<Quality>,
     },
     /// Add an album directly from search results.
     /// Creates a lightweight (unmonitored) artist if one doesn't exist,

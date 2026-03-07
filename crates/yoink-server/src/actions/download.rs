@@ -32,6 +32,15 @@ pub(super) async fn clear_completed(state: &AppState) -> AppResult<()> {
 }
 
 pub(super) async fn retry_download(state: &AppState, album_id: Uuid) -> AppResult<()> {
+    let album = {
+        let albums = state.monitored_albums.read().await;
+        albums.iter().find(|a| a.id == album_id).cloned()
+    };
+    let retry_quality = album
+        .as_ref()
+        .and_then(|album| album.quality_override)
+        .unwrap_or(state.default_quality);
+
     {
         let mut jobs = state.download_jobs.write().await;
         if let Some(job) = jobs
@@ -40,7 +49,7 @@ pub(super) async fn retry_download(state: &AppState, album_id: Uuid) -> AppResul
         {
             let previous_quality = job.quality;
             job.status = yoink_shared::DownloadStatus::Queued;
-            job.quality = state.default_quality;
+            job.quality = retry_quality;
             job.error = None;
             job.updated_at = Utc::now();
             db::update_job(&state.db, job).await?;
@@ -48,7 +57,7 @@ pub(super) async fn retry_download(state: &AppState, album_id: Uuid) -> AppResul
                 %album_id,
                 job_id = %job.id,
                 previous_quality = %previous_quality,
-                retry_quality = %job.quality,
+                retry_quality = %retry_quality,
                 "Retrying failed download job"
             );
             state.download_notify.notify_one();
@@ -56,10 +65,6 @@ pub(super) async fn retry_download(state: &AppState, album_id: Uuid) -> AppResul
             return Ok(());
         }
     }
-    let album = {
-        let albums = state.monitored_albums.read().await;
-        albums.iter().find(|a| a.id == album_id).cloned()
-    };
     if let Some(album) = album {
         info!(album_id = %album.id, title = %album.title, "Creating retry download job");
         services::enqueue_album_download(state, &album).await;
@@ -70,8 +75,10 @@ pub(super) async fn retry_download(state: &AppState, album_id: Uuid) -> AppResul
 
 #[cfg(test)]
 mod tests {
+    use crate::db;
     use crate::models::DownloadStatus;
     use crate::test_helpers::*;
+    use yoink_shared::Quality;
 
     #[tokio::test]
     async fn cancel_download_marks_job_failed() {
@@ -128,5 +135,30 @@ mod tests {
         let jobs = state.download_jobs.read().await;
         assert_eq!(jobs.len(), 1);
         assert_eq!(jobs[0].id, j2.id);
+    }
+
+    #[tokio::test]
+    async fn retry_download_uses_album_quality_override() {
+        let (state, _tmp) = test_app_state().await;
+        let artist = seed_artist(&state.db, "Artist").await;
+        let mut album = seed_album(&state.db, artist.id, "Album").await;
+        album.quality_override = Some(Quality::Lossless);
+        db::upsert_album(&state.db, &album).await.unwrap();
+
+        let mut job = seed_job(&state.db, album.id, DownloadStatus::Failed).await;
+        job.quality = Quality::High;
+        db::update_job(&state.db, &job).await.unwrap();
+
+        state.monitored_artists.write().await.push(artist);
+        state.monitored_albums.write().await.push(album.clone());
+        state.download_jobs.write().await.push(job.clone());
+
+        super::retry_download(&state, album.id).await.unwrap();
+
+        let jobs = state.download_jobs.read().await;
+        let retried = jobs.iter().find(|j| j.id == job.id).unwrap();
+        assert_eq!(retried.status, DownloadStatus::Queued);
+        assert_eq!(retried.quality, Quality::Lossless);
+        assert!(retried.error.is_none());
     }
 }

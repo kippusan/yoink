@@ -58,8 +58,7 @@ pub(crate) async fn enqueue_album_download(state: &AppState, album: &MonitoredAl
         return;
     }
 
-    // TODO: In the future, we could allow user to override quality per-album or even per-track.
-    let requested_quality = state.default_quality;
+    let requested_quality = album.quality_override.unwrap_or(state.default_quality);
 
     // Resolve artist name for denormalization
     let artist_name = {
@@ -334,7 +333,11 @@ pub(crate) async fn retag_existing_files(state: &AppState) -> AppResult<(usize, 
             };
             if !(ext.eq_ignore_ascii_case("flac")
                 || ext.eq_ignore_ascii_case("m4a")
-                || ext.eq_ignore_ascii_case("mp4"))
+                || ext.eq_ignore_ascii_case("mp4")
+                || ext.eq_ignore_ascii_case("mp3")
+                || ext.eq_ignore_ascii_case("aac")
+                || ext.eq_ignore_ascii_case("ogg")
+                || ext.eq_ignore_ascii_case("wav"))
             {
                 continue;
             }
@@ -441,25 +444,14 @@ pub(crate) async fn remove_downloaded_album_files(
 }
 
 /// Fetch cover art from an already-resolved URL (or a provider image proxy URL).
-async fn fetch_cover_art_bytes_from_url(
+pub(super) async fn fetch_cover_art_bytes_from_url(
     http: &reqwest::Client,
     cover_url: Option<&str>,
 ) -> Option<Vec<u8>> {
     let url = cover_url?;
     if url.starts_with('/') {
-        // It's a proxy URL like /api/image/tidal/xxx/640
-        // Extract the image_ref and call the Tidal URL directly
-        let parts: Vec<&str> = url.split('/').collect();
-        if parts.len() >= 5 && parts[3] == "tidal" {
-            let image_ref = parts[4];
-            let size = parts.get(5).unwrap_or(&"640");
-            let tidal_url = format!(
-                "https://resources.tidal.com/images/{}/{}x{}.jpg",
-                image_ref.replace('-', "/"),
-                size,
-                size
-            );
-            let resp = http.get(&tidal_url).send().await.ok()?;
+        if let Some(resolved_url) = resolve_cover_art_url(url) {
+            let resp = http.get(&resolved_url).send().await.ok()?;
             if resp.status().is_success() {
                 return resp.bytes().await.ok().map(|b| b.to_vec());
             }
@@ -471,5 +463,114 @@ async fn fetch_cover_art_bytes_from_url(
         resp.bytes().await.ok().map(|b| b.to_vec())
     } else {
         None
+    }
+}
+
+fn resolve_cover_art_url(url: &str) -> Option<String> {
+    if !url.starts_with("/api/image/") {
+        return None;
+    }
+
+    let parts: Vec<&str> = url.split('/').filter(|part| !part.is_empty()).collect();
+    match parts.as_slice() {
+        ["api", "image", image_ref, size] => {
+            let size = size.parse::<u16>().ok()?;
+            resolve_provider_cover_url("tidal", image_ref, size)
+        }
+        ["api", "image", provider, image_ref, size] => {
+            let size = size.parse::<u16>().ok()?;
+            resolve_provider_cover_url(provider, image_ref, size)
+        }
+        _ => None,
+    }
+}
+
+fn resolve_provider_cover_url(provider: &str, image_ref: &str, size: u16) -> Option<String> {
+    match provider {
+        "tidal" => Some(format!(
+            "https://resources.tidal.com/images/{}/{size}x{size}.jpg",
+            image_ref.replace('-', "/")
+        )),
+        "deezer" => {
+            let size = if size <= 56 {
+                56
+            } else if size <= 250 {
+                250
+            } else if size <= 500 {
+                500
+            } else {
+                1000
+            };
+            let (image_type, md5) = if let Some(stripped) = image_ref.strip_prefix("artist:") {
+                ("artist", stripped)
+            } else {
+                ("cover", image_ref)
+            };
+            Some(format!(
+                "https://cdn-images.dzcdn.net/images/{image_type}/{md5}/{size}x{size}-000000-80-0-0.jpg"
+            ))
+        }
+        "musicbrainz" => {
+            let size = if size <= 250 {
+                250
+            } else if size <= 500 {
+                500
+            } else {
+                1200
+            };
+            Some(format!(
+                "https://coverartarchive.org/release-group/{image_ref}/front-{size}"
+            ))
+        }
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::models::DownloadStatus;
+    use crate::test_helpers::*;
+    use yoink_shared::Quality;
+
+    #[tokio::test]
+    async fn enqueue_album_download_uses_album_quality_override() {
+        let (state, _tmp) = test_app_state().await;
+        let artist = seed_artist(&state.db, "Artist").await;
+        let mut album = seed_album(&state.db, artist.id, "Album").await;
+        album.quality_override = Some(Quality::HiRes);
+
+        state.monitored_artists.write().await.push(artist);
+        state.monitored_albums.write().await.push(album.clone());
+
+        super::enqueue_album_download(&state, &album).await;
+
+        let jobs = state.download_jobs.read().await;
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].status, DownloadStatus::Queued);
+        assert_eq!(jobs[0].quality, Quality::HiRes);
+    }
+
+    #[test]
+    fn resolve_cover_art_url_supports_deezer_proxy_urls() {
+        let resolved =
+            super::resolve_cover_art_url("/api/image/deezer/a8e283061c74e47494b1968a40e63943/640");
+        assert_eq!(
+            resolved.as_deref(),
+            Some(
+                "https://cdn-images.dzcdn.net/images/cover/a8e283061c74e47494b1968a40e63943/1000x1000-000000-80-0-0.jpg"
+            )
+        );
+    }
+
+    #[test]
+    fn resolve_cover_art_url_supports_tidal_legacy_proxy_urls() {
+        let resolved =
+            super::resolve_cover_art_url("/api/image/12345678-1234-1234-1234-123456789abc/640");
+        assert_eq!(
+            resolved.as_deref(),
+            Some(
+                "https://resources.tidal.com/images/12345678/1234/1234/1234/123456789abc/640x640.jpg"
+            )
+        );
     }
 }

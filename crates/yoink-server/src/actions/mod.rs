@@ -94,6 +94,10 @@ pub(crate) async fn dispatch_action_impl(
             album::toggle_album_monitor(&state, album_id, monitored).await?;
         }
 
+        ServerAction::SetAlbumQuality { album_id, quality } => {
+            album::set_album_quality(&state, album_id, quality).await?;
+        }
+
         ServerAction::BulkMonitor {
             artist_id,
             monitored,
@@ -181,6 +185,14 @@ pub(crate) async fn dispatch_action_impl(
             monitored,
         } => {
             track::toggle_track_monitor(&state, track_id, album_id, monitored).await?;
+        }
+
+        ServerAction::SetTrackQuality {
+            album_id,
+            track_id,
+            quality,
+        } => {
+            track::set_track_quality(&state, album_id, track_id, quality).await?;
         }
 
         ServerAction::BulkToggleTrackMonitor {

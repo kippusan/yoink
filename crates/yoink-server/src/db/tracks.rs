@@ -1,5 +1,6 @@
 use sqlx::SqlitePool;
 use uuid::Uuid;
+use yoink_shared::Quality;
 
 use crate::models::TrackInfo;
 
@@ -13,6 +14,7 @@ struct TrackRow {
     duration_secs: Option<i64>,
     explicit: bool,
     isrc: Option<String>,
+    quality_override: Option<String>,
     track_artist: Option<String>,
     file_path: Option<String>,
     monitored: bool,
@@ -34,6 +36,12 @@ impl From<TrackRow> for TrackInfo {
             duration_display: format!("{mins}:{rem:02}"),
             isrc: r.isrc,
             explicit: r.explicit,
+            quality_override: r
+                .quality_override
+                .as_deref()
+                .map(str::parse)
+                .transpose()
+                .expect("expected valid track quality override"),
             track_artist: r.track_artist,
             file_path: r.file_path,
             monitored: r.monitored,
@@ -52,7 +60,7 @@ pub(crate) async fn load_tracks_for_album(
             id as "id!: Uuid",
             title, version, disc_number, track_number, duration_secs,
             explicit as "explicit!: bool",
-            isrc, track_artist, file_path,
+            isrc, quality_override, track_artist, file_path,
             monitored as "monitored!: bool",
             acquired as "acquired!: bool"
          FROM tracks WHERE album_id = $1
@@ -73,9 +81,10 @@ pub(crate) async fn upsert_track(
     let disc = track.disc_number as i32;
     let tnum = track.track_number as i32;
     let dur = track.duration_secs as i32;
+    let quality_override = track.quality_override.map(|q| q.as_str().to_string());
     sqlx::query!(
-        "INSERT INTO tracks (id, album_id, title, version, disc_number, track_number, duration_secs, explicit, isrc, track_artist, file_path, monitored, acquired)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        "INSERT INTO tracks (id, album_id, title, version, disc_number, track_number, duration_secs, explicit, isrc, quality_override, track_artist, file_path, monitored, acquired)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
          ON CONFLICT(id) DO UPDATE SET
            title = excluded.title,
            version = excluded.version,
@@ -84,12 +93,13 @@ pub(crate) async fn upsert_track(
            duration_secs = excluded.duration_secs,
            explicit = excluded.explicit,
            isrc = excluded.isrc,
+           quality_override = excluded.quality_override,
            track_artist = COALESCE(excluded.track_artist, tracks.track_artist),
            file_path = COALESCE(excluded.file_path, tracks.file_path),
            monitored = excluded.monitored,
            acquired = excluded.acquired",
         track.id, album_id, track.title, track.version, disc, tnum, dur, track.explicit, track.isrc,
-        track.track_artist, track.file_path, track.monitored, track.acquired,
+        quality_override, track.track_artist, track.file_path, track.monitored, track.acquired,
     )
     .execute(pool)
     .await?;
@@ -115,6 +125,7 @@ pub(crate) async fn update_track_flags(
 }
 
 /// Load all monitored tracks for an album (tracks individually selected for download).
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) async fn load_monitored_tracks_for_album(
     pool: &SqlitePool,
     album_id: Uuid,
@@ -125,7 +136,7 @@ pub(crate) async fn load_monitored_tracks_for_album(
             id as "id!: Uuid",
             title, version, disc_number, track_number, duration_secs,
             explicit as "explicit!: bool",
-            isrc, track_artist, file_path,
+            isrc, quality_override, track_artist, file_path,
             monitored as "monitored!: bool",
             acquired as "acquired!: bool"
          FROM tracks WHERE album_id = $1 AND monitored = 1
@@ -136,6 +147,22 @@ pub(crate) async fn load_monitored_tracks_for_album(
     .await?;
 
     Ok(rows.into_iter().map(TrackInfo::from).collect())
+}
+
+pub(crate) async fn update_track_quality_override(
+    pool: &SqlitePool,
+    track_id: Uuid,
+    quality: Option<Quality>,
+) -> Result<(), sqlx::Error> {
+    let quality_override = quality.map(|q| q.as_str().to_string());
+    sqlx::query!(
+        "UPDATE tracks SET quality_override = $1 WHERE id = $2",
+        quality_override,
+        track_id,
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
 }
 
 /// Check if an album has any individually monitored tracks that are not yet acquired.
@@ -224,6 +251,7 @@ pub(crate) async fn all_monitored_tracks_acquired(
 #[cfg(test)]
 mod tests {
     use crate::test_helpers::*;
+    use yoink_shared::Quality;
 
     #[tokio::test]
     async fn upsert_and_load_tracks() {
@@ -258,6 +286,7 @@ mod tests {
                 duration_display: "3:20".to_string(),
                 isrc: None,
                 explicit: false,
+                quality_override: None,
                 track_artist: None,
                 file_path: None,
                 monitored: false,
@@ -409,6 +438,7 @@ mod tests {
             duration_display: "3:20".to_string(),
             isrc: None,
             explicit: false,
+            quality_override: None,
             track_artist: Some("Featured Artist".to_string()),
             file_path: Some("/music/song.flac".to_string()),
             monitored: false,
@@ -431,6 +461,26 @@ mod tests {
         assert_eq!(loaded[0].title, "Song (Remastered)");
         assert_eq!(loaded[0].track_artist.as_deref(), Some("Featured Artist"));
         assert_eq!(loaded[0].file_path.as_deref(), Some("/music/song.flac"));
+    }
+
+    #[tokio::test]
+    async fn track_quality_override_roundtrips_and_updates() {
+        let pool = test_db().await;
+        let artist = seed_artist(&pool, "Artist").await;
+        let album = seed_album(&pool, artist.id, "Album").await;
+        let tracks = seed_tracks(&pool, album.id, 1).await;
+
+        super::update_track_quality_override(&pool, tracks[0].id, Some(Quality::Low))
+            .await
+            .unwrap();
+        let loaded = super::load_tracks_for_album(&pool, album.id).await.unwrap();
+        assert_eq!(loaded[0].quality_override, Some(Quality::Low));
+
+        super::update_track_quality_override(&pool, tracks[0].id, None)
+            .await
+            .unwrap();
+        let loaded = super::load_tracks_for_album(&pool, album.id).await.unwrap();
+        assert_eq!(loaded[0].quality_override, None);
     }
 
     #[tokio::test]

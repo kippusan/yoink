@@ -25,7 +25,7 @@ If you want to contribute and implement a feature, even better!
 - [x] Multiple providers
 - [x] Simple web ui
 - [x] Import only from folder structure created by yoink
-- [ ] Quality settings for downloads (e.g. prefer FLAC if available)
+- [x] Quality settings for downloads (e.g. prefer FLAC if available)
 - [x] Deezer metadata support
 - [x] MusicBrainz metadata support
 - [ ] Support mixes in addition to albums and singles

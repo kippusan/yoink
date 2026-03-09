@@ -1,7 +1,9 @@
 mod album_card;
+mod auth_credentials_form;
 mod badge;
 mod breadcrumb;
 mod button;
+mod card;
 pub(crate) mod confirm_dialog;
 mod dialog_shell;
 mod edit_artist_dialog;
@@ -17,9 +19,11 @@ mod sleeve_badge;
 pub mod toast;
 
 pub use album_card::{AlbumCard, MonitorToggle};
+pub use auth_credentials_form::AuthCredentialsForm;
 pub use badge::{Badge, BadgeSize, BadgeSurface, BadgeVariant, download_status_badge_variant};
 pub use breadcrumb::{Breadcrumb, BreadcrumbItem};
 pub use button::{Button, ButtonSize, ButtonVariant};
+pub use card::{Card, CardContent, CardDescription, CardHeader, CardTitle};
 pub use confirm_dialog::ConfirmDialog;
 pub use dialog_shell::{
     ArtistAvatar, DialogResultRow, DialogSectionLabel, DialogShell, DialogSize,

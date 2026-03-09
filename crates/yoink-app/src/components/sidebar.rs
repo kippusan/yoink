@@ -1,5 +1,9 @@
 use leptos::prelude::*;
-use lucide_leptos::{FolderDown, Headphones, Heart, House, Menu, Search, SunMoon, X};
+use lucide_leptos::{
+    FolderDown, Headphones, Heart, House, KeyRound, LogOut, Menu, Search, SunMoon, X,
+};
+
+use crate::hooks::use_auth_enabled;
 
 // ── Mobile menu context ─────────────────────────────────────
 
@@ -86,6 +90,8 @@ fn SidebarNav(
     search_class: &'static str,
     wanted_class: &'static str,
     import_class: &'static str,
+    security_class: &'static str,
+    auth_enabled: Signal<bool>,
     theme_label: Signal<&'static str>,
     on_toggle: impl Fn(leptos::ev::MouseEvent) + 'static + Clone + Send + Sync,
     #[prop(optional)] on_nav_click: Option<Box<dyn Fn() + Send + Sync>>,
@@ -137,6 +143,26 @@ fn SidebarNav(
             </a>
         </nav>
         <div class="px-4 py-3 border-t border-white/[.06]">
+            <span class="block text-[11px] uppercase tracking-wider font-semibold text-zinc-500 px-1 pb-1 mb-1">
+                "Settings"
+            </span>
+            <Show when=move || auth_enabled.get()>
+                <div class="mb-1">
+                    <a href="/settings/security" class=security_class on:click=nav_click>
+                        <KeyRound />
+                        "Security"
+                    </a>
+                </div>
+                <form method="post" action="/auth/logout">
+                    <button type="submit"
+                        class="flex items-center gap-2.5 w-full bg-transparent border-none text-red-400/90 font-inherit text-[13px] cursor-pointer py-2 px-1 rounded-md transition-[background,color] duration-150 hover:bg-red-500/[.08] hover:text-red-300 [&_svg]:size-4 [&_svg]:shrink-0"
+                        on:click=nav_click
+                    >
+                        <LogOut />
+                        "Logout"
+                    </button>
+                </form>
+            </Show>
             <button type="button"
                 class="flex items-center gap-2.5 w-full bg-transparent border-none text-zinc-400/90 font-inherit text-[13px] cursor-pointer py-2 px-1 rounded-md transition-[background,color] duration-150 hover:bg-white/[.04] hover:text-zinc-200 [&_svg]:size-4 [&_svg]:shrink-0"
                 on:click=on_toggle
@@ -194,6 +220,12 @@ pub fn Sidebar(#[prop(into)] active: String) -> impl IntoView {
     } else {
         NAV_BASE
     };
+    let security_class = if active == "settings-security" {
+        NAV_ACTIVE
+    } else {
+        NAV_BASE
+    };
+    let auth_enabled = use_auth_enabled();
 
     // Theme state — initialised from DOM on the client (after hydration),
     // defaults to `true` (dark) during SSR to match the bootstrap script.
@@ -297,6 +329,8 @@ pub fn Sidebar(#[prop(into)] active: String) -> impl IntoView {
                 search_class=search_class
                 wanted_class=wanted_class
                 import_class=import_class
+                security_class=security_class
+                auth_enabled=Signal::derive(move || auth_enabled.get())
                 theme_label=theme_label
                 on_toggle=on_toggle
             />
@@ -334,6 +368,8 @@ pub fn Sidebar(#[prop(into)] active: String) -> impl IntoView {
                     search_class=search_class
                     wanted_class=wanted_class
                     import_class=import_class
+                    security_class=security_class
+                    auth_enabled=Signal::derive(move || auth_enabled.get())
                     theme_label=theme_label
                     on_toggle=on_toggle
                     on_nav_click=Box::new(close_drawer)

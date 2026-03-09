@@ -19,6 +19,7 @@ use crate::components::{
     fallback_initial,
 };
 use crate::hooks::{set_page_title, use_sse_version};
+use crate::search_result_keys::provider_result_key;
 use crate::styles::{EMPTY, GLASS, GLASS_BODY, SEARCH_INPUT, SELECT};
 
 // ── Page-specific Tailwind class constants ──────────────────
@@ -513,9 +514,13 @@ fn ArtistsContent(
                                                 <PanelTitle>"Add from Search"</PanelTitle>
                                             </PanelHeader>
                                             <div>
-                                                {new_results.into_iter().map(|artist| {
-                                                    view! { <SearchResultRow artist=artist set_query=set_query /> }
-                                                }).collect_view()}
+                                                <For
+                                                    each=move || new_results.clone()
+                                                    key=|artist| provider_result_key(&artist.provider, &artist.external_id)
+                                                    let:artist
+                                                >
+                                                    <SearchResultRow artist=artist set_query=set_query />
+                                                </For>
                                             </div>
                                         </Panel>
                                     }.into_any())

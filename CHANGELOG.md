@@ -5,6 +5,7 @@
 ### Features
 
 - Added support for password authentication
+- Artist ordering is now persisted in localstorage
 
 ### Fixes
 

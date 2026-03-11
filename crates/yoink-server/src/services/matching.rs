@@ -9,6 +9,7 @@ use crate::{
     models::MonitoredAlbum,
     providers::{ProviderAlbum, ProviderArtist, ProviderTrack},
     state::AppState,
+    util::{normalize, provider_priority},
 };
 
 pub(crate) async fn recompute_artist_match_suggestions(
@@ -348,26 +349,6 @@ fn track_title_overlap(left: &[ProviderTrack], right: &[ProviderTrack]) -> f64 {
         0.0
     } else {
         total / matched as f64
-    }
-}
-
-fn normalize(input: &str) -> String {
-    input
-        .to_ascii_lowercase()
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { ' ' })
-        .collect::<String>()
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-fn provider_priority(provider_id: &str) -> u8 {
-    match provider_id {
-        "tidal" => 10,
-        "deezer" => 9,
-        "musicbrainz" => 1,
-        _ => 5,
     }
 }
 

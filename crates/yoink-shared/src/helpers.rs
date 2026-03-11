@@ -4,6 +4,25 @@ use uuid::Uuid;
 
 use crate::{DownloadJob, DownloadStatus, MonitoredAlbum, MonitoredArtist, TrackInfo};
 
+// ── Well-known fallback strings ─────────────────────────────
+
+pub const UNKNOWN_ARTIST: &str = "Unknown Artist";
+pub const UNKNOWN_ALBUM: &str = "Unknown Album";
+
+// ── Display helpers ─────────────────────────────────────────
+
+/// Format a duration in seconds as `"M:SS"` or `"H:MM:SS"` when >= 1 hour.
+pub fn format_duration(secs: u32) -> String {
+    let hours = secs / 3600;
+    let mins = (secs % 3600) / 60;
+    let rem = secs % 60;
+    if hours > 0 {
+        format!("{hours}:{mins:02}:{rem:02}")
+    } else {
+        format!("{mins}:{rem:02}")
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct WantedAlbumGroup {
     pub album: MonitoredAlbum,

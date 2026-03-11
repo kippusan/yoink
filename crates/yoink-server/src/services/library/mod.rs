@@ -4,6 +4,7 @@ mod reconcile;
 mod sync;
 
 use crate::models::MonitoredAlbum;
+use crate::util::{is_audio_extension, normalize as normalize_text};
 
 pub(crate) use import::{confirm_import_library, preview_import_library, scan_and_import_library};
 pub(crate) use merge::merge_albums;
@@ -33,17 +34,6 @@ pub(crate) async fn recompute_partially_wanted(db: &sqlx::SqlitePool, album: &mu
     }
 }
 
-fn normalize_text(value: &str) -> String {
-    value
-        .chars()
-        .flat_map(|c| c.to_lowercase())
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { ' ' })
-        .collect::<String>()
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
 fn parse_release_year(release_date: &str) -> Option<String> {
     let year = release_date.chars().take(4).collect::<String>();
     if year.len() == 4 && year.chars().all(|c| c.is_ascii_digit()) {
@@ -69,16 +59,7 @@ async fn album_dir_has_downloaded_audio(path: &std::path::Path) -> bool {
         let p = entry.path();
         if p.extension()
             .and_then(|e| e.to_str())
-            .map(|ext| {
-                ext.eq_ignore_ascii_case("flac")
-                    || ext.eq_ignore_ascii_case("m4a")
-                    || ext.eq_ignore_ascii_case("mp4")
-                    || ext.eq_ignore_ascii_case("mp3")
-                    || ext.eq_ignore_ascii_case("aac")
-                    || ext.eq_ignore_ascii_case("ogg")
-                    || ext.eq_ignore_ascii_case("wav")
-            })
-            .unwrap_or(false)
+            .is_some_and(is_audio_extension)
         {
             return true;
         }

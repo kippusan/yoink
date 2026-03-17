@@ -1,17 +1,37 @@
 [tools]
-"cargo:cargo-leptos" = "latest"
+"cargo:cargo-tarpaulin" = "latest"
 "cargo:sqlx-cli" = { version = "latest", features = "sqlite" }
 "github:tursodatabase/turso" = "latest"
 
 [tasks.lint-server]
 run = "cargo clippy --package yoink-server -- -D warnings"
 
-[tasks.lint-client]
-run = "cargo clippy --package yoink-client -- -D warnings"
+[tasks.run-server]
+run = "cargo run -p yoink-server"
+
+[tasks.dev-server]
+run = "mise watch -r -w crates -W Cargo.toml -W .env run-server"
+
+[tasks.lint-frontend]
+dir = "frontend"
+run = "bun lint"
+
+[tasks.dev-frontend]
+dir = "frontend"
+run = "bun run dev"
+
+[tasks.build-frontend]
+dir = "frontend"
+run = "bun run build"
+
+[tasks.gen-frontend-types]
+alias = "gt"
+dir = "frontend"
+run = "bun x openapi-typescript http://localhost:3000/docs/openapi.json --output src/lib/api/types.gen.ts"
 
 [tasks.lint]
-depends = ["lint-server", "lint-client"]
+depends = ["lint-server", "lint-frontend"]
 
 [tasks.dev]
-run = "cargo leptos watch"
+depends = ["dev-server", "dev-frontend"]
 alias = "d"

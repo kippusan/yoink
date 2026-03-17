@@ -58,14 +58,16 @@ See the [compose.yaml](compose.yaml) for all available environment variables and
 #### Prerequisites
 
 - [Rust](https://rustup.rs/) (stable toolchain)
-- [mise](https://mise.jdx.dev/) (manages cargo-leptos and sqlx-cli automatically)
+- [bun](https://bun.sh/) (installed through mise)
+- [mise](https://mise.jdx.dev/) (manages sqlx-cli automatically)
 
 #### Setup
 
 ```bash
 git clone https://github.com/FlyinPancake/yoink.git
 cd yoink
-mise install # this installs cargo-leptos and sqlx-cli, which are required for development and running the app from source
+mise install # this installs bun which is required for development and running the app from source
+cd frontend && bun install # installs frontend dependencies
 ```
 
 Copy the example environment file and configure your providers:
@@ -74,10 +76,19 @@ Copy the example environment file and configure your providers:
 cp .env.example .env
 ```
 
-Then start yoink:
+Then start yoink dev server:
 
 ```bash
 mise run dev
+```
+
+The web UI will be available at **[http://localhost:5173](http://localhost:5173)**.
+
+If you want to run the release version you need to build the frontend first
+
+```bash
+mise build-frontend
+mise run-server --release
 ```
 
 The web UI will be available at **[http://localhost:3000](http://localhost:3000)**.
@@ -115,7 +126,8 @@ All configuration is done via environment variables. See [`.env.example`](.env.e
 
 ## Built With
 
-yoink is built with **Rust** end-to-end — [Leptos](https://leptos.dev/) for the full-stack web UI with WebAssembly hydration, [Axum](https://github.com/tokio-rs/axum) for the server, [SQLite](https://www.sqlite.org/) via [SQLx](https://github.com/launchbadge/sqlx) for storage, and [Tailwind CSS](https://tailwindcss.com/) for styling. No Node.js runtime just a single binary and a database file.
+yoink is built with **Rust and React**, [Axum](https://github.com/tokio-rs/axum) for the server and [SQLite](https://www.sqlite.org/) via [SQLx](https://github.com/launchbadge/sqlx) for storage.
+The frontend is built with [Tanstack Start](https://tanstack.com/start) and [shadcn/ui](https://ui.shadcn.com/) for components.
 
 ## Contributing
 

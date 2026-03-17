@@ -29,7 +29,7 @@ fn search_relevance_score(query: &str, name: &str) -> f64 {
     (jw + prefix_bonus + contains_bonus).min(1.0)
 }
 
-/// Build the `ServerContext` that wires Leptos server functions to the real `AppState`.
+/// Build the `ServerContext` that wires shared service functions to the real `AppState`.
 pub(crate) fn build_server_context(state: &AppState) -> yoink_shared::ServerContext {
     let search_fn = build_search_fn(state);
     let search_scoped_fn = build_search_scoped_fn(state);
@@ -505,6 +505,7 @@ fn build_search_albums_fn(state: &AppState) -> yoink_shared::SearchAlbumsFn {
                         explicit: a.explicit,
                         artist_name: a.artist_name,
                         artist_external_id: a.artist_external_id,
+                        already_added: None,
                     });
                 }
             }
@@ -543,6 +544,7 @@ fn build_search_tracks_fn(state: &AppState) -> yoink_shared::SearchTracksFn {
                         album_title: t.album_title,
                         album_external_id: t.album_external_id,
                         album_cover_url,
+                        already_added: None,
                     });
                 }
             }
@@ -654,33 +656,14 @@ async fn load_or_backfill_album_tracks(
         albums.iter().find(|album| album.id == album_id).cloned()
     };
 
-    let mut tracks = db::load_tracks_for_album(&state.db, album_id)
+    let tracks = db::load_tracks_for_album(&state.db, album_id)
         .await
         .map_err(|e| format!("Failed to load tracks: {e}"))?;
 
-    if let Some(album) = album.as_ref() {
-        let mut repaired = false;
-        for track in &mut tracks {
-            let next_monitored = track.monitored || album.monitored;
-            let next_acquired = track.acquired || (album.monitored && album.acquired);
-            if next_monitored != track.monitored || next_acquired != track.acquired {
-                db::update_track_flags(&state.db, track.id, next_monitored, next_acquired)
-                    .await
-                    .map_err(|e| format!("failed to repair track flags: {e}"))?;
-                track.monitored = next_monitored;
-                track.acquired = next_acquired;
-                repaired = true;
-            }
-        }
-
-        if repaired {
-            tracks.sort_by(|a, b| {
-                a.disc_number
-                    .cmp(&b.disc_number)
-                    .then_with(|| a.track_number.cmp(&b.track_number))
-            });
-        }
-    }
+    // Track monitored/acquired flags are now kept in sync when the
+    // album-level monitored state changes (see toggle_album_monitor /
+    // bulk_monitor), so the lazy one-way promotion that used to live
+    // here is no longer needed.
 
     let needs_artist_backfill =
         !tracks.is_empty() && tracks.iter().all(|track| track.track_artist.is_none());

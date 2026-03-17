@@ -98,8 +98,11 @@ fn is_public_path(path: &str) -> bool {
         || path == "/auth/logout"
         || path == "/api/auth/status"
         || path.starts_with("/pkg/")
+        || path.starts_with("/assets/")
         || path == "/favicon.ico"
         || path == "/yoink.svg"
+        || path == "/manifest.json"
+        || path == "/robots.txt"
 }
 
 fn is_auth_only_page(path: &str) -> bool {
@@ -109,14 +112,17 @@ fn is_auth_only_page(path: &str) -> bool {
 fn is_force_setup_allowed_path(path: &str) -> bool {
     matches!(
         path,
-        "/setup/password" | "/auth/credentials" | "/auth/logout" | "/api/auth/status"
+        "/setup/password" | "/auth/update-credentials" | "/auth/logout" | "/api/auth/status"
     ) || path.starts_with("/pkg/")
+        || path.starts_with("/assets/")
         || path == "/favicon.ico"
         || path == "/yoink.svg"
+        || path == "/manifest.json"
+        || path == "/robots.txt"
 }
 
 fn is_api_like_path(path: &str) -> bool {
-    path.starts_with("/api/") || path.starts_with("/leptos/")
+    path.starts_with("/api/")
 }
 
 #[cfg(test)]

@@ -10,8 +10,6 @@ use tower::ServiceExt;
 
 use crate::auth::{AuthenticatedSession, middleware::enforce_auth};
 use crate::db::{load_auth_settings, update_auth_settings_tx};
-use crate::models::DownloadStatus;
-use crate::providers::ProviderArtist;
 use crate::providers::registry::ProviderRegistry;
 use crate::test_helpers::*;
 
@@ -21,7 +19,7 @@ use super::helpers::sanitize_next_target;
 
 /// Helper: send a GET request to a path and return the status + body bytes.
 async fn get(state: crate::state::AppState, path: &str) -> (StatusCode, Vec<u8>) {
-    let app = build_router(state);
+    let (app, _) = build_router(state).split_for_parts();
     let req = Request::builder().uri(path).body(Body::empty()).unwrap();
     let resp = app.oneshot(req).await.unwrap();
     let status = resp.status();
@@ -33,7 +31,10 @@ async fn get(state: crate::state::AppState, path: &str) -> (StatusCode, Vec<u8>)
 }
 
 fn app_with_auth(state: crate::state::AppState) -> Router {
-    build_router(state.clone()).layer(middleware::from_fn_with_state(state, enforce_auth))
+    build_router(state.clone())
+        .split_for_parts()
+        .0
+        .layer(middleware::from_fn_with_state(state, enforce_auth))
 }
 
 async fn send(app: Router, req: Request<Body>) -> (StatusCode, axum::http::HeaderMap, Vec<u8>) {
@@ -71,182 +72,6 @@ async fn login_cookie(state: crate::state::AppState, username: &str, password: &
     session_cookie(&headers)
 }
 
-// ── GET /api/library/artists ────────────────────────────────
-
-#[tokio::test]
-async fn list_artists_empty() {
-    let (state, _tmp) = test_app_state().await;
-    let (status, body) = get(state, "/api/library/artists").await;
-    assert_eq!(status, StatusCode::OK);
-    let artists: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
-    assert!(artists.is_empty());
-}
-
-#[tokio::test]
-async fn list_artists_with_data() {
-    let (state, _tmp) = test_app_state().await;
-    let artist = seed_artist(&state.db, "Test Artist").await;
-    state.monitored_artists.write().await.push(artist.clone());
-
-    let (status, body) = get(state, "/api/library/artists").await;
-    assert_eq!(status, StatusCode::OK);
-    let artists: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
-    assert_eq!(artists.len(), 1);
-    assert_eq!(artists[0]["name"], "Test Artist");
-}
-
-// ── GET /api/library/albums ─────────────────────────────────
-
-#[tokio::test]
-async fn list_albums_returns_correct_json() {
-    let (state, _tmp) = test_app_state().await;
-    let artist = seed_artist(&state.db, "Artist").await;
-    let album = seed_album(&state.db, artist.id, "My Album").await;
-    state.monitored_albums.write().await.push(album.clone());
-
-    let (status, body) = get(state, "/api/library/albums").await;
-    assert_eq!(status, StatusCode::OK);
-    let albums: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
-    assert_eq!(albums.len(), 1);
-    assert_eq!(albums[0]["title"], "My Album");
-    assert_eq!(albums[0]["monitored"], true);
-}
-
-// ── GET /api/downloads ──────────────────────────────────────
-
-#[tokio::test]
-async fn list_downloads_empty() {
-    let (state, _tmp) = test_app_state().await;
-    let (status, body) = get(state, "/api/downloads").await;
-    assert_eq!(status, StatusCode::OK);
-    let jobs: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
-    assert!(jobs.is_empty());
-}
-
-#[tokio::test]
-async fn list_downloads_with_jobs() {
-    let (state, _tmp) = test_app_state().await;
-    let artist = seed_artist(&state.db, "Artist").await;
-    let album = seed_album(&state.db, artist.id, "Album").await;
-    let job = seed_job(&state.db, album.id, DownloadStatus::Queued).await;
-    state.download_jobs.write().await.push(job);
-
-    let (status, body) = get(state, "/api/downloads").await;
-    assert_eq!(status, StatusCode::OK);
-    let jobs: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
-    assert_eq!(jobs.len(), 1);
-    assert_eq!(jobs[0]["status"], "queued");
-}
-
-// ── GET /api/albums/{id}/tracks ─────────────────────────────
-
-#[tokio::test]
-async fn album_tracks_from_db() {
-    let (state, _tmp) = test_app_state().await;
-    let artist = seed_artist(&state.db, "Artist").await;
-    let album = seed_album(&state.db, artist.id, "Album").await;
-    seed_tracks(&state.db, album.id, 3).await;
-
-    let (status, body) = get(state, &format!("/api/albums/{}/tracks", album.id)).await;
-    assert_eq!(status, StatusCode::OK);
-    let tracks: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
-    assert_eq!(tracks.len(), 3);
-    assert_eq!(tracks[0]["title"], "Track 1");
-}
-
-#[tokio::test]
-async fn album_tracks_empty_when_no_tracks() {
-    let (state, _tmp) = test_app_state().await;
-    let artist = seed_artist(&state.db, "Artist").await;
-    let album = seed_album(&state.db, artist.id, "Album").await;
-
-    let (status, body) = get(state, &format!("/api/albums/{}/tracks", album.id)).await;
-    assert_eq!(status, StatusCode::OK);
-    let tracks: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
-    assert!(tracks.is_empty());
-}
-
-// ── GET /api/search?q= ──────────────────────────────────────
-
-#[tokio::test]
-async fn search_empty_query_returns_empty() {
-    let (state, _tmp) = test_app_state().await;
-    let (status, body) = get(state, "/api/search?q=").await;
-    assert_eq!(status, StatusCode::OK);
-    let results: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
-    assert!(results.is_empty());
-}
-
-#[tokio::test]
-async fn search_with_mock_provider_returns_results() {
-    let mock = Arc::new(MockMetadataProvider::new("mock_prov"));
-    *mock.search_artists_result.lock().await = Ok(vec![ProviderArtist {
-        external_id: "EXT1".to_string(),
-        name: "Found Artist".to_string(),
-        image_ref: None,
-        url: Some("https://example.com/artist".to_string()),
-        disambiguation: Some("Rock band".to_string()),
-        artist_type: Some("Group".to_string()),
-        country: Some("US".to_string()),
-        tags: vec!["rock".to_string()],
-        popularity: Some(80),
-    }]);
-
-    let mut registry = ProviderRegistry::new();
-    registry.register_metadata(mock as Arc<dyn crate::providers::MetadataProvider>);
-
-    let (state, _tmp) = test_app_state_with_registry(registry).await;
-
-    let (status, body) = get(state, "/api/search?q=Found").await;
-    assert_eq!(status, StatusCode::OK);
-    let results: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0]["name"], "Found Artist");
-    assert_eq!(results[0]["provider"], "mock_prov");
-    assert_eq!(results[0]["already_monitored"], false);
-}
-
-#[tokio::test]
-async fn search_flags_already_monitored() {
-    let mock = Arc::new(MockMetadataProvider::new("mock_prov"));
-    *mock.search_artists_result.lock().await = Ok(vec![ProviderArtist {
-        external_id: "E1".to_string(),
-        name: "Monitored One".to_string(),
-        image_ref: None,
-        url: None,
-        disambiguation: None,
-        artist_type: None,
-        country: None,
-        tags: vec![],
-        popularity: None,
-    }]);
-
-    let mut registry = ProviderRegistry::new();
-    registry.register_metadata(mock as Arc<dyn crate::providers::MetadataProvider>);
-
-    let (state, _tmp) = test_app_state_with_registry(registry).await;
-
-    let artist = seed_artist(&state.db, "Monitored One").await;
-    state.monitored_artists.write().await.push(artist);
-
-    let (status, body) = get(state, "/api/search?q=Monitored").await;
-    assert_eq!(status, StatusCode::OK);
-    let results: Vec<serde_json::Value> = serde_json::from_slice(&body).unwrap();
-    assert_eq!(results.len(), 1);
-    assert_eq!(results[0]["already_monitored"], true);
-}
-
-// ── GET /api/tidal/instances ─────────────────────────────────
-
-#[tokio::test]
-async fn tidal_instances_no_tidal() {
-    let (state, _tmp) = test_app_state().await;
-    let (status, body) = get(state, "/api/tidal/instances").await;
-    assert_eq!(status, StatusCode::OK);
-    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-    assert!(json["error"].is_string());
-}
-
 // ── GET /api/image/{provider}/{id}/{size} ────────────────────
 
 #[tokio::test]
@@ -273,7 +98,7 @@ async fn protected_api_requires_auth() {
     let (state, _tmp) = test_app_state_with_auth().await;
     let app = app_with_auth(state);
     let req = Request::builder()
-        .uri("/api/library/artists")
+        .uri("/api/events")
         .body(Body::empty())
         .unwrap();
 
@@ -340,7 +165,7 @@ async fn update_credentials_reissues_session_on_success() {
 
     let req = Request::builder()
         .method("POST")
-        .uri("/auth/credentials")
+        .uri("/auth/update-credentials")
         .header("content-type", "application/x-www-form-urlencoded")
         .header("cookie", &original_cookie)
         .body(Body::from(
@@ -392,7 +217,7 @@ async fn update_credentials_rejects_wrong_current_password() {
 
     let req = Request::builder()
         .method("POST")
-        .uri("/auth/credentials")
+        .uri("/auth/update-credentials")
         .header("content-type", "application/x-www-form-urlencoded")
         .header("cookie", &cookie)
         .body(Body::from(
@@ -432,7 +257,7 @@ async fn update_credentials_rejects_password_confirmation_mismatch() {
 
     let req = Request::builder()
         .method("POST")
-        .uri("/auth/credentials")
+        .uri("/auth/update-credentials")
         .header("content-type", "application/x-www-form-urlencoded")
         .header("cookie", &cookie)
         .body(Body::from(
@@ -649,20 +474,4 @@ async fn forced_setup_login_redirects_to_setup_page() {
             .and_then(|value| value.to_str().ok()),
         Some("/setup/password")
     );
-}
-
-#[tokio::test]
-async fn server_fn_path_requires_auth() {
-    let (state, _tmp) = test_app_state_with_auth().await;
-    let app = Router::new()
-        .route("/leptos/test", axum_get(|| async { StatusCode::OK }))
-        .with_state(state.clone())
-        .layer(middleware::from_fn_with_state(state, enforce_auth));
-
-    let req = Request::builder()
-        .uri("/leptos/test")
-        .body(Body::empty())
-        .unwrap();
-    let (status, _, _) = send(app, req).await;
-    assert_eq!(status, StatusCode::UNAUTHORIZED);
 }

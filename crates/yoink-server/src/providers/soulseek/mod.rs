@@ -18,6 +18,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{RwLock, Semaphore};
 use tracing::{debug, warn};
+use url::Url;
 
 use crate::db::{provider::Provider, quality::Quality};
 
@@ -33,7 +34,7 @@ use super::{DownloadSource, DownloadTrackContext, PlaybackInfo, ProviderError};
 
 pub(crate) struct SoulSeekSource {
     http: reqwest::Client,
-    slskd_base_url: String,
+    slskd_base_url: Url,
     username: String,
     password: String,
     downloads_dir: PathBuf,
@@ -45,14 +46,14 @@ pub(crate) struct SoulSeekSource {
 impl SoulSeekSource {
     pub fn new(
         http: reqwest::Client,
-        slskd_base_url: String,
+        slskd_base_url: Url,
         username: String,
         password: String,
         downloads_dir: String,
     ) -> Self {
         Self {
             http,
-            slskd_base_url: slskd_base_url.trim_end_matches('/').to_string(),
+            slskd_base_url,
             username: username.trim().to_string(),
             password: password.trim().to_string(),
             downloads_dir: PathBuf::from(downloads_dir.trim()),
@@ -672,7 +673,9 @@ mod tests {
     fn resolve_local_download_paths_includes_leaf_directory_variant() {
         let source = SoulSeekSource::new(
             reqwest::Client::new(),
-            "http://127.0.0.1:5030".to_string(),
+            "http://127.0.0.1:5030"
+                .parse()
+                .expect("slskd base url parse"),
             "".to_string(),
             "".to_string(),
             "/tmp/slskd-downloads".to_string(),

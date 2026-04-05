@@ -1,8 +1,6 @@
 ---
 services:
   yoink:
-    # version tags are available like 0.1.0 use main for bleeding edge (not recommended, you'll bleed)
-    # the 0 and 0.x tags are not recommended as they may have breaking changes without a major version bump
     build: .
     container_name: yoink
     restart: unless-stopped
@@ -12,6 +10,9 @@ services:
       - yoink-data:/data
       - ./music:/music
       - ./development/slskd-data:/app
+    environment:
+      RUST_BACKTRACE: 1
+      AUTH_DISABLED: true
   slskd:
     image: slskd/slskd
     container_name: slskd

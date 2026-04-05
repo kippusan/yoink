@@ -16,7 +16,7 @@ import {
   SettingsIcon,
 } from "lucide-react";
 import { ThemeSelector } from "./theme-selector";
-import { $api } from "@/lib/api";
+import type { components } from "@/lib/api";
 
 const navMain = [
   {
@@ -65,8 +65,13 @@ const navSecondary = [
   },
 ];
 
-export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
-  const { data: authStatus } = $api.useQuery("get", "/api/auth/status");
+type AuthStatus = components["schemas"]["AuthStatus"];
+
+interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
+  authStatus?: AuthStatus;
+}
+
+export function AppSidebar({ authStatus, ...props }: AppSidebarProps) {
 
   return (
     <Sidebar variant="inset" {...props}>

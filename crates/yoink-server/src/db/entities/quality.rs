@@ -5,7 +5,17 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 #[derive(
-    Clone, Debug, PartialEq, Eq, Copy, Serialize, Deserialize, ToSchema, EnumIter, DeriveActiveEnum,
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    Copy,
+    Serialize,
+    Deserialize,
+    ToSchema,
+    EnumIter,
+    DeriveActiveEnum,
+    clap::ValueEnum,
 )]
 #[sea_orm(
     rs_type = "String",
@@ -13,10 +23,21 @@ use utoipa::ToSchema;
     enum_name = "quality",
     rename_all = "snake_case"
 )]
+#[value(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum Quality {
+    #[value(alias = "low")]
     Low,
+    #[value(alias = "high")]
     High,
+    #[value(alias = "lossless")]
     Lossless,
+    #[value(
+        alias = "hires",
+        alias = "hi-res",
+        alias = "hi_res",
+        alias = "HIRES",
+        alias = "HI-RES"
+    )]
     HiRes,
 }
 
@@ -24,13 +45,8 @@ impl FromStr for Quality {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "low" => Ok(Quality::Low),
-            "high" => Ok(Quality::High),
-            "lossless" => Ok(Quality::Lossless),
-            "hires" | "hi-res" | "hi_res" => Ok(Quality::HiRes),
-            _ => Err(format!("Invalid quality: {}", s)),
-        }
+        serde_json::from_str(&format!("\"{}\"", s))
+            .map_err(|_| format!("Invalid quality value: '{}'.", s))
     }
 }
 
@@ -42,5 +58,11 @@ impl Quality {
             Quality::High => "HIGH",
             Quality::Low => "LOW",
         }
+    }
+}
+
+impl std::fmt::Display for Quality {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
     }
 }

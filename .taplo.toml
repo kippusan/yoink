@@ -1,0 +1,11 @@
+[formatting]
+reorder_keys  = false
+align_entries = true
+
+[[rule]]
+include = ["**/Cargo.toml"]
+keys    = ["dependencies", "workspace.dependencies"]
+
+[rule.formatting]
+reorder_keys  = true
+align_entries = true

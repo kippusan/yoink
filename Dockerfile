@@ -26,15 +26,16 @@ RUN cargo chef prepare --recipe-path recipe.json
 # ── Stage 4: Builder — cache deps, then build ───────────────
 FROM chef AS builder
 
-ENV SQLX_OFFLINE=true
-
 COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --release --package yoink-server --recipe-path recipe.json
 
 COPY . .
 
 # Copy the frontend build output into the tree so rust-embed can pick it up.
-COPY --from=frontend /app/frontend/.output/public/ ./frontend/.output/public/
+COPY --from=frontend /app/frontend/dist/. /tmp/frontend-dist/
+RUN mkdir -p frontend/dist && \
+    cp -a /tmp/frontend-dist/. frontend/dist/ && \
+    test -f frontend/dist/index.html
 
 RUN cargo build --release --package yoink-server
 
@@ -52,7 +53,7 @@ RUN chmod +x /entrypoint.sh
 
 WORKDIR /app
 
-COPY --from=builder /app/target/release/yoink-server ./yoink-server
+COPY --from=builder /app/target/release/yoink-server /usr/local/bin/yoink-server
 
 # better-config expects a .env file to exist
 RUN touch .env
@@ -69,4 +70,4 @@ EXPOSE 3000
 VOLUME ["/data", "/music"]
 
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["./yoink-server"]
+CMD ["yoink-server"]

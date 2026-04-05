@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
-use better_config::{EnvConfig, env};
+use serde::Deserialize;
 use thiserror::Error;
+use url::Url;
 
 use crate::db::quality::Quality;
 
@@ -14,7 +15,7 @@ const DEFAULT_SLSKD_DOWNLOADS_DIR: &str = "./development/slskd-data/downloads";
 #[derive(Debug, Error)]
 pub(crate) enum AppConfigError {
     #[error(transparent)]
-    Parse(#[from] better_config::Error),
+    Parse(#[from] envious::EnvDeserializationError),
     #[error("{0}")]
     Validation(String),
 }
@@ -27,88 +28,84 @@ pub(crate) struct AuthConfig {
     pub(crate) init_admin_password: Option<String>,
 }
 
-#[derive(Debug)]
-#[env(EnvConfig)]
+#[derive(Debug, Deserialize)]
 struct RawAppConfig {
     /// Base URL for the Tidal hifi-api proxy.
-    #[conf(from = "TIDAL_API_BASE_URL", default = "")]
-    pub(crate) tidal_api_base_url: String,
+    #[serde(default)]
+    tidal_api_base_url: String,
 
     /// Whether the Tidal provider is enabled. Defaults to true.
-    #[conf(from = "TIDAL_ENABLED", default = "true")]
-    pub(crate) tidal_enabled: bool,
+    #[serde(default = "default_true")]
+    tidal_enabled: bool,
 
     /// Whether the MusicBrainz metadata provider is enabled. Defaults to true.
-    #[conf(from = "MUSICBRAINZ_ENABLED", default = "true")]
-    pub(crate) musicbrainz_enabled: bool,
+    #[serde(default = "default_true")]
+    musicbrainz_enabled: bool,
 
     /// Whether the Deezer metadata provider is enabled. Defaults to true.
-    #[conf(from = "DEEZER_ENABLED", default = "true")]
-    pub(crate) deezer_enabled: bool,
+    #[serde(default = "default_true")]
+    deezer_enabled: bool,
 
     /// Whether the SoulSeek download source is enabled. Defaults to false.
-    #[conf(from = "SOULSEEK_ENABLED", default = "false")]
-    pub(crate) soulseek_enabled: bool,
+    #[serde(default)]
+    soulseek_enabled: bool,
 
     /// Base URL for the slskd REST API.
-    #[conf(from = "SLSKD_BASE_URL", default = "http://127.0.0.1:5030")]
-    pub(crate) slskd_base_url: String,
+    #[serde(default = "default_slskd_base_url")]
+    slskd_base_url: String,
 
     /// Optional slskd web username for JWT auth.
-    #[conf(from = "SLSKD_USERNAME", default = "")]
-    pub(crate) slskd_username: String,
+    #[serde(default)]
+    slskd_username: String,
 
     /// Optional slskd web password for JWT auth.
-    #[conf(from = "SLSKD_PASSWORD", default = "")]
-    pub(crate) slskd_password: String,
+    #[serde(default)]
+    slskd_password: String,
 
     /// Local path to slskd downloads directory.
-    #[conf(
-        from = "SLSKD_DOWNLOADS_DIR",
-        default = "./development/slskd-data/downloads"
-    )]
-    pub(crate) slskd_downloads_dir: String,
+    #[serde(default = "default_slskd_downloads_dir")]
+    slskd_downloads_dir: String,
 
-    #[conf(from = "MUSIC_ROOT", default = "./music")]
-    pub(crate) music_root: String,
+    #[serde(default = "default_music_root")]
+    music_root: String,
 
-    #[conf(from = "DEFAULT_QUALITY", default = "LOSSLESS")]
-    default_quality: Quality,
+    #[serde(default = "default_quality")]
+    default_quality: String,
 
-    #[conf(from = "DATABASE_URL", default = "sqlite:./yoink.db?mode=rwc")]
-    pub(crate) database_url: String,
+    #[serde(default = "default_database_url")]
+    database_url: String,
 
-    #[conf(from = "LOG_FORMAT", default = "pretty")]
-    pub(crate) log_format: String,
+    #[serde(default = "default_log_format")]
+    log_format: String,
 
-    #[conf(from = "DOWNLOAD_LYRICS", default = "false")]
-    pub(crate) download_lyrics: bool,
+    #[serde(default)]
+    download_lyrics: bool,
 
     /// Maximum number of tracks to download in parallel per album job.
-    #[conf(from = "DOWNLOAD_MAX_PARALLEL_TRACKS", default = "1")]
+    #[serde(default = "default_download_max_parallel_tracks")]
     download_max_parallel_tracks: usize,
 
-    #[conf(from = "AUTH_DISABLED", default = "false")]
+    #[serde(default)]
     auth_disabled: bool,
 
-    #[conf(from = "AUTH_SESSION_SECRET", default = "")]
+    #[serde(default)]
     auth_session_secret: String,
 
-    #[conf(from = "AUTH_INIT_ADMIN_USERNAME", default = "")]
+    #[serde(default)]
     auth_init_admin_username: String,
 
-    #[conf(from = "AUTH_INIT_ADMIN_PASSWORD", default = "")]
+    #[serde(default)]
     auth_init_admin_password: String,
 }
 
 #[derive(Debug)]
 pub(crate) struct AppConfig {
-    pub(crate) tidal_api_base_url: String,
+    pub(crate) tidal_api_base_url: Option<Url>,
     pub(crate) tidal_enabled: bool,
     pub(crate) musicbrainz_enabled: bool,
     pub(crate) deezer_enabled: bool,
     pub(crate) soulseek_enabled: bool,
-    pub(crate) slskd_base_url: String,
+    pub(crate) slskd_base_url: Option<Url>,
     pub(crate) slskd_username: String,
     pub(crate) slskd_password: String,
     pub(crate) slskd_downloads_dir: String,
@@ -123,7 +120,7 @@ pub(crate) struct AppConfig {
 
 impl AppConfig {
     pub(crate) fn from_env() -> Result<Self, AppConfigError> {
-        let raw = RawAppConfig::builder().build()?;
+        let raw = config_parser().build_from_env::<RawAppConfig>()?;
         Self::from_raw(raw)
     }
 
@@ -132,20 +129,19 @@ impl AppConfig {
     }
 
     fn from_raw(raw: RawAppConfig) -> Result<Self, AppConfigError> {
-        let tidal_api_base_url = normalize_string_opt(&raw.tidal_api_base_url)
-            .map(|s| s.trim_end_matches('/').to_string())
-            .unwrap_or_default();
-        let slskd_base_url = normalize_string(&raw.slskd_base_url, DEFAULT_SLSKD_BASE_URL)
-            .trim_end_matches('/')
-            .to_string();
+        let tidal_api_base_url = parse_optional_url(&raw.tidal_api_base_url, "TIDAL_API_BASE_URL")?;
+        let slskd_base_url = Some(parse_url(
+            &normalize_string(&raw.slskd_base_url, DEFAULT_SLSKD_BASE_URL),
+            "SLSKD_BASE_URL",
+        )?);
         let slskd_downloads_dir =
             normalize_string(&raw.slskd_downloads_dir, DEFAULT_SLSKD_DOWNLOADS_DIR);
         let slskd_username = normalize_string_opt(&raw.slskd_username).unwrap_or_default();
         let slskd_password = normalize_string_opt(&raw.slskd_password).unwrap_or_default();
         let music_root = normalize_string(&raw.music_root, DEFAULT_MUSIC_ROOT);
-        let default_quality = raw.default_quality;
+        let default_quality = parse_quality(&raw.default_quality);
         let database_url = normalize_string(&raw.database_url, DEFAULT_DATABASE_URL);
-        let log_format = normalize_string(&raw.log_format, DEFAULT_LOG_FORMAT).to_ascii_lowercase();
+        let log_format = normalize_log_format(&raw.log_format);
         let download_max_parallel_tracks = raw.download_max_parallel_tracks.clamp(1, 16);
         let auth_session_secret =
             normalize_string_opt(&raw.auth_session_secret).unwrap_or_default();
@@ -208,6 +204,23 @@ impl AppConfig {
             init_admin_password,
         })
     }
+
+    #[cfg(test)]
+    fn from_iter<K, V, I>(iter: I) -> Result<Self, AppConfigError>
+    where
+        K: Into<String>,
+        V: Into<String>,
+        I: IntoIterator<Item = (K, V)>,
+    {
+        let raw = config_parser().build_from_iter::<RawAppConfig, _, _, _>(iter)?;
+        Self::from_raw(raw)
+    }
+}
+
+fn config_parser() -> envious::Config<'static> {
+    let mut config = envious::Config::default();
+    config.case_sensitive(false);
+    config
 }
 
 fn normalize_string(value: &str, fallback: &str) -> String {
@@ -228,125 +241,142 @@ fn normalize_string_opt(value: &str) -> Option<String> {
     }
 }
 
+fn normalize_log_format(value: &str) -> String {
+    match normalize_string(value, DEFAULT_LOG_FORMAT)
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "pretty" => "pretty".to_string(),
+        "json" => "json".to_string(),
+        _ => DEFAULT_LOG_FORMAT.to_string(),
+    }
+}
+
+fn parse_quality(value: &str) -> Quality {
+    normalize_string_opt(value)
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(Quality::Lossless)
+}
+
+fn parse_optional_url(value: &str, env_var: &str) -> Result<Option<Url>, AppConfigError> {
+    match normalize_string_opt(value) {
+        Some(value) => parse_url(&value, env_var).map(Some),
+        None => Ok(None),
+    }
+}
+
+fn parse_url(value: &str, env_var: &str) -> Result<Url, AppConfigError> {
+    let trimmed = value.trim().trim_end_matches('/');
+
+    Url::parse(trimmed)
+        .map_err(|err| AppConfigError::Validation(format!("{env_var} is invalid: {err}")))
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_music_root() -> String {
+    DEFAULT_MUSIC_ROOT.to_string()
+}
+
+fn default_database_url() -> String {
+    DEFAULT_DATABASE_URL.to_string()
+}
+
+fn default_log_format() -> String {
+    DEFAULT_LOG_FORMAT.to_string()
+}
+
+fn default_slskd_base_url() -> String {
+    DEFAULT_SLSKD_BASE_URL.to_string()
+}
+
+fn default_slskd_downloads_dir() -> String {
+    DEFAULT_SLSKD_DOWNLOADS_DIR.to_string()
+}
+
+fn default_quality() -> String {
+    "LOSSLESS".to_string()
+}
+
+fn default_download_max_parallel_tracks() -> usize {
+    1
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serial_test::serial;
-
-    /// Helper: set env vars, run closure, then clean up.
-    fn with_env_vars<F: FnOnce()>(vars: &[(&str, &str)], f: F) {
-        for (k, v) in vars {
-            // SAFETY: tests using this helper are marked #[serial] so no
-            // concurrent env mutation can occur.
-            unsafe { std::env::set_var(k, v) };
-        }
-        f();
-        for (k, _) in vars {
-            unsafe { std::env::remove_var(k) };
-        }
-    }
 
     #[test]
-    #[serial]
     fn uses_defaults_for_empty_values() {
-        with_env_vars(
-            &[
-                ("MUSIC_ROOT", ""),
-                ("DEFAULT_QUALITY", "   "),
-                ("AUTH_DISABLED", "true"),
-            ],
-            || {
-                let raw = RawAppConfig::builder().build().expect("config parse");
-                let cfg = AppConfig::from_raw(raw).expect("config normalize");
+        let cfg = AppConfig::from_iter([
+            ("MUSIC_ROOT", ""),
+            ("DEFAULT_QUALITY", "   "),
+            ("AUTH_DISABLED", "true"),
+        ])
+        .expect("config parse");
 
-                assert_eq!(cfg.music_root, DEFAULT_MUSIC_ROOT);
-                assert_eq!(cfg.default_quality, Quality::Lossless);
-            },
-        );
+        assert_eq!(cfg.music_root, DEFAULT_MUSIC_ROOT);
+        assert_eq!(cfg.default_quality, Quality::Lossless);
     }
 
     #[test]
-    #[serial]
     fn falls_back_for_invalid_quality_values() {
-        with_env_vars(
-            &[
-                ("DEFAULT_QUALITY", "not-real-quality"),
-                ("AUTH_DISABLED", "true"),
-            ],
-            || {
-                let raw = RawAppConfig::builder().build().expect("config parse");
-                let cfg = AppConfig::from_raw(raw).expect("config normalize");
+        let cfg = AppConfig::from_iter([
+            ("DEFAULT_QUALITY", "not-real-quality"),
+            ("AUTH_DISABLED", "true"),
+        ])
+        .expect("config parse");
 
-                assert_eq!(cfg.default_quality, Quality::Lossless);
-            },
-        );
+        assert_eq!(cfg.default_quality, Quality::Lossless);
     }
 
     #[test]
-    #[serial]
     fn trims_base_url_trailing_slash() {
-        with_env_vars(
-            &[
-                ("TIDAL_API_BASE_URL", "http://localhost:8000///"),
-                ("AUTH_DISABLED", "true"),
-            ],
-            || {
-                let raw = RawAppConfig::builder().build().expect("config parse");
-                let cfg = AppConfig::from_raw(raw).expect("config normalize");
+        let cfg = AppConfig::from_iter([
+            ("TIDAL_API_BASE_URL", "http://localhost:8000///"),
+            ("AUTH_DISABLED", "true"),
+        ])
+        .expect("config parse");
 
-                assert_eq!(cfg.tidal_api_base_url, "http://localhost:8000");
-            },
-        );
+        let url: Url = "http://localhost:8000"
+            .parse()
+            .expect("tidal api url parse");
+        assert_eq!(cfg.tidal_api_base_url, Some(url));
     }
 
     #[test]
-    #[serial]
     fn requires_session_secret_when_auth_enabled() {
-        with_env_vars(
-            &[("AUTH_DISABLED", "false"), ("AUTH_SESSION_SECRET", "   ")],
-            || {
-                let raw = RawAppConfig::builder().build().expect("config parse");
-                let err = AppConfig::from_raw(raw).expect_err("expected validation error");
+        let err =
+            AppConfig::from_iter([("AUTH_DISABLED", "false"), ("AUTH_SESSION_SECRET", "   ")])
+                .expect_err("expected validation error");
 
-                assert!(
-                    err.to_string()
-                        .contains("AUTH_SESSION_SECRET is required when AUTH_DISABLED=false")
-                );
-            },
+        assert!(
+            err.to_string()
+                .contains("AUTH_SESSION_SECRET is required when AUTH_DISABLED=false")
         );
     }
 
     #[test]
-    #[serial]
     fn allows_missing_session_secret_when_auth_disabled() {
-        with_env_vars(
-            &[("AUTH_DISABLED", "true"), ("AUTH_SESSION_SECRET", "   ")],
-            || {
-                let raw = RawAppConfig::builder().build().expect("config parse");
-                let cfg = AppConfig::from_raw(raw).expect("config normalize");
+        let cfg = AppConfig::from_iter([("AUTH_DISABLED", "true"), ("AUTH_SESSION_SECRET", "   ")])
+            .expect("config parse");
 
-                assert!(!cfg.auth.enabled);
-                assert!(cfg.auth.session_secret.is_empty());
-            },
-        );
+        assert!(!cfg.auth.enabled);
+        assert!(cfg.auth.session_secret.is_empty());
     }
 
     #[test]
-    #[serial]
     fn rejects_partial_init_admin_config() {
-        with_env_vars(
-            &[
-                ("AUTH_SESSION_SECRET", "session-secret"),
-                ("AUTH_INIT_ADMIN_USERNAME", "admin"),
-            ],
-            || {
-                let raw = RawAppConfig::builder().build().expect("config parse");
-                let err = AppConfig::from_raw(raw).expect_err("expected validation error");
+        let err = AppConfig::from_iter([
+            ("AUTH_SESSION_SECRET", "session-secret"),
+            ("AUTH_INIT_ADMIN_USERNAME", "admin"),
+        ])
+        .expect_err("expected validation error");
 
-                assert!(err.to_string().contains(
-                    "AUTH_INIT_ADMIN_USERNAME and AUTH_INIT_ADMIN_PASSWORD must both be set or both be unset"
-                ));
-            },
-        );
+        assert!(err.to_string().contains(
+            "AUTH_INIT_ADMIN_USERNAME and AUTH_INIT_ADMIN_PASSWORD must both be set or both be unset"
+        ));
     }
 }

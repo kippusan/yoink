@@ -8,7 +8,7 @@ use crate::{
         self,
         downloads::{
             TrackMetadata,
-            io::{DownloadPayload, MediaContainer, has_flac_stream_marker, sniff_media_container},
+            io::{DownloadPayload, MediaContainer, has_flac_stream_marker, sniff_media_container, extract_year},
             metadata::{build_full_artist_string, extract_disc_number},
             sanitize_path_component, write_audio_metadata,
         },
@@ -218,7 +218,7 @@ async fn run_download_plan(
     let release_suffix = context
         .album
         .release_date
-        .map(|date| date.to_string())
+        .map(|date| extract_year(&date.to_string()))
         .unwrap_or("Unknown".to_string());
 
     let artist_dir = state

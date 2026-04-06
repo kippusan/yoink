@@ -215,7 +215,7 @@ fn read_embedded_metadata_sync(path: &Path) -> AppResult<EmbeddedTrackMetadata> 
     };
 
     Ok(EmbeddedTrackMetadata {
-        album_artist: clean_string(tag.get_string(&ItemKey::AlbumArtist)),
+        album_artist: clean_string(tag.get_string(ItemKey::AlbumArtist)),
         track_artist: tag
             .artist()
             .and_then(|value| clean_string(Some(value.as_ref()))),
@@ -225,11 +225,11 @@ fn read_embedded_metadata_sync(path: &Path) -> AppResult<EmbeddedTrackMetadata> 
         track_title: tag
             .title()
             .and_then(|value| clean_string(Some(value.as_ref()))),
-        year: tag.year().map(|value| value.to_string()),
+        year: tag.date().map(|value| value.year.to_string()),
         disc_number: tag.disk().and_then(|value| i32::try_from(value).ok()),
         track_number: tag.track().and_then(|value| i32::try_from(value).ok()),
         duration_secs: i32::try_from(tagged_file.properties().duration().as_secs()).ok(),
-        isrc: clean_string(tag.get_string(&ItemKey::Isrc)),
+        isrc: clean_string(tag.get_string(ItemKey::Isrc)),
     })
 }
 

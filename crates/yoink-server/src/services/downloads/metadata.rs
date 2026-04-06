@@ -26,7 +26,9 @@ pub(crate) struct TrackMetadata<'a> {
     pub disc_number: Option<u32>,
     pub total_tracks: u32,
     pub release_date: &'a str,
+    #[expect(dead_code)]
     pub track_extra: &'a HashMap<String, Value>,
+    #[expect(dead_code)]
     pub album_extra: &'a HashMap<String, Value>,
     pub track_info_extra: Option<&'a HashMap<String, Value>>,
     pub lyrics_text: Option<&'a str>,
@@ -104,21 +106,22 @@ pub(crate) fn write_audio_metadata(meta: &TrackMetadata<'_>) -> AppResult<()> {
 
     if let Some(jpeg) = meta.cover_art_jpeg {
         tag.remove_picture_type(PictureType::CoverFront);
-        tag.push_picture(Picture::new_unchecked(
-            PictureType::CoverFront,
-            Some(MimeType::Jpeg),
-            None,
-            jpeg.to_vec(),
-        ));
+        tag.push_picture(
+            Picture::unchecked(jpeg.to_vec())
+                .pic_type(PictureType::CoverFront)
+                .mime_type(MimeType::Jpeg)
+                .build(),
+        );
     }
 
-    if tag_type == TagType::VorbisComments {
-        write_extra_vorbis(tag, "TIDAL_TRACK_", meta.track_extra);
-        write_extra_vorbis(tag, "TIDAL_ALBUM_", meta.album_extra);
-        if let Some(info) = meta.track_info_extra {
-            write_extra_vorbis(tag, "TIDAL_INFO_", info);
-        }
-    }
+    // TODO: remove this, when removing the "extra" fields
+    // if tag_type == TagType::VorbisComments {
+    // write_extra_vorbis(tag, "TIDAL_TRACK_", meta.track_extra);
+    // write_extra_vorbis(tag, "TIDAL_ALBUM_", meta.album_extra);
+    // if let Some(info) = meta.track_info_extra {
+    //     write_extra_vorbis(tag, "TIDAL_INFO_", info);
+    // }
+    // }
 
     tagged_file
         .save_to_path(meta.path, WriteOptions::default())
@@ -128,27 +131,6 @@ pub(crate) fn write_audio_metadata(meta: &TrackMetadata<'_>) -> AppResult<()> {
 
 fn preferred_tag_type(_meta: &TrackMetadata<'_>, tagged_file: &impl TaggedFileExt) -> TagType {
     tagged_file.primary_tag_type()
-}
-
-fn write_extra_vorbis(tag: &mut Tag, prefix: &str, extra: &HashMap<String, Value>) {
-    for (key, value) in extra {
-        if let Some(text) = value_to_text(value) {
-            let key = sanitize_vorbis_key(prefix, key);
-            if !key.is_empty() {
-                tag.insert_text(ItemKey::Unknown(key), text);
-            }
-        }
-    }
-}
-
-fn value_to_text(value: &Value) -> Option<String> {
-    match value {
-        Value::Null => None,
-        Value::String(s) => Some(s.clone()),
-        Value::Number(n) => Some(n.to_string()),
-        Value::Bool(b) => Some(b.to_string()),
-        Value::Array(_) | Value::Object(_) => serde_json::to_string(value).ok(),
-    }
 }
 
 fn value_as_string(value: Option<&Value>) -> Option<String> {
@@ -281,23 +263,6 @@ pub(crate) fn extract_disc_number(
     }
     None
 }
-
-fn sanitize_vorbis_key(prefix: &str, key: &str) -> String {
-    let normalized = key
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() {
-                c.to_ascii_uppercase()
-            } else {
-                '_'
-            }
-        })
-        .collect::<String>();
-
-    format!("{}{}", prefix, normalized)
-}
-
-// fetch_cover_art_bytes and fetch_track_info_extra moved to providers
 
 #[cfg(test)]
 mod tests {
@@ -536,35 +501,6 @@ mod tests {
         assert_eq!(extract_disc_number(&track_extra, None), Some(4));
     }
 
-    // ── value_to_text ───────────────────────────────────────────
-
-    #[test]
-    fn value_to_text_string() {
-        assert_eq!(value_to_text(&json!("hello")), Some("hello".to_string()));
-    }
-
-    #[test]
-    fn value_to_text_number() {
-        assert_eq!(value_to_text(&json!(42)), Some("42".to_string()));
-    }
-
-    #[test]
-    fn value_to_text_bool() {
-        assert_eq!(value_to_text(&json!(true)), Some("true".to_string()));
-    }
-
-    #[test]
-    fn value_to_text_null() {
-        assert_eq!(value_to_text(&Value::Null), None);
-    }
-
-    #[test]
-    fn value_to_text_array() {
-        let result = value_to_text(&json!([1, 2, 3]));
-        assert!(result.is_some());
-        assert!(result.unwrap().contains("[1,2,3]"));
-    }
-
     // ── value_as_string ─────────────────────────────────────────
 
     #[test]
@@ -588,24 +524,6 @@ mod tests {
     #[test]
     fn value_as_string_from_none() {
         assert_eq!(value_as_string(None), None);
-    }
-
-    // ── sanitize_vorbis_key ─────────────────────────────────────
-
-    #[test]
-    fn sanitize_vorbis_key_uppercase_and_prefix() {
-        assert_eq!(
-            sanitize_vorbis_key("TIDAL_TRACK_", "artistName"),
-            "TIDAL_TRACK_ARTISTNAME"
-        );
-    }
-
-    #[test]
-    fn sanitize_vorbis_key_non_alphanumeric_replaced() {
-        assert_eq!(
-            sanitize_vorbis_key("PREFIX_", "some-key.here"),
-            "PREFIX_SOME_KEY_HERE"
-        );
     }
 
     #[test]

@@ -5,6 +5,7 @@ yoink.db*
 .env*
 .git/
 frontend/node_modules/
+frontend/dist/
 frontend/.output/
 frontend/.nitro/
 frontend/.tanstack/

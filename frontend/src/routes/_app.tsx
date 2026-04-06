@@ -36,6 +36,7 @@ export const Route = createFileRoute("/_app")({
 
 function AppLayout() {
   const queryClient = useQueryClient();
+  const { authStatus } = Route.useRouteContext();
 
   // Initialise TanStack DB collections (idempotent singleton).
   getCollections(queryClient);
@@ -46,7 +47,7 @@ function AppLayout() {
 
   return (
     <SidebarProvider>
-      <AppSidebar />
+      <AppSidebar authStatus={authStatus} />
       <SidebarInset className="overflow-hidden">
         <header className="sticky top-0 z-20 flex h-12 shrink-0 items-center gap-2 border-b bg-background/95 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/80">
           <SidebarTrigger className="-ml-1" />

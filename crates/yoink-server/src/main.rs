@@ -176,10 +176,10 @@ fn build_registry(app_config: &AppConfig) -> ProviderRegistry {
     if app_config.tidal_enabled {
         let tidal = Arc::new(TidalProvider::new(
             reqwest::Client::new(),
-            match app_config.tidal_api_base_url.as_str() {
-                "" => None,
-                ref url => Some(url.to_string()),
-            },
+            app_config
+                .tidal_api_base_url
+                .as_ref()
+                .map(|u| u.to_string()),
         ));
         registry.register_metadata(Arc::clone(&tidal) as Arc<dyn providers::MetadataProvider>);
         registry.register_download(Arc::clone(&tidal) as Arc<dyn providers::DownloadSource>);
@@ -201,7 +201,12 @@ fn build_registry(app_config: &AppConfig) -> ProviderRegistry {
     if app_config.soulseek_enabled {
         let soulseek = Arc::new(SoulSeekSource::new(
             reqwest::Client::new(),
-            app_config.slskd_base_url.clone(),
+            // TODO no-panic unwraps
+            app_config
+                .slskd_base_url
+                .as_ref()
+                .expect("should have slskd url")
+                .clone(),
             app_config.slskd_username.clone(),
             app_config.slskd_password.clone(),
             app_config.slskd_downloads_dir.clone(),

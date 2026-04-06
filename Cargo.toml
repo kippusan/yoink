@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/*"]
+members  = ["crates/*"]
 resolver = "3"
 
 [workspace.package]
@@ -7,39 +7,33 @@ version = "0.1.2"
 edition = "2024"
 
 [workspace.dependencies]
-# ── Shared ───────────────────────────────────────────────────
-chrono = { version = "0.4", features = ["clock", "serde"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-serde_trim = "1.1.0"
-uuid = { version = "1", features = ["v7", "serde"] }
-url = { version = "2.5.8", features = ["serde"] }
-async-trait = "0.1"
-thiserror = "2"
 argon2 = "0.5"
-cookie = "0.18"
-rand = "0.9"
-sha2 = "0.10"
-veil = "0.3"
-
-# ── Server ──────────────────────────────────────────────────
+async-trait = "0.1"
 axum = { version = "0.8", features = ["form", "json", "macros"] }
-governor = "0.8"
 base64 = "0.22"
-better-config = { version = "0.2", features = ["env"] }
-serial_test = "3"
+chrono = { version = "0.4", features = ["clock", "serde"] }
+clap = { version = "4", features = ["derive", "env"] }
+cookie = "0.18"
+dotenvy = "0.15"
+envy = "0.4"
+envious = "0.2.2"
+governor = "0.10"
+lofty = "0.23"
 lrclib-api-rs = "0.3"
-lofty = "0.22"
-reqwest = { version = "0.12", default-features = false, features = [
-  "json",
-  "rustls-tls",
-] }
+mime_guess = "2"
 musicbrainz_rs = { version = "0.12", features = [
   "rate_limit",
   "async",
   "rustls",
 ], default-features = false }
-roxmltree = "0.20"
+rand = "0.10"
+reqwest = { version = "0.13", default-features = false, features = [
+  "json",
+  "rustls",
+  "query",
+] }
+roxmltree = "0.21"
+rust-embed = { version = "8", features = ["mime-guess"] }
 sea-orm = { version = "2.0.0-rc.37", features = [
   "sqlx-sqlite",
   "sqlx-postgres",
@@ -50,8 +44,15 @@ sea-orm = { version = "2.0.0-rc.37", features = [
   "entity-registry",
   "macros",
 ] }
+serde = { version = "1", features = ["derive"] }
+serde_alias = { git = "https://github.com/petar-dambovaliev/serde_alias.git", rev = "bf2ef1bef24f866f3d648c234a95cd0ba42fd651" }
+serde_json = "1"
+serde_trim = "1.1.0"
+serial_test = "3"
+sha2 = "0.11"
 strsim = "0.11"
 tempfile = "3.27.0"
+thiserror = "2"
 tokio = { version = "1", features = [
   "fs",
   "io-util",
@@ -68,6 +69,7 @@ tracing-subscriber = { version = "0.3", features = [
   "fmt",
   "json",
 ] }
+url = { version = "2.5.8", features = ["serde"] }
 utoipa = { version = "5.4.0", features = [
   "axum_extras",
   "chrono",
@@ -76,5 +78,5 @@ utoipa = { version = "5.4.0", features = [
 ] }
 utoipa-axum = "0.2.0"
 utoipa-scalar = { version = "0.3.0", features = ["axum"] }
-rust-embed = { version = "8", features = ["mime-guess"] }
-mime_guess = "2"
+uuid = { version = "1", features = ["v7", "serde"] }
+veil = "0.3"

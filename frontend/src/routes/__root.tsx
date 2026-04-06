@@ -30,44 +30,20 @@ export const Route = createRootRouteWithContext<RouterContext>()({
         title: "yoink",
       },
     ],
-    links: [
-      {
-        rel: "icon",
-        type: "image/svg+xml",
-        href: "/yoink.svg",
-      },
-      {
-        rel: "stylesheet",
-        href: appCss,
-      },
-    ],
+    links: [{ rel: "icon", type: "image/svg+xml", href: "/yoink.svg" }, { rel: "stylesheet", href: appCss }],
   }),
   component: RootComponent,
-  shellComponent: RootDocument,
 });
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
   return (
-    <QueryClientProvider client={queryClient}>
-      <Outlet />
-    </QueryClientProvider>
-  );
-}
-
-function RootDocument({ children }: { children: React.ReactNode }) {
-  return (
-    <html lang="en" suppressHydrationWarning>
-      <head>
-        <HeadContent />
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem("theme");var d=t==="dark"||(t!=="light"&&window.matchMedia("(prefers-color-scheme:dark)").matches);if(d)document.documentElement.classList.add("dark")}catch(e){}})()`,
-          }}
-        />
-      </head>
-      <body>
-        <TooltipProvider>{children}</TooltipProvider>
+    <>
+      <HeadContent />
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <Outlet />
+        </TooltipProvider>
         <TanStackDevtools
           config={{
             position: "bottom-right",
@@ -83,8 +59,8 @@ function RootDocument({ children }: { children: React.ReactNode }) {
             },
           ]}
         />
-        <Scripts />
-      </body>
-    </html>
+      </QueryClientProvider>
+      <Scripts />
+    </>
   );
 }

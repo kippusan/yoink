@@ -29,16 +29,14 @@ If you want to contribute and implement a feature, even better!
 - [x] Deezer metadata support
 - [x] MusicBrainz metadata support
 - [ ] Support mixes in addition to albums and singles
-- [ ] SoundCloud metadata / download support (yt-dlp)
-- [ ] YouTube Music metadata / download support (yt-dlp)
-- [ ] Spotify metadata support
+- [ ] SoundCloud download support (yt-dlp)
+- [ ] YouTube download support (yt-dlp)
 - [x] Tidal metadata / download support
 - [ ] Automatic metadata enrichment (e.g. if an album is missing a release date, try to find it on MusicBrainz or other sources)
-- [ ] Automatic album art fetching and embedding in files
+- [x] Automatic album art fetching and embedding in files
 - [x] Lyrics fetching and embedding in files / sidecars
-- [ ] Mobile-friendly web UI
+- [x] Mobile-friendly web UI
 - [ ] API for third-party integrations and custom scripts
-- [ ] Basic user settings
 - [ ] Changelog with all changes, especially breaking ones, documented clearly
 
 ## Beta Releases (`0.x.y` where x >= 2)
@@ -58,7 +56,7 @@ If you want to contribute and implement a feature, even better!
 - [ ] Import from existing folder structures (e.g. iTunes, other media managers, manually organized folders)
 - [ ] Playlist support (import from m3u, export to m3u)
 - [ ] Import playlist from streaming services (e.g. Spotify, Tidal, Deezer, YouTube Music)
-- [ ] Authentication (with OIDC support)
+- [ ] OIDC Authentication support
 - [ ] Update notifier (e.g. a banner in the UI when a new version is available with a link to the changelog)
 - [ ] Scrobbling support (e.g. Last.fm / ListenBrainz)
 - [ ] Transcoding support (saving space without quality loss, e.g. converting WAV to FLAC)
@@ -88,3 +86,14 @@ _I'll fill this one once we're in beta_
 
 _I want to keep the scope of the project reasonable, so if there are features that are not planned they will go here._
 _Some of these may be reconsidered in the future if there is enough demand and they fit within the scope of the project._
+
+- Spotify metadata support
+  The Spotify API is gated behind their premium plan, and I'm not subscribed to it.
+  Even if I were, it would require either me providing a client id that could be blocked at any time, or users having to create their own Spotify app which has been a barrier for some other projects.
+  If someone wants to implement this, I would be open to reconsidering this.
+- Youtube Music metadata support
+  The YouTube Music API is not public and is subject to change at any time, which makes it a risky dependency.
+  I would consider implementing this if there is a stable and reliable way to access the data, but for now it's not a priority.
+  yt-dlp does not really support metadata fetching it's focused on downloading via direct URLs and searches
+- SoundCloud metadata support
+  Similar to Spotify, their API is gated behind a SC app. I'm more open to reconsidering this one since it would be nice to add support for mixes and DJ sets, but it's still not a priority for now.

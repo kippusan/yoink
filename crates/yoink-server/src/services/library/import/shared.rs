@@ -162,6 +162,90 @@ mod tests {
         assert_eq!(discovered.discovered_year.as_deref(), Some("2005"));
     }
 
+    // ── Regression: issue #23 ─────────────────────────────────────────
+    // Some ripping tools write the relative folder path (e.g. "Artist1/Album1")
+    // into the ALBUMARTIST or ARTIST tag instead of just the artist name. Yoink
+    // should detect this and prefer the folder-derived artist name so that both
+    // albums end up under one artist, not two separate "Artist1/AlbumN" artists.
+
+    #[test]
+    fn summarize_album_sanitizes_path_like_artist_tag() {
+        let root = Path::new("/music");
+        let album_dir = PathBuf::from("/music/Artist1/Album1");
+        let files = vec![ScannedAudioFile {
+            absolute_path: album_dir.join("01 - Track.mp3"),
+            embedded: EmbeddedTrackMetadata {
+                album_artist: Some("Artist1/Album1".to_string()),
+                album_title: Some("Album1".to_string()),
+                ..EmbeddedTrackMetadata::default()
+            },
+        }];
+
+        let discovered = summarize_discovered_album(root, album_dir, files);
+
+        assert_eq!(discovered.discovered_artist, "Artist1");
+        assert_eq!(discovered.discovered_album, "Album1");
+    }
+
+    #[test]
+    fn summarize_album_sanitizes_backslash_path_like_artist_tag() {
+        let root = Path::new("/music");
+        let album_dir = PathBuf::from("/music/Artist1/Album2");
+        let files = vec![ScannedAudioFile {
+            absolute_path: album_dir.join("01 - Track.mp3"),
+            embedded: EmbeddedTrackMetadata {
+                album_artist: Some("Artist1\\Album2".to_string()),
+                album_title: Some("Album2".to_string()),
+                ..EmbeddedTrackMetadata::default()
+            },
+        }];
+
+        let discovered = summarize_discovered_album(root, album_dir, files);
+
+        assert_eq!(discovered.discovered_artist, "Artist1");
+    }
+
+    #[test]
+    fn summarize_album_keeps_valid_artist_tag_without_path_separators() {
+        let root = Path::new("/music");
+        let album_dir = PathBuf::from("/music/Path Artist/Path Album");
+        let files = vec![ScannedAudioFile {
+            absolute_path: album_dir.join("01 - Track.mp3"),
+            embedded: EmbeddedTrackMetadata {
+                album_artist: Some("Tagged Artist".to_string()),
+                album_title: Some("Tagged Album".to_string()),
+                ..EmbeddedTrackMetadata::default()
+            },
+        }];
+
+        let discovered = summarize_discovered_album(root, album_dir, files);
+
+        // A normal tag without path separators must be kept as-is
+        assert_eq!(discovered.discovered_artist, "Tagged Artist");
+    }
+
+    #[test]
+    fn summarize_album_path_like_tag_at_root_level_keeps_embedded_value() {
+        // When an album sits directly under the music root (no artist subfolder),
+        // there is no folder hint to fall back to. Prefer the embedded tag value
+        // over "Unknown Artist" even though it looks like a path.
+        let root = Path::new("/music");
+        let album_dir = PathBuf::from("/music/Album1");
+        let files = vec![ScannedAudioFile {
+            absolute_path: album_dir.join("01 - Track.mp3"),
+            embedded: EmbeddedTrackMetadata {
+                album_artist: Some("Artist1/Album1".to_string()),
+                album_title: Some("Album1".to_string()),
+                ..EmbeddedTrackMetadata::default()
+            },
+        }];
+
+        let discovered = summarize_discovered_album(root, album_dir, files);
+
+        // No parent-folder hint available, so fall back to the embedded value
+        assert_eq!(discovered.discovered_artist, "Artist1/Album1");
+    }
+    
     #[test]
     fn build_candidates_rejects_unrelated_partial_match() {
         let now = chrono::Utc::now();

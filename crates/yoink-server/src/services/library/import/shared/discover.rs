@@ -55,7 +55,7 @@ pub(super) fn summarize_discovered_album(
     let relative_path = display_relative_path(root_path, &album_dir);
     let path_hint = path_metadata_hint(root_path, &album_dir);
 
-    let discovered_artist = most_common_string(
+    let embedded_artist = most_common_string(
         files
             .iter()
             .filter_map(|file| {
@@ -65,8 +65,18 @@ pub(super) fn summarize_discovered_album(
                     .or(file.embedded.track_artist.as_deref())
             })
             .collect(),
-    )
-    .or(path_hint.artist)
+    );
+
+    // Some ripping tools write the folder path (e.g. "Artist/Album") into the
+    // artist tag instead of just the artist name. When the embedded artist looks
+    // like a path, prefer the folder-derived hint so that all albums under the
+    // same artist directory share the correct, consistent artist name.
+     let discovered_artist = match embedded_artist {
+        Some(name) if name.contains('/') || name.contains('\\') => {
+            path_hint.artist.clone().or(Some(name))
+        }
+        other => other.or(path_hint.artist.clone()),
+    }
     .unwrap_or_else(|| "Unknown Artist".to_string());
 
     let discovered_album = most_common_string(
